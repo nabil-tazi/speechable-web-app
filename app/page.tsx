@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCurrentUserProfile } from "@/app/features/users/models";
 import { createClient } from "@/app/lib/supabase/server";
 import UserMenu from "./components/user-menu";
+import PDFUploader from "./features/pdf/components/pdf-uploader";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -55,6 +56,8 @@ export default async function Home() {
               <p className="text-xl sm:text-2xl text-gray-700">
                 Welcome back, {userProfile?.display_name || user.email}
               </p>
+
+              <PDFUploader />
 
               {!userProfile?.display_name && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
