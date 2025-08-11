@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getCurrentUserProfile } from "@/app/features/users/models";
 import { createClient } from "@/app/lib/supabase/server";
+import UserMenu from "./components/user-menu";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -11,61 +12,86 @@ export default async function Home() {
   const userProfile = user ? await getCurrentUserProfile() : null;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-2">
-      <main className="flex flex-col items-center justify-center w-full flex-1 px-20 text-center">
-        <h1 className="text-6xl font-bold">Welcome to Audiify</h1>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header with User Menu */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex-shrink-0">
+              <h1 className="text-xl font-semibold text-gray-900">Audiify</h1>
+            </div>
 
-        {user ? (
-          <div>
-            <p className="mt-3 text-2xl">
-              Welcome, {userProfile?.display_name || user.email}
-            </p>
-            {!userProfile?.display_name && (
-              <p className="mt-2 text-sm text-gray-600">
+            {user ? (
+              <UserMenu user={user} userProfile={userProfile} />
+            ) : (
+              <div className="flex space-x-4">
                 <Link
-                  href="/profile"
-                  className="text-blue-500 hover:text-blue-700"
+                  href="/signin"
+                  className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
                 >
-                  Set up your display name
+                  Sign in
                 </Link>
-              </p>
-            )}
-            <div className="mt-4 space-x-4">
-              <Link
-                href="/profile"
-                className="inline-block bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-              >
-                Edit Profile
-              </Link>
-              <form action="/auth/signout" method="post" className="inline">
-                <button
-                  className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                  type="submit"
+                <Link
+                  href="/signup"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
                 >
-                  Sign out
-                </button>
-              </form>
-            </div>
+                  Sign up
+                </Link>
+              </div>
+            )}
           </div>
-        ) : (
-          <div>
-            <p className="mt-3 text-2xl">You are not logged in.</p>
-            <div className="mt-4 space-x-4">
-              <Link
-                href="/signin"
-                className="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/signup"
-                className="inline-block bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-              >
-                Sign Up
-              </Link>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex flex-col items-center justify-center flex-1 px-4 sm:px-20 text-center pt-20">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-4xl sm:text-6xl font-bold text-gray-900 mb-8">
+            Welcome to Audiify
+          </h1>
+
+          {user ? (
+            <div className="space-y-6">
+              <p className="text-xl sm:text-2xl text-gray-700">
+                Welcome back, {userProfile?.display_name || user.email}
+              </p>
+
+              {!userProfile?.display_name && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
+                  <p className="text-sm text-blue-800 mb-2">
+                    Complete your profile setup
+                  </p>
+                  <Link
+                    href="/profile"
+                    className="text-blue-600 hover:text-blue-700 font-medium text-sm transition-colors"
+                  >
+                    Set up your display name →
+                  </Link>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="space-y-6">
+              <p className="text-xl sm:text-2xl text-gray-700">
+                Get started with your audio experience
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link
+                  href="/signin"
+                  className="inline-flex justify-center items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="inline-flex justify-center items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  Get started
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
