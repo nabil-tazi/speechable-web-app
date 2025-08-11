@@ -2,6 +2,31 @@
 
 import { useState, useRef } from "react";
 
+// Text cleaning function to improve PDF text extraction
+function cleanTextContent(text: string): string {
+  return (
+    text
+      // Remove excessive whitespace
+      .replace(/\s+/g, " ")
+      // Fix common PDF extraction issues
+      .replace(/([a-z])([A-Z])/g, "$1 $2") // Add space between camelCase
+      .replace(/(\w)([.!?])(\w)/g, "$1$2 $3") // Add space after punctuation
+      .replace(/([a-zA-Z])(\d)/g, "$1 $2") // Add space between letters and numbers
+      .replace(/(\d)([a-zA-Z])/g, "$1 $2") // Add space between numbers and letters
+      // Fix hyphenated words that got split across lines
+      .replace(/(\w)-\s*\n\s*(\w)/g, "$1$2")
+      // Clean up multiple newlines
+      .replace(/\n\s*\n\s*\n/g, "\n\n")
+      // Remove leading/trailing whitespace from each line
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join("\n")
+      // Final cleanup
+      .trim()
+  );
+}
+
 interface ParsedPDF {
   text: string;
   numPages: number;
@@ -64,7 +89,10 @@ export default function PDFUploader() {
       const pdfjsLib = await import("pdfjs-dist");
 
       // Configure worker
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url
+      ).toString();
 
       // Suppress PDF.js metadata warnings
       const originalWarn = console.warn;
@@ -90,7 +118,7 @@ export default function PDFUploader() {
       // Get metadata
       const metadata = await pdf.getMetadata();
 
-      // Extract text from all pages
+      // Extract text from all pages with better formatting
       const pages: Array<{ pageNumber: number; text: string }> = [];
       let fullText = "";
 
@@ -98,10 +126,41 @@ export default function PDFUploader() {
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
 
-        // Combine text items into readable text
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(" ");
+        // Process text items with position awareness
+        const textItems = textContent.items as any[];
+        let pageText = "";
+        let lastY = 0;
+        let lastX = 0;
+
+        for (let i = 0; i < textItems.length; i++) {
+          const item = textItems[i];
+          const currentY = item.transform[5]; // Y position
+          const currentX = item.transform[4]; // X position
+
+          // Check if we're on a new line (significant Y change)
+          if (lastY !== 0 && Math.abs(currentY - lastY) > 5) {
+            pageText += "\n";
+          }
+          // Check if there's a significant horizontal gap (new word/sentence)
+          else if (lastX !== 0 && currentX - lastX > item.width) {
+            pageText += " ";
+          }
+
+          // Clean up the text
+          let cleanText = item.str;
+
+          // Remove excessive spaces
+          cleanText = cleanText.replace(/\s+/g, " ");
+
+          // Add the text
+          pageText += cleanText;
+
+          lastY = currentY;
+          lastX = currentX + item.width;
+        }
+
+        // Final cleanup for the page
+        pageText = cleanTextContent(pageText);
 
         pages.push({
           pageNumber: pageNum,
@@ -110,6 +169,9 @@ export default function PDFUploader() {
 
         fullText += pageText + "\n\n";
       }
+
+      // Clean up the full text
+      fullText = cleanTextContent(fullText.trim());
 
       setParsedPDF({
         text: fullText.trim(),
@@ -279,7 +341,7 @@ export default function PDFUploader() {
                   Extracted Text
                 </h3>
                 <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono text-left">
                     {parsedPDF.text}
                   </pre>
                 </div>
