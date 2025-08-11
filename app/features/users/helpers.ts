@@ -1,4 +1,4 @@
-import { createClient } from "@/app/utils/supabase/client";
+import { createClient } from "@/app/lib/supabase/client";
 import type { UpdateUserProfileParams, UserProfile } from "./types";
 
 // Client-side functions only (for use in client components)

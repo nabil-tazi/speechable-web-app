@@ -1,4 +1,4 @@
-import { createClient } from "@/app/utils/supabase/server";
+import { createClient } from "@/app/lib/supabase/server";
 import type { UserProfile } from "./types";
 
 // Server-side functions only - do not import in client components

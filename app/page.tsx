@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { createClient } from "./utils/supabase/server";
-import { getCurrentUserProfile } from "./features/users/models";
+import { getCurrentUserProfile } from "@/app/features/users/models";
+import { createClient } from "@/app/lib/supabase/server";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -52,10 +52,10 @@ export default async function Home() {
             <p className="mt-3 text-2xl">You are not logged in.</p>
             <div className="mt-4 space-x-4">
               <Link
-                href="/login"
+                href="/signin"
                 className="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
               >
-                Login
+                Sign in
               </Link>
               <Link
                 href="/signup"

@@ -6,8 +6,8 @@ import Link from "next/link";
 import {
   getUserProfileClient,
   updateUserProfile,
-} from "../features/users/helpers";
-import { UserProfile } from "../features/users/types";
+} from "@/app/features/users/helpers";
+import { UserProfile } from "@/app/features/users/types";
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
