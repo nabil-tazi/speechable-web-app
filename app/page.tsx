@@ -19,7 +19,9 @@ export default async function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex-shrink-0">
-              <h1 className="text-xl font-semibold text-gray-900">Readible</h1>
+              <h1 className="text-xl font-semibold text-gray-900">
+                Speechable
+              </h1>
             </div>
 
             {user ? (
@@ -48,7 +50,7 @@ export default async function Home() {
       <main className="flex flex-col items-center justify-center flex-1 px-4 sm:px-20 text-center pt-20">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl sm:text-6xl font-bold text-gray-900 mb-8">
-            Welcome to Readible
+            Welcome to Speechable
           </h1>
 
           {user ? (
@@ -57,7 +59,7 @@ export default async function Home() {
                 Welcome back, {userProfile?.display_name || user.email}
               </p>
 
-              <PDFUploader />
+              <PDFUploader userId={user.id} />
 
               {!userProfile?.display_name && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">

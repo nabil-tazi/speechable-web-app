@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { User } from "@supabase/supabase-js";
+import { useAuth } from "../features/users/hooks/use-auth";
 
 interface UserProfile {
   id: string;
@@ -20,6 +21,7 @@ interface UserMenuProps {
 export default function UserMenu({ user, userProfile }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { signOut } = useAuth();
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -72,7 +74,9 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
       {/* Avatar Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-3 text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 hover:shadow-md p-1 cursor-pointer"
+        className={`flex items-center space-x-3 text-sm rounded-full transition-all duration-200 hover:bg-gray-100 p-1 cursor-pointer ${
+          isOpen ? "bg-gray-100" : ""
+        }`}
       >
         {avatarUrl ? (
           <img
@@ -191,27 +195,25 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
           <div className="border-t border-gray-100 my-1"></div>
 
           {/* Sign Out */}
-          <form action="/auth/signout" method="post">
-            <button
-              type="submit"
-              className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+          <button
+            className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+            onClick={signOut}
+          >
+            <svg
+              className="mr-3 h-4 w-4 text-red-700"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <svg
-                className="mr-3 h-4 w-4 text-red-700"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              Sign out
-            </button>
-          </form>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+              />
+            </svg>
+            Sign out
+          </button>
         </div>
       )}
     </div>

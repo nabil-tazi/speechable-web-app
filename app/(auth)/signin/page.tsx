@@ -43,7 +43,7 @@ export default function SignInPage() {
       }
 
       if (data.user) {
-        router.push("/");
+        router.push("/library");
       }
     } catch (err) {
       console.error("Sign in error:", err);

@@ -1,12 +1,10 @@
-import { createClient } from "@/app/lib/supabase/client";
+import { supabase } from "@/app/lib/supabase";
 import type { UpdateUserProfileParams, UserProfile } from "./types";
 
 // Client-side functions only (for use in client components)
 export async function updateUserProfile(
   params: UpdateUserProfileParams
 ): Promise<UserProfile | null> {
-  const supabase = createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -31,8 +29,6 @@ export async function updateUserProfile(
 }
 
 export async function getUserProfileClient(): Promise<UserProfile | null> {
-  const supabase = createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
