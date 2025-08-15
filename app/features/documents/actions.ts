@@ -1,0 +1,179 @@
+"use server";
+
+import { createClient } from "@/app/lib/supabase/server";
+import type { Document } from "./types";
+
+// Server Action: Create a document
+export async function createDocumentAction(documentData: {
+  mime_type: string;
+  filename: string;
+  original_filename: string;
+  document_type: string;
+  raw_text?: string;
+  page_count?: number;
+  file_size?: number;
+  metadata?: Record<string, any>;
+}): Promise<{ data: Document | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    // Get current user from server-side session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .insert({
+        ...documentData,
+        user_id: user.id, // Add user_id automatically
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as Document, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to create document" };
+  }
+}
+
+// Server Action: Upload thumbnail
+export async function uploadDocumentThumbnailAction(
+  documentId: string,
+  thumbnailData: string | File
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    // Get current user
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: "User not authenticated" };
+    }
+
+    const filePath = `${user.id}/${documentId}.png`;
+    let uploadData: Buffer | File;
+    let contentType = "image/png";
+
+    if (typeof thumbnailData === "string") {
+      // Handle data URL
+      const base64Data = thumbnailData.split(",")[1];
+      uploadData = Buffer.from(base64Data, "base64");
+    } else {
+      // Handle File object - convert to buffer
+      const arrayBuffer = await thumbnailData.arrayBuffer();
+      uploadData = Buffer.from(arrayBuffer);
+      contentType = thumbnailData.type;
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from("document-thumbnails")
+      .upload(filePath, uploadData, {
+        contentType,
+        cacheControl: "3600",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    // Update document record
+    const { error: updateError } = await supabase
+      .from("documents")
+      .update({ thumbnail_path: filePath })
+      .eq("id", documentId)
+      .eq("user_id", user.id);
+
+    if (updateError) {
+      return { success: false, error: updateError.message };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: "Failed to upload thumbnail" };
+  }
+}
+
+// Server Action: Get user documents
+export async function getUserDocumentsAction(): Promise<{
+  data: Document[] | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("upload_date", { ascending: false });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as Document[], error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to get documents" };
+  }
+}
+
+// Server Action: Update a document
+export async function updateDocumentAction(
+  documentId: string,
+  updates: Partial<Omit<Document, "id" | "user_id" | "upload_date">>
+): Promise<{ data: Document | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    // Get current user from server-side session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", documentId)
+      .eq("user_id", user.id) // Security: only update own documents
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as Document, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to update document" };
+  }
+}

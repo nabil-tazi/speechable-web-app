@@ -1,3 +1,4 @@
+@import url("./satoshi.css");
 @import "tailwindcss";
 
 :root {
@@ -10,6 +11,19 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Add Satoshi font families */
+  --font-satoshi: Satoshi-Variable, sans-serif;
+  --font-satoshi-light: Satoshi-Light, sans-serif;
+  --font-satoshi-regular: Satoshi-Regular, sans-serif;
+  --font-satoshi-medium: Satoshi-Medium, sans-serif;
+  --font-satoshi-bold: Satoshi-Bold, sans-serif;
+  --font-satoshi-black: Satoshi-Black, sans-serif;
+  --font-satoshi-variable: Satoshi-Variable, sans-serif;
+  --font-satoshi-variable-italic: Satoshi-VariableItalic, sans-serif;
+
+  --color-brand-primary: #fc9b46;
+  --color-brand-secondary: #46a7fc;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +36,5 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-satoshi);
 }

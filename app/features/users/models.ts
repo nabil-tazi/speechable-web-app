@@ -1,7 +1,6 @@
 import { createClient } from "@/app/lib/supabase/server";
 import type { UserProfile } from "./types";
 
-// Server-side functions only - do not import in client components
 export async function getUserProfile(
   userId: string
 ): Promise<UserProfile | null> {
