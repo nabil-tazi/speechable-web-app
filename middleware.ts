@@ -29,29 +29,26 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Get the current user
+  // IMPORTANT: This refreshes the session
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Define your protected and public routes
   const protectedPaths = ["/library", "/profile", "/admin", "/settings"];
-  const authPaths = ["/signin", "/signup", "/auth"];
-
+  const authPaths = ["/login", "/signup", "/auth"];
   const pathname = request.nextUrl.pathname;
+
   const isProtectedPath = protectedPaths.some((path) =>
     pathname.startsWith(path)
   );
   const isAuthPath = authPaths.some((path) => pathname.startsWith(path));
 
-  // If user is not authenticated and trying to access protected route
   if (isProtectedPath && !user) {
-    const loginUrl = new URL("/signin", request.url);
+    const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirectTo", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // If user is authenticated and trying to access auth routes, redirect to dashboard
   if (isAuthPath && user) {
     return NextResponse.redirect(new URL("/library", request.url));
   }
@@ -65,13 +62,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - api routes (optional, remove if you want to protect API routes too)
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -226,7 +226,7 @@ export async function createAudioSegmentAction(
     const filePath = `${user.id}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("version-audio")
+      .from("audio-segments")
       .upload(filePath, audioFile, {
         cacheControl: "3600",
         upsert: true,

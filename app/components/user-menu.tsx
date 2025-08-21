@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { useAuth } from "../features/users/hooks/use-auth";
 
 interface UserProfile {
@@ -14,7 +14,7 @@ interface UserProfile {
 }
 
 interface UserMenuProps {
-  user: User;
+  user: User | null;
   userProfile: UserProfile | null;
 }
 
@@ -40,7 +40,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
     if (userProfile?.profile_image_url) {
       return userProfile.profile_image_url;
     }
-    if (user.user_metadata?.avatar_url) {
+    if (user?.user_metadata?.avatar_url) {
       return user.user_metadata.avatar_url;
     }
     return null;
@@ -48,12 +48,12 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
 
   const getDisplayName = () => {
     return (
-      userProfile?.display_name || user.user_metadata?.full_name || user.email
+      userProfile?.display_name || user?.user_metadata?.full_name || user?.email
     );
   };
 
   const getInitials = () => {
-    const name = userProfile?.display_name || user.user_metadata?.full_name;
+    const name = userProfile?.display_name || user?.user_metadata?.full_name;
     if (name) {
       return name
         .split(" ")
@@ -62,7 +62,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
         .toUpperCase()
         .slice(0, 2);
     }
-    return user.email?.charAt(0).toUpperCase() || "U";
+    return user?.email?.charAt(0).toUpperCase() || "U";
   };
 
   const avatarUrl = getAvatarUrl();
@@ -85,7 +85,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
             alt={displayName}
           />
         ) : (
-          <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-medium border-2 border-gray-200">
+          <div className="h-8 w-8 rounded-full bg-brand-primary flex items-center justify-center text-white text-xs font-medium border-2 border-gray-200">
             {initials}
           </div>
         )}
@@ -121,7 +121,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
                   alt={displayName}
                 />
               ) : (
-                <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                <div className="h-10 w-10 rounded-full bg-brand-primary flex items-center justify-center text-white text-sm font-medium">
                   {initials}
                 </div>
               )}
@@ -129,15 +129,9 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
                 <p className="text-sm font-medium text-gray-900 truncate">
                   {displayName}
                 </p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                <p className="text-xs text-gray-500 truncate">{user?.email}</p>
               </div>
             </div>
-
-            {!userProfile?.display_name && (
-              <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                Complete your profile setup
-              </div>
-            )}
           </div>
 
           {/* Menu Items */}

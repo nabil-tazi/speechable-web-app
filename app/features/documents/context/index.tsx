@@ -5,21 +5,24 @@ import {
   useContext,
   useReducer,
   useEffect,
+  useRef,
   ReactNode,
 } from "react";
-import type { Document } from "../types";
+import type { Document, DocumentWithVersions } from "../types";
 import {
   createDocumentAction,
   uploadDocumentThumbnailAction,
   getUserDocumentsAction,
+  getUserDocumentsWithVersionsAction,
 } from "../actions";
 import {
   documentsReducer,
   type DocumentsAction,
   type DocumentsState,
 } from "./reducer";
-import { supabase } from "@/app/lib/supabase";
+import { createClient } from "@/app/lib/supabase/client";
 
+const supabase = createClient();
 // Initial State
 const emptyState: DocumentsState = {
   documents: [],
@@ -42,7 +45,11 @@ interface DocumentsActions {
     page_count?: number;
     file_size?: number;
     metadata?: Record<string, any>;
-  }) => Promise<{ success: boolean; document?: Document; error?: string }>;
+  }) => Promise<{
+    success: boolean;
+    document?: DocumentWithVersions;
+    error?: string;
+  }>;
 
   uploadThumbnail: (
     documentId: string,
@@ -71,19 +78,22 @@ interface DocumentsProviderProps {
 // Provider Component
 export function DocumentsProvider({ children }: DocumentsProviderProps) {
   const [state, dispatch] = useReducer(documentsReducer, emptyState);
+  const hasLoadedDocuments = useRef(false);
+  const currentUserId = useRef<string | null>(null);
 
-  // Load initial documents
+  // Load initial documents WITH versions
   async function loadDocuments() {
     try {
       dispatch({ type: "SET_LOADING", payload: true });
-      console.log("loading documents");
-      const { data, error } = await getUserDocumentsAction();
+      console.log("loading documents with versions");
+      const { data, error } = await getUserDocumentsWithVersionsAction();
       console.log(data);
 
       if (error) {
         dispatch({ type: "SET_ERROR", payload: error });
       } else {
         dispatch({ type: "SET_DOCUMENTS", payload: data || [] });
+        hasLoadedDocuments.current = true;
       }
     } catch (error) {
       dispatch({ type: "SET_ERROR", payload: "Failed to load documents" });
@@ -113,8 +123,13 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
       }
 
       if (data) {
-        dispatch({ type: "ADD_DOCUMENT", payload: data });
-        return { success: true, document: data };
+        // Convert Document to DocumentWithVersions by adding empty versions array
+        const documentWithVersions: DocumentWithVersions = {
+          ...data,
+          versions: [],
+        };
+        dispatch({ type: "ADD_DOCUMENT", payload: documentWithVersions });
+        return { success: true, document: documentWithVersions };
       }
 
       return { success: false, error: "Unknown error occurred" };
@@ -166,6 +181,7 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
   };
 
   const refreshDocuments = async () => {
+    hasLoadedDocuments.current = false;
     await loadDocuments();
   };
 
@@ -186,11 +202,27 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session?.user) {
-        await loadDocuments();
-      } else if (event === "SIGNED_OUT") {
-        dispatch({ type: "CLEAR_DOCUMENTS" });
-      }
+      // Timeout recommended in Supabase doc
+      // Allows other supabase function to run before this one
+      setTimeout(async () => {
+        const newUserId = session?.user?.id || null;
+
+        if (event === "SIGNED_IN" && session?.user) {
+          // Only reload if it's a different user or we haven't loaded documents yet
+          if (
+            currentUserId.current !== newUserId ||
+            !hasLoadedDocuments.current
+          ) {
+            currentUserId.current = newUserId;
+            hasLoadedDocuments.current = false;
+            await loadDocuments();
+          }
+        } else if (event === "SIGNED_OUT") {
+          currentUserId.current = null;
+          hasLoadedDocuments.current = false;
+          dispatch({ type: "CLEAR_DOCUMENTS" });
+        }
+      }, 0);
     });
 
     // Load initial documents if user is already signed in
@@ -198,7 +230,9 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       if (session?.user) {
+        currentUserId.current = session.user.id;
         await loadDocuments();
       } else {
         dispatch({ type: "SET_LOADING", payload: false });
@@ -237,9 +271,15 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
 
             switch (payload.eventType) {
               case "INSERT":
+                // Cast to unknown first, then to DocumentWithVersions
+                const documentData = payload.new as unknown as Document;
+                const newDocument: DocumentWithVersions = {
+                  ...documentData,
+                  versions: [],
+                };
                 dispatch({
                   type: "ADD_DOCUMENT",
-                  payload: payload.new as Document,
+                  payload: newDocument,
                 });
                 break;
               case "UPDATE":
@@ -247,7 +287,7 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
                   type: "UPDATE_DOCUMENT",
                   payload: {
                     id: payload.new.id,
-                    updates: payload.new as Partial<Document>,
+                    updates: payload.new as Partial<DocumentWithVersions>,
                   },
                 });
                 break;

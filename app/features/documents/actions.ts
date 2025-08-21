@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/app/lib/supabase/server";
-import type { Document } from "./types";
+import type { Document, DocumentVersion, DocumentWithVersions } from "./types";
 
 // Server Action: Create a document
 export async function createDocumentAction(documentData: {
@@ -40,7 +40,7 @@ export async function createDocumentAction(documentData: {
       return { data: null, error: error.message };
     }
 
-    return { data: data as Document, error: null };
+    return { data: data as DocumentWithVersions, error: null };
   } catch (error) {
     return { data: null, error: "Failed to create document" };
   }
@@ -107,7 +107,7 @@ export async function uploadDocumentThumbnailAction(
   }
 }
 
-// Server Action: Get user documents
+// Server Action: Get user documents (simple)
 export async function getUserDocumentsAction(): Promise<{
   data: Document[] | null;
   error: string | null;
@@ -136,6 +136,43 @@ export async function getUserDocumentsAction(): Promise<{
     return { data: data as Document[], error: null };
   } catch (error) {
     return { data: null, error: "Failed to get documents" };
+  }
+}
+
+// Server Action: Get user documents WITH versions
+export async function getUserDocumentsWithVersionsAction(): Promise<{
+  data: DocumentWithVersions[] | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select(
+        `
+        *,
+        versions:document_versions(*)
+      `
+      )
+      .eq("user_id", user.id)
+      .order("upload_date", { ascending: false });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentWithVersions[], error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to get documents with versions" };
   }
 }
 
@@ -175,5 +212,53 @@ export async function updateDocumentAction(
     return { data: data as Document, error: null };
   } catch (error) {
     return { data: null, error: "Failed to update document" };
+  }
+}
+
+// Server Action: Create a document version
+export async function createDocumentVersionAction(
+  versionData: Omit<DocumentVersion, "id" | "created_at">
+): Promise<{ data: DocumentVersion | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    // Get current user from server-side session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Check document ownership
+    const { data: document, error: docError } = await supabase
+      .from("documents")
+      .select("user_id")
+      .eq("id", versionData.document_id)
+      .single();
+
+    if (docError) {
+      return { data: null, error: "Failed to verify document ownership" };
+    }
+
+    if (!document || document.user_id !== user.id) {
+      return { data: null, error: "Document not found or access denied" };
+    }
+
+    const { data, error } = await supabase
+      .from("document_versions")
+      .insert(versionData)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentVersion, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to create document version" };
   }
 }

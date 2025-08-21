@@ -21,6 +21,7 @@ export interface DocumentVersion {
   id: string;
   document_id: string;
   version_name?: string;
+  language?: string;
   processed_text: string;
   processing_type: string;
   processing_metadata?: Record<string, any>;
@@ -42,4 +43,24 @@ export interface DocumentWithVersions extends Document {
 
 export interface DocumentVersionWithAudio extends DocumentVersion {
   audio_versions: AudioVersionWithSegments[];
+}
+
+export interface SpeechObject {
+  text: string;
+  reader_id: string;
+}
+
+export interface SectionContent {
+  speech: SpeechObject[];
+}
+
+export interface ProcessedSection {
+  title: string;
+  content: SectionContent;
+}
+
+export interface ProcessedText {
+  processed_text: {
+    sections: ProcessedSection[];
+  };
 }

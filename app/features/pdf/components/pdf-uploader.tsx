@@ -11,9 +11,18 @@ import { processPDFFile } from "../utils/pdf-processing";
 
 import {
   createDocumentAction,
+  createDocumentVersionAction,
   updateDocumentAction,
   uploadDocumentThumbnailAction,
 } from "../../documents/actions";
+import {
+  createAudioSegmentAction,
+  createAudioVersionAction,
+  deleteAudioVersionAction,
+} from "../../audio/actions";
+import { getAudioDuration, getAudioDurationAccurate } from "../../audio/utils";
+import { ProcessedText } from "../../documents/types";
+import { Button } from "@/components/ui/button";
 
 // Add new types for document classification
 type DocumentClassification = {
@@ -37,20 +46,34 @@ export default function PDFUploader({ userId }: Props) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isClassifying, setIsClassifying] = useState(false);
   const [isCleaningText, setIsCleaningText] = useState(false);
+  const [customText, setCustomText] = useState("");
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(
     null
   );
+  const [currentDocumentVersionId, setCurrentDocumentVersionId] = useState<
+    string | null
+  >(null);
+  const [currentAudioVersionId, setCurrentAudioVersionId] = useState<
+    string | null
+  >(null);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [parsedPDF, setParsedPDF] = useState<ParsedPDF | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [classification, setClassification] =
     useState<DocumentClassification | null>(null);
-  const [cleanedText, setCleanedText] = useState<string | null>(null);
+  const [cleanedText, setCleanedText] = useState<ProcessedText | null>(null);
   const [preprocessingLevel, setPreprocessingLevel] =
-    useState<PreprocessingLevel>(1);
+    useState<PreprocessingLevel>(0);
   const [processingMetadata, setProcessingMetadata] =
     useState<ProcessingMetadata | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  const [sectionAudioUrls, setSectionAudioUrls] = useState<
+    Record<number, string>
+  >({});
+  const [generatingAudioSections, setGeneratingAudioSections] = useState<
+    Set<number>
+  >(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -178,7 +201,7 @@ export default function PDFUploader({ userId }: Props) {
     setError(null);
 
     try {
-      const response = await fetch("/api/openai", {
+      const response = await fetch("/api/openai-advanced", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -193,7 +216,7 @@ export default function PDFUploader({ userId }: Props) {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
 
-        // Handle specific error codes
+        // Handle specific error codes (same as original)
         if (
           response.status === 502 ||
           response.status === 503 ||
@@ -235,10 +258,14 @@ export default function PDFUploader({ userId }: Props) {
       }
 
       const data = await response.json();
-      setCleanedText(data.message);
-      setProcessingMetadata(data.metadata);
-
       setError(null);
+
+      console.log(data.message);
+
+      return {
+        cleanedText: data.message,
+        metadata: data.metadata,
+      };
     } catch (err) {
       console.error("Error processing text:", err);
 
@@ -249,50 +276,393 @@ export default function PDFUploader({ userId }: Props) {
       } else {
         setError("Failed to process text with AI. Please try again.");
       }
+
+      throw err; // Re-throw so startProcessing can handle it
     } finally {
       setIsCleaningText(false);
     }
   }
 
-  const generateAudio = async (customText?: string) => {
-    const textToConvert = customText || cleanedText;
-    if (!textToConvert) return;
+  // async function generateAudio(customText?: string) {
+  //   if (!currentDocumentVersionId) {
+  //     setError("No document version available for audio generation");
+  //     return;
+  //   }
 
-    setIsGeneratingAudio(true);
+  //   setIsGeneratingAudio(true);
+  //   setError(null);
+
+  //   try {
+  //     let requestBody: any;
+
+  //     if (customText) {
+  //       // Handle custom text by converting to ProcessedText structure
+  //       const processedText: ProcessedText = {
+  //         processed_text: {
+  //           sections: [
+  //             {
+  //               title: "Custom Text",
+  //               content: {
+  //                 speech: [
+  //                   {
+  //                     text: customText,
+  //                     reader_id: "default",
+  //                   },
+  //                 ],
+  //               },
+  //             },
+  //           ],
+  //         },
+  //       };
+
+  //       requestBody = {
+  //         processedText: processedText,
+  //         sectionIndex: 3,
+  //         voice: "onyx",
+  //         response_format: "mp3",
+  //         word_timestamps: true,
+  //         maxCharsPerSection: 1000,
+  //         maxCharsPerSpeech: 300,
+  //         mergeSectionSpeeches: true,
+  //       };
+  //     } else if (
+  //       cleanedText &&
+  //       typeof cleanedText === "object" &&
+  //       cleanedText.processed_text?.sections
+  //     ) {
+  //       // Use structured content - generate audio for first section only
+  //       requestBody = {
+  //         processedText: cleanedText,
+  //         sectionIndex: 3,
+  //         voice: "onyx",
+  //         response_format: "mp3",
+  //         word_timestamps: true,
+  //         maxCharsPerSection: 1000,
+  //         maxCharsPerSpeech: 300,
+  //         mergeSectionSpeeches: true,
+  //       };
+  //     } else {
+  //       setError("No text available for audio generation");
+  //       return;
+  //     }
+
+  //     // Before making the API call, check the content:
+  //     if (cleanedText?.processed_text?.sections?.[0]?.content?.speech) {
+  //       const firstSection = cleanedText.processed_text.sections[0];
+  //       const totalText = firstSection.content.speech
+  //         .map((s) => s.text)
+  //         .join(" ");
+  //       console.log("Text to process:", totalText.substring(0, 100) + "...");
+  //       console.log("Text length:", totalText.length);
+
+  //       if (!totalText.trim()) {
+  //         setError("First section contains no text content");
+  //         return;
+  //       }
+  //     }
+
+  //     // Call the new structured audio API
+  //     const response = await fetch("/api/lemonfox-structured", {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //       body: JSON.stringify(requestBody),
+  //     });
+
+  //     if (!response.ok) {
+  //       const errorData = await response.json().catch(() => ({}));
+  //       throw new Error(errorData.error || "Failed to generate audio");
+  //     }
+
+  //     // Always JSON response now
+  //     const responseData = await response.json();
+
+  //     if (!responseData.segments || responseData.segments.length === 0) {
+  //       throw new Error("No audio segments generated");
+  //     }
+
+  //     // Use the first segment
+  //     const firstSegment = responseData.segments[0];
+  //     const audioBuffer = Uint8Array.from(atob(firstSegment.audioBase64), (c) =>
+  //       c.charCodeAt(0)
+  //     );
+  //     const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+
+  //     // Calculate duration
+  //     const audioDuration = await getAudioDurationAccurate(audioBlob);
+
+  //     if (!audioDuration || !isFinite(audioDuration) || audioDuration <= 0) {
+  //       throw new Error("Invalid audio duration calculated");
+  //     }
+
+  //     console.log(
+  //       `Calculated audio duration: ${audioDuration.toFixed(2)} seconds`
+  //     );
+
+  //     // Create AudioVersion
+  //     const { data: audioVersion, error: versionError } =
+  //       await createAudioVersionAction({
+  //         document_version_id: currentDocumentVersionId,
+  //         tts_model: "lemonfox",
+  //         voice_name: "onyx",
+  //         speed: 1.0,
+  //       });
+
+  //     if (versionError || !audioVersion) {
+  //       throw new Error(versionError || "Failed to create audio version");
+  //     }
+
+  //     // Convert to File for upload
+  //     const audioFile = new File(
+  //       [audioBlob],
+  //       `audio-segment-${firstSegment.sectionIndex + 1}.mp3`,
+  //       {
+  //         type: "audio/mpeg",
+  //       }
+  //     );
+
+  //     // Create AudioSegment with word timestamps
+  //     const { data: audioSegment, error: segmentError } =
+  //       await createAudioSegmentAction(
+  //         {
+  //           audio_version_id: audioVersion.id,
+  //           segment_number: 1,
+  //           section_title: firstSegment.sectionTitle,
+  //           text_start_index: 0,
+  //           text_end_index: firstSegment.textLength,
+  //           audio_duration: Math.round(audioDuration * 100) / 100,
+  //           word_timestamps: firstSegment.word_timestamps || [],
+  //         },
+  //         audioFile
+  //       );
+
+  //     if (segmentError || !audioSegment) {
+  //       await deleteAudioVersionAction(audioVersion.id);
+  //       throw new Error(segmentError || "Failed to create audio segment");
+  //     }
+
+  //     // Create local URL for playback
+  //     const newAudioUrl = URL.createObjectURL(audioBlob);
+
+  //     if (audioUrl) {
+  //       URL.revokeObjectURL(audioUrl);
+  //     }
+
+  //     setAudioUrl(newAudioUrl);
+  //     setCurrentAudioVersionId(audioVersion.id);
+
+  //     console.log("Audio generated successfully:", {
+  //       sectionTitle: firstSegment.sectionTitle,
+  //       sectionIndex: firstSegment.sectionIndex,
+  //       audioDuration,
+  //       textLength: firstSegment.textLength,
+  //       hasWordTimestamps: !!firstSegment.word_timestamps,
+  //       totalSegments: responseData.totalSegments,
+  //     });
+  //   } catch (err) {
+  //     console.error("Error generating audio:", err);
+  //     setError(err instanceof Error ? err.message : "Failed to generate audio");
+  //   } finally {
+  //     setIsGeneratingAudio(false);
+  //   }
+  // }
+
+  async function generateAudioTest() {
+    console.log(customText);
+    const response = await fetch("/api/lemonfox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: customText, // Changed from processedText to input to match API
+        voice: "onyx",
+        response_format: "mp3",
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to generate audio");
+    }
+
+    // Get the audio data as ArrayBuffer (not JSON)
+    const audioBuffer = await response.arrayBuffer();
+
+    // Create blob and URL
+    const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Create download link and trigger download
+    const downloadLink = document.createElement("a");
+    downloadLink.href = audioUrl;
+    downloadLink.download = "speech.mp3"; // Set filename
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+
+    // Clean up the object URL to free memory
+    URL.revokeObjectURL(audioUrl);
+  }
+
+  const generateAudioForSection = async (
+    sectionIndex: number,
+    existingAudioVersionId?: string
+  ) => {
+    if (
+      !cleanedText ||
+      !isStructuredContent(cleanedText) ||
+      !currentDocumentVersionId
+    ) {
+      setError("Missing requirements for audio generation");
+      return;
+    }
+
+    setGeneratingAudioSections((prev) => new Set(prev).add(sectionIndex));
     setError(null);
 
     try {
-      const response = await fetch("/api/lemonfox", {
+      const response = await fetch("/api/lemonfox-structured", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: textToConvert.slice(0, 1000),
+          processedText: cleanedText,
+          sectionIndex: sectionIndex,
           voice: "onyx",
           response_format: "mp3",
+          word_timestamps: true,
+          maxCharsPerSection: 1000,
+          maxCharsPerSpeech: 300,
+          mergeSectionSpeeches: true,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "Failed to generate audio");
       }
 
-      const audioBlob = await response.blob();
-      const newAudioUrl = URL.createObjectURL(audioBlob);
+      const responseData = await response.json();
+      if (responseData.segments?.[0]) {
+        const firstSegment = responseData.segments[0];
+        const audioBuffer = Uint8Array.from(
+          atob(firstSegment.audioBase64),
+          (c) => c.charCodeAt(0)
+        );
+        const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
 
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
+        const audioDuration = await getAudioDurationAccurate(audioBlob);
+
+        // Use provided audio version ID or create a new one
+        let audioVersionId = existingAudioVersionId || currentAudioVersionId;
+
+        if (!audioVersionId) {
+          const { data: newAudioVersion, error: versionError } =
+            await createAudioVersionAction({
+              document_version_id: currentDocumentVersionId,
+              tts_model: "lemonfox",
+              voice_name: "onyx",
+              speed: 1.0,
+            });
+
+          if (versionError || !newAudioVersion) {
+            throw new Error(versionError || "Failed to create audio version");
+          }
+
+          audioVersionId = newAudioVersion.id;
+          setCurrentAudioVersionId(newAudioVersion.id);
+        }
+
+        const audioFile = new File(
+          [audioBlob],
+          `audio-section-${sectionIndex + 1}.mp3`,
+          { type: "audio/mpeg" }
+        );
+
+        const { data: audioSegment, error: segmentError } =
+          await createAudioSegmentAction(
+            {
+              audio_version_id: audioVersionId,
+              segment_number: sectionIndex + 1,
+              section_title: firstSegment.sectionTitle,
+              text_start_index: 0,
+              text_end_index: firstSegment.textLength,
+              audio_duration: Math.round(audioDuration * 100) / 100,
+              word_timestamps: firstSegment.word_timestamps || [],
+            },
+            audioFile
+          );
+
+        if (segmentError || !audioSegment) {
+          throw new Error(segmentError || "Failed to create audio segment");
+        }
+
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        if (sectionAudioUrls[sectionIndex]) {
+          URL.revokeObjectURL(sectionAudioUrls[sectionIndex]);
+        }
+
+        setSectionAudioUrls((prev) => ({
+          ...prev,
+          [sectionIndex]: audioUrl,
+        }));
+
+        console.log(`Audio generated for section ${sectionIndex}:`, {
+          sectionTitle: firstSegment.sectionTitle,
+          audioDuration,
+          audioVersionId,
+          segmentNumber: sectionIndex + 1,
+        });
       }
-
-      setAudioUrl(newAudioUrl);
     } catch (err) {
-      console.error("Error generating audio:", err);
+      console.error(`Error generating audio for section ${sectionIndex}:`, err);
       setError(err instanceof Error ? err.message : "Failed to generate audio");
     } finally {
-      setIsGeneratingAudio(false);
+      setGeneratingAudioSections((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(sectionIndex);
+        return newSet;
+      });
     }
+  };
+
+  const generateAllAudio = async () => {
+    if (!cleanedText || !isStructuredContent(cleanedText)) {
+      setError("No structured content available for audio generation");
+      return;
+    }
+
+    if (!currentDocumentVersionId) {
+      setError("No document version selected audio generation");
+      return;
+    }
+
+    // Create ONE audio version for all sections
+    const { data: audioVersion, error: versionError } =
+      await createAudioVersionAction({
+        document_version_id: currentDocumentVersionId,
+        tts_model: "lemonfox",
+        voice_name: "onyx",
+        speed: 1.0,
+      });
+
+    if (versionError || !audioVersion) {
+      setError(versionError || "Failed to create audio version");
+      return;
+    }
+
+    setCurrentAudioVersionId(audioVersion.id);
+    const totalSections = cleanedText.processed_text.sections.length;
+
+    // Generate audio for each section using the same audio version
+    for (let i = 0; i < totalSections; i++) {
+      await generateAudioForSection(i, audioVersion.id); // Pass the audio version ID
+    }
+  };
+  const isStructuredContent = (content: any): content is ProcessedText => {
+    return (
+      content && typeof content === "object" && content.processed_text?.sections
+    );
   };
 
   const processPDF = async (file: File) => {
@@ -304,10 +674,10 @@ export default function PDFUploader({ userId }: Props) {
     setCleanedText(null);
     setProcessingMetadata(null);
 
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-    }
-    setAudioUrl(null);
+    // if (audioUrl) {
+    //   URL.revokeObjectURL(audioUrl);
+    // }
+    // setAudioUrl(null);
 
     try {
       // Generate thumbnail and process PDF in parallel
@@ -374,7 +744,10 @@ export default function PDFUploader({ userId }: Props) {
       // Upload thumbnail to Supabase Storage (only if thumbnail was generated)
       if (thumbnailDataUrl) {
         console.log("About to upload thumbnail for document:", doc.id);
-        console.log("Thumbnail data URL length:", thumbnailDataUrl.length);
+        console.log(
+          "Thumbnail data URL length:",
+          formatBytes(base64FileSize(thumbnailDataUrl))
+        );
 
         const { success, error: thumbError } =
           await uploadDocumentThumbnailAction(doc.id, thumbnailDataUrl);
@@ -430,18 +803,53 @@ export default function PDFUploader({ userId }: Props) {
     setProcessingMetadata(null);
     setError(null);
 
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-      setAudioUrl(null);
-    }
+    // Clean up all section audio URLs
+    Object.values(sectionAudioUrls).forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    setSectionAudioUrls({});
+    setGeneratingAudioSections(new Set());
   };
 
-  const startProcessing = () => {
-    if (parsedPDF?.text) {
-      cleanTextWithOpenAI(parsedPDF.text);
+  const startProcessing = async () => {
+    if (!parsedPDF?.text || !currentDocumentId) {
+      setError("No document or text available for processing");
+      return;
+    }
+
+    try {
+      // Clean the text with OpenAI and get the structured result
+      const processedContent = await cleanTextWithOpenAI(parsedPDF.text);
+
+      if (processedContent) {
+        // Store the structured content directly
+        setCleanedText(processedContent.cleanedText); // This should now be the ProcessedText object
+        setProcessingMetadata(processedContent.metadata);
+
+        // Create document version with the structured content
+        const { data: version, error: versionError } =
+          await createDocumentVersionAction({
+            document_id: currentDocumentId,
+            version_name: `Processed - Level ${preprocessingLevel}`,
+            processed_text: JSON.stringify(processedContent.cleanedText), // Store as JSON string in DB
+            processing_type: preprocessingLevel.toString(),
+            processing_metadata: processedContent.metadata || undefined,
+          });
+
+        if (versionError) {
+          console.error("Failed to create document version:", versionError);
+          setError(
+            `Text processed successfully, but failed to save version: ${versionError}`
+          );
+        } else if (version) {
+          setCurrentDocumentVersionId(version.id);
+        }
+      }
+    } catch (error) {
+      console.error("Error in processing workflow:", error);
+      setError("Failed to process document. Please try again.");
     }
   };
-
   const reprocessText = () => {
     if (parsedPDF?.text) {
       cleanTextWithOpenAI(parsedPDF.text);
@@ -449,11 +857,35 @@ export default function PDFUploader({ userId }: Props) {
   };
 
   const handleTextUpdate = (newText: string) => {
-    setCleanedText(newText);
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-      setAudioUrl(null);
-    }
+    // Convert string back to ProcessedText structure or handle appropriately
+    // For now, you might want to store the edited text differently
+    // or convert it back to the structured format
+
+    // Simple approach: store as a single section
+    const processedText: ProcessedText = {
+      processed_text: {
+        sections: [
+          {
+            title: "Edited Content",
+            content: {
+              speech: [
+                {
+                  text: newText,
+                  reader_id: "default",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    setCleanedText(processedText);
+
+    // if (audioUrl) {
+    //   URL.revokeObjectURL(audioUrl);
+    //   setAudioUrl(null);
+    // }
   };
 
   return (
@@ -507,6 +939,17 @@ export default function PDFUploader({ userId }: Props) {
           </>
         )}
 
+        <div className={`border rounded-lg p-4 `}>
+          <textarea
+            value={customText}
+            onChange={(e) => setCustomText(e.target.value)}
+            className="w-full h-64 p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            placeholder="Edit your text here..."
+            spellCheck={false}
+          />
+          <Button onClick={() => generateAudioTest()}>test</Button>
+        </div>
+
         {/* Results Display */}
         {parsedPDF && cleanedText && (
           <div className="p-6">
@@ -515,16 +958,37 @@ export default function PDFUploader({ userId }: Props) {
               cleanedText={cleanedText}
               processingMetadata={processingMetadata}
               isCleaningText={isCleaningText}
-              audioUrl={audioUrl}
-              isGeneratingAudio={isGeneratingAudio}
               error={error}
               onProcessText={startProcessing}
-              onGenerateAudio={generateAudio}
               onTextUpdate={handleTextUpdate}
+              // New section-based props
+              sectionAudioUrls={sectionAudioUrls}
+              generatingAudioSections={generatingAudioSections}
+              onGenerateAudioForSection={generateAudioForSection}
+              onGenerateAllAudio={generateAllAudio}
             />
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function formatBytes(bytes: number, decimals = 2): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+}
+
+function base64FileSize(base64String: string): number {
+  // Remove metadata part of the data URL
+  const base64 = base64String.split(",")[1];
+  // Calculate size
+  return (
+    (base64.length * 3) / 4 -
+    (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
   );
 }
