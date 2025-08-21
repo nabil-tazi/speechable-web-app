@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import {
   PREPROCESSING_LEVELS,
   PreprocessingLevel,
+  PROCESSING_ARRAY,
+  ProcessingType,
 } from "@/app/features/pdf/types";
 import { Tooltip } from "react-tooltip";
 
@@ -23,7 +25,7 @@ export default function ProcessingLevelSelector({
   handleProcessWithAi,
 }: ProcessingLevelSelectorProps) {
   // Processing is enabled when level > 0 (not Raw)
-  const processingEnabled = level > 0;
+  const processingEnabled = level >= 0;
 
   const handleProcessingToggle = () => {
     if (processingEnabled) {
@@ -35,15 +37,17 @@ export default function ProcessingLevelSelector({
     }
   };
 
-  const currentLevel = PREPROCESSING_LEVELS[level];
+  const currentLevel = PROCESSING_ARRAY[level];
+
+  // PREPROCESSING_LEVELS[level];
 
   // Map levels 1-4 to display positions 0-3 for the segmented selector
-  const displayLevel = level > 0 ? level - 1 : 0;
+  // const displayLevel = level > 0 ? level - 1 : 0;
 
   // Only show processed levels (1-4) in the segmented selector
-  const processedLevels = [1, 2, 3, 4].map((lvl) => ({
+  const processedLevels = [0, 1, 2, 3].map((lvl) => ({
     level: lvl,
-    data: PREPROCESSING_LEVELS[lvl as PreprocessingLevel],
+    data: PROCESSING_ARRAY[lvl],
   }));
 
   return (
@@ -102,9 +106,9 @@ export default function ProcessingLevelSelector({
                   <div
                     className="absolute inset-0 bg-brand-secondary rounded-full transition-all duration-300 ease-out shadow-sm"
                     style={{
-                      left: `${(displayLevel / 3) * 100}%`,
+                      left: `${(level / 3) * 100}%`,
                       width: "25%",
-                      transform: `translateX(-${(displayLevel / 3) * 100}%)`,
+                      transform: `translateX(-${(level / 3) * 100}%)`,
                     }}
                   />
 

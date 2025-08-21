@@ -1,6 +1,8 @@
 "use client";
-import { supabase } from "@/app/lib/supabase";
+import { createClient } from "@/app/lib/supabase/client";
 import { useRouter } from "next/navigation";
+
+const supabase = createClient();
 
 export function useAuth() {
   const router = useRouter();

@@ -5,10 +5,12 @@ export async function POST(req: NextRequest) {
     input,
     voice = "nicole",
     response_format = "mp3",
+    word_timestamps = false,
   }: {
     input: string;
     voice?: string;
     response_format?: string;
+    word_timestamps?: boolean;
   } = await req.json();
 
   if (typeof input !== "string") {
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
         input,
         voice,
         response_format,
+        word_timestamps,
       }),
     });
 

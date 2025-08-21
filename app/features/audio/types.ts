@@ -1,5 +1,11 @@
 // features/audio/types.ts
 
+export interface WordTimestamp {
+  end: number;
+  start: number;
+  word: string;
+}
+
 export interface AudioVersion {
   id: string;
   document_version_id: string;
@@ -21,6 +27,7 @@ export interface AudioSegment {
   audio_path: string;
   audio_duration?: number;
   audio_file_size: number;
+  word_timestamps?: WordTimestamp[];
   created_at: string;
 }
 

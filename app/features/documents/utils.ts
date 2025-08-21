@@ -32,3 +32,20 @@ export function formatBytes(bytes: number): string {
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
+
+export function formatProcessingType(processingLevel: string) {
+  switch (processingLevel) {
+    case "0":
+      return "raw";
+    case "1":
+      return "faithful";
+    case "2":
+      return "natural";
+    case "3":
+      return "insights";
+    case "4":
+      return "conversational";
+    default:
+      return "";
+  }
+}

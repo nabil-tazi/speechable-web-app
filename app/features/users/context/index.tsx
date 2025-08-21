@@ -1,12 +1,13 @@
 "use client";
 import { createContext, useContext, useEffect, useReducer } from "react";
-
 import type { UserProfile } from "../types";
 import { userReducer, type Action } from "./reducer";
 import { User } from "@supabase/supabase-js";
-import { supabase } from "@/app/lib/supabase";
 import { getUserProfileAction } from "../actions";
 import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/app/lib/supabase/client";
+
+const supabase = createClient();
 
 export interface AuthState {
   userProfile: UserProfile | null;
@@ -54,37 +55,19 @@ export function UserProvider({ children }: UserContextProviderProps) {
   }
 
   useEffect(() => {
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id);
+    let isMounted = true;
 
-      if (event === "SIGNED_IN" && session?.user) {
-        await loadUserProfile(session.user);
-
-        // Redirect to /library only if on root path
-        if (pathname === "/") {
-          router.push("/library");
-        }
-      } else if (event === "SIGNED_OUT") {
-        dispatch({ type: "CLEAR_USER" });
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [pathname]);
-
-  useEffect(() => {
-    // Get initial session
     async function getInitialSession() {
       try {
         const {
           data: { session },
           error,
         } = await supabase.auth.getSession();
+
+        console.log("SESSION");
+        console.log(session);
+
+        if (!isMounted) return;
 
         if (error) {
           console.error("Error getting session:", error);
@@ -95,12 +78,18 @@ export function UserProvider({ children }: UserContextProviderProps) {
 
         if (session?.user) {
           await loadUserProfile(session.user);
+
+          // Redirect if on root
+          if (pathname === "/") {
+            router.push("/library");
+          }
         } else {
           dispatch({ type: "CLEAR_USER" });
           dispatch({ type: "SET_LOADING", payload: false });
         }
       } catch (error) {
         console.error("Error in getInitialSession:", error);
+        if (!isMounted) return;
         dispatch({
           type: "SET_ERROR",
           payload: "Failed to initialize session",
@@ -111,26 +100,34 @@ export function UserProvider({ children }: UserContextProviderProps) {
 
     getInitialSession();
 
-    // Listen for auth changes
+    // Single unified subscription
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id);
+      // Timeout recommended in Supabase doc
+      // Allows other supabase function to run before this one
+      setTimeout(async () => {
+        if (!isMounted) return;
 
-      if (event === "SIGNED_IN" && session?.user) {
-        await loadUserProfile(session.user);
-      } else if (event === "SIGNED_OUT") {
-        dispatch({ type: "CLEAR_USER" });
-      } else if (event === "TOKEN_REFRESHED" && session?.user) {
-        // Optionally refresh user profile on token refresh
-        await loadUserProfile(session.user);
-      }
+        if (event === "SIGNED_IN" && session?.user) {
+          await loadUserProfile(session.user);
+
+          if (pathname === "/") {
+            router.push("/library");
+          }
+        } else if (event === "SIGNED_OUT") {
+          dispatch({ type: "CLEAR_USER" });
+        } else if (event === "TOKEN_REFRESHED" && session?.user) {
+          await loadUserProfile(session.user);
+        }
+      }, 0);
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [pathname, router]);
 
   return (
     <UserStateContext.Provider value={state}>

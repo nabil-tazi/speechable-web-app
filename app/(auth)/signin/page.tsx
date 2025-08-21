@@ -1,9 +1,11 @@
 "use client";
 
-import { createClient } from "@/app/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/app/lib/supabase/client";
+
+const supabase = createClient();
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
@@ -13,7 +15,6 @@ export default function SignInPage() {
   const [resetEmailSent, setResetEmailSent] = useState(false);
 
   const router = useRouter();
-  const supabase = createClient();
 
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -26,6 +27,8 @@ export default function SignInPage() {
           email,
           password,
         });
+
+      console.log(data);
 
       if (signInError) {
         if (signInError.message.includes("Invalid login credentials")) {

@@ -7,7 +7,7 @@ export function getAudioUrl(audioPath: string): string {
   if (!audioPath) return "";
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  return `${supabaseUrl}/storage/v1/object/public/version-audio/${audioPath}`;
+  return `${supabaseUrl}/storage/v1/object/public/audio-segments/${audioPath}`;
 }
 
 /**
@@ -26,23 +26,23 @@ export function formatBytes(bytes: number): string {
 /**
  * Get audio duration from file (client-side)
  */
-export async function getAudioDuration(audioFile: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio();
+// export async function getAudioDuration(audioFile: File): Promise<number> {
+//   return new Promise((resolve, reject) => {
+//     const audio = new Audio();
 
-    audio.onloadedmetadata = () => {
-      resolve(audio.duration);
-      URL.revokeObjectURL(audio.src);
-    };
+//     audio.onloadedmetadata = () => {
+//       resolve(audio.duration);
+//       URL.revokeObjectURL(audio.src);
+//     };
 
-    audio.onerror = () => {
-      reject(new Error("Failed to load audio file"));
-      URL.revokeObjectURL(audio.src);
-    };
+//     audio.onerror = () => {
+//       reject(new Error("Failed to load audio file"));
+//       URL.revokeObjectURL(audio.src);
+//     };
 
-    audio.src = URL.createObjectURL(audioFile);
-  });
-}
+//     audio.src = URL.createObjectURL(audioFile);
+//   });
+// }
 
 /**
  * Convert seconds to human readable format (e.g., "2:34")
@@ -174,4 +174,47 @@ export function validateSegmentData(segmentData: {
     valid: errors.length === 0,
     errors,
   };
+}
+
+export const getAudioDuration = (audioBlob: Blob): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio();
+    const objectUrl = URL.createObjectURL(audioBlob);
+
+    audio.addEventListener("loadedmetadata", () => {
+      URL.revokeObjectURL(objectUrl); // Clean up
+      resolve(audio.duration);
+    });
+
+    audio.addEventListener("error", (e) => {
+      URL.revokeObjectURL(objectUrl); // Clean up
+      reject(new Error("Failed to load audio metadata"));
+    });
+
+    audio.src = objectUrl;
+  });
+};
+
+export async function getAudioDurationAccurate(blob: Blob): Promise<number> {
+  const audioContext = new (window.AudioContext ||
+    (window as any).webkitAudioContext)();
+
+  try {
+    // Convert blob to ArrayBuffer
+    const arrayBuffer = await blob.arrayBuffer();
+
+    // Decode the audio - this gives us the exact duration
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    // Duration in seconds with full precision
+    const duration = audioBuffer.duration;
+
+    return duration;
+  } catch (error) {
+    console.error("Error decoding audio:", error);
+    throw error;
+  } finally {
+    // Clean up audio context
+    await audioContext.close();
+  }
 }

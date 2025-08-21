@@ -1,8 +1,8 @@
-import type { Document } from "../types";
+import type { DocumentWithVersions } from "../types";
 
 // Document State Interface
 export interface DocumentsState {
-  documents: Document[];
+  documents: DocumentWithVersions[];
   loading: boolean;
   error: string | null;
   uploadingDocuments: Record<string, boolean>; // Track individual uploads
@@ -12,11 +12,11 @@ export interface DocumentsState {
 export type DocumentsAction =
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "SET_DOCUMENTS"; payload: Document[] }
-  | { type: "ADD_DOCUMENT"; payload: Document }
+  | { type: "SET_DOCUMENTS"; payload: DocumentWithVersions[] }
+  | { type: "ADD_DOCUMENT"; payload: DocumentWithVersions }
   | {
       type: "UPDATE_DOCUMENT";
-      payload: { id: string; updates: Partial<Document> };
+      payload: { id: string; updates: Partial<DocumentWithVersions> };
     }
   | { type: "REMOVE_DOCUMENT"; payload: string }
   | { type: "SET_UPLOADING"; payload: { id: string; uploading: boolean } }
