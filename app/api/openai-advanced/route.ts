@@ -467,7 +467,7 @@ async function processAllAtOnce(input: string, level: 2 | 3) {
   }
 }
 
-export async function processAllAtOnceSingle(input: string, level: 2 | 3) {
+async function processAllAtOnceSingle(input: string, level: 2 | 3) {
   const prompt = LEVEL_PROMPT[level];
   const temperature = PROCESSING_ARRAY[level].temperature;
 
