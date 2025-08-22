@@ -125,7 +125,11 @@ export function DocumentVersionContent({
             {versionAudioVersions[0] && (
               <Badge variant="secondary">
                 <MicVocal className="w-3 h-3 mr-1" />
-                {versionAudioVersions[0].voice_name}
+                {[
+                  ...new Set(
+                    versionAudioVersions[0].segments.map((s) => s.voice_name)
+                  ),
+                ].join(", ")}
               </Badge>
             )}
             {documentVersion.language && (

@@ -1,5 +1,7 @@
 // features/documents/utils.ts
 
+import type { ProcessedText } from "./types";
+
 /**
  * Generate thumbnail URL from storage path (client-side utility)
  */
@@ -48,4 +50,36 @@ export function formatProcessingType(processingLevel: string) {
     default:
       return "";
   }
+}
+
+export function assignVoicesToReaders(
+  processed_text: ProcessedText,
+  voices: string[]
+): Record<string, string> {
+  console.log(processed_text);
+  // Collect all unique reader_ids
+  const readerIds = Array.from(
+    new Set(
+      processed_text.processed_text.sections.flatMap((section) =>
+        section.content.speech.map((s) => s.reader_id)
+      )
+    )
+  );
+
+  const result: Record<string, string> = {};
+  const usedVoices = new Set<string>();
+
+  readerIds.forEach((readerId, index) => {
+    // Pick the voice at the same index if available and not already used
+    const candidateVoice = voices[index];
+    if (candidateVoice && !usedVoices.has(candidateVoice)) {
+      result[readerId] = candidateVoice;
+      usedVoices.add(candidateVoice);
+    } else {
+      // Fallback to "onyx"
+      result[readerId] = "onyx";
+    }
+  });
+
+  return result;
 }

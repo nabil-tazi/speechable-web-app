@@ -23,6 +23,7 @@ import {
 import { getAudioDuration, getAudioDurationAccurate } from "../../audio/utils";
 import { ProcessedText } from "../../documents/types";
 import { Button } from "@/components/ui/button";
+import { assignVoicesToReaders } from "../../documents/utils";
 
 // Add new types for document classification
 type DocumentClassification = {
@@ -506,6 +507,7 @@ export default function PDFUploader({ userId }: Props) {
 
   const generateAudioForSection = async (
     sectionIndex: number,
+    readerVoiceMap: Record<string, string>,
     existingAudioVersionId?: string
   ) => {
     if (
@@ -528,11 +530,12 @@ export default function PDFUploader({ userId }: Props) {
           processedText: cleanedText,
           sectionIndex: sectionIndex,
           voice: "onyx",
+          voiceMap: readerVoiceMap,
           response_format: "mp3",
           word_timestamps: true,
-          maxCharsPerSection: 1000,
-          maxCharsPerSpeech: 300,
-          mergeSectionSpeeches: true,
+          maxCharsPerSection: 3000,
+          maxCharsPerSpeech: 100,
+          mergeSectionSpeeches: false,
         }),
       });
 
@@ -542,6 +545,8 @@ export default function PDFUploader({ userId }: Props) {
       }
 
       const responseData = await response.json();
+
+      console.log(responseData);
       if (responseData.segments?.[0]) {
         const firstSegment = responseData.segments[0];
         const audioBuffer = Uint8Array.from(
@@ -560,7 +565,7 @@ export default function PDFUploader({ userId }: Props) {
             await createAudioVersionAction({
               document_version_id: currentDocumentVersionId,
               tts_model: "lemonfox",
-              voice_name: "onyx",
+              // voice_name: "onyx",
               speed: 1.0,
             });
 
@@ -588,6 +593,7 @@ export default function PDFUploader({ userId }: Props) {
               text_end_index: firstSegment.textLength,
               audio_duration: Math.round(audioDuration * 100) / 100,
               word_timestamps: firstSegment.word_timestamps || [],
+              voice_name: "onyx",
             },
             audioFile
           );
@@ -637,12 +643,17 @@ export default function PDFUploader({ userId }: Props) {
       return;
     }
 
+    const readerVoiceMap = assignVoicesToReaders(cleanedText, [
+      "heart",
+      "fable",
+    ]);
+
     // Create ONE audio version for all sections
     const { data: audioVersion, error: versionError } =
       await createAudioVersionAction({
         document_version_id: currentDocumentVersionId,
         tts_model: "lemonfox",
-        voice_name: "onyx",
+        // voice_name: "onyx",
         speed: 1.0,
       });
 
@@ -656,9 +667,10 @@ export default function PDFUploader({ userId }: Props) {
 
     // Generate audio for each section using the same audio version
     for (let i = 0; i < totalSections; i++) {
-      await generateAudioForSection(i, audioVersion.id); // Pass the audio version ID
+      await generateAudioForSection(i, readerVoiceMap, audioVersion.id); // Pass the audio version ID
     }
   };
+
   const isStructuredContent = (content: any): content is ProcessedText => {
     return (
       content && typeof content === "object" && content.processed_text?.sections
@@ -966,6 +978,7 @@ export default function PDFUploader({ userId }: Props) {
               generatingAudioSections={generatingAudioSections}
               onGenerateAudioForSection={generateAudioForSection}
               onGenerateAllAudio={generateAllAudio}
+              voiceMap={assignVoicesToReaders(cleanedText, ["heart", "fable"])}
             />
           </div>
         )}

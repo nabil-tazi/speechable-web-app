@@ -121,10 +121,10 @@ function ResetPasswordForm() {
 
           <div className="text-center">
             <Link
-              href="/signin"
+              href="/login"
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
             >
-              Back to Sign In
+              Back to Log in
             </Link>
           </div>
         </div>
@@ -160,7 +160,7 @@ function ResetPasswordForm() {
               Your password has been successfully updated.
             </p>
             <p className="mt-4 text-sm text-gray-500">
-              You can now sign in with your new password.
+              You can now log in with your new password.
             </p>
           </div>
 
@@ -275,10 +275,10 @@ function ResetPasswordForm() {
 
           <div className="text-center">
             <Link
-              href="/signin"
+              href="/login"
               className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors"
             >
-              Back to Sign In
+              Back to Log in
             </Link>
           </div>
         </form>

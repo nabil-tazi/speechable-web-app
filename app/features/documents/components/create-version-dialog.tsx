@@ -24,7 +24,7 @@ import {
 
 type Props = {
   document: Document;
-  handleGenerateVersion: () => void;
+  handleGenerateVersion: (processingLevel: 0 | 1 | 2 | 3) => void;
   onClose: () => void;
 };
 
@@ -33,7 +33,9 @@ export function CreateVersionDialog({
   handleGenerateVersion,
   onClose,
 }: Props) {
-  const [selectedProcessing, setSelectedProcessing] = useState(0);
+  const [selectedProcessing, setSelectedProcessing] = useState<0 | 1 | 2 | 3>(
+    0
+  );
   return (
     <DialogContent className="sm:max-w-[425px]">
       <DialogHeader>
@@ -44,12 +46,12 @@ export function CreateVersionDialog({
       </DialogHeader>
       <div className="grid gap-4">
         <div className="flex flex-col gap-2">
-          {PROCESSING_ARRAY.slice(1).map((p, index) => (
+          {PROCESSING_ARRAY.map((p, index) => (
             <ProcessingLevelCard
               key={index}
               p={p}
               isSelected={selectedProcessing === index}
-              select={() => setSelectedProcessing(index)}
+              select={() => setSelectedProcessing(index as 0 | 1 | 2 | 3)}
             />
           ))}
         </div>
@@ -60,7 +62,7 @@ export function CreateVersionDialog({
         </DialogClose>
         <Button
           onClick={() => {
-            handleGenerateVersion();
+            handleGenerateVersion(selectedProcessing);
             onClose();
           }}
         >

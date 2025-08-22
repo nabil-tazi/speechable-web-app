@@ -10,7 +10,6 @@ export interface AudioVersion {
   id: string;
   document_version_id: string;
   tts_model: string;
-  voice_name: string;
   speed: number;
   created_at: string;
 }
@@ -24,6 +23,7 @@ export interface AudioSegment {
   end_page?: number;
   text_start_index?: number;
   text_end_index?: number;
+  voice_name: string; // Moved from AudioVersion to AudioSegment
   audio_path: string;
   audio_duration?: number;
   audio_file_size: number;

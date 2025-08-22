@@ -1,7 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { Document } from "@/app/features/documents/types";
 import React from "react";
@@ -18,52 +18,6 @@ const validDocumentTypes = [
   "book_chapter",
   "news_article",
 ];
-
-// Thumbnail Image Component for private storage
-function ThumbnailImage({
-  thumbnailPath,
-  filename,
-  className = "max-h-full max-w-full object-contain",
-}: {
-  thumbnailPath: string | null;
-  filename: string;
-  className?: string;
-}) {
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>();
-  const [imageError, setImageError] = useState(false);
-
-  // useEffect(() => {
-  //   if (!thumbnailPath) return;
-
-  //   const loadThumbnailUrl = async () => {
-  //     const url = await getThumbnailUrl(thumbnailPath);
-  //     setThumbnailUrl(url);
-  //   };
-
-  //   loadThumbnailUrl();
-  // }, [thumbnailPath]);
-
-  if (!thumbnailPath || imageError || !thumbnailUrl) {
-    return (
-      <svg
-        className="w-8 h-8 text-gray-400"
-        fill="currentColor"
-        viewBox="0 0 20 20"
-      >
-        <path d="M4 3a2 2 0 00-2 2v1.586l.293-.293a1 1 0 011.414 0L8 10.586l2.293-2.293a1 1 0 011.414 0L14 10.586V5a2 2 0 00-2-2H4zM2 13.414l2.293-2.293a1 1 0 011.414 0L8 13.414l2.293-2.293a1 1 0 011.414 0L14 13.414V17a2 2 0 01-2 2H4a2 2 0 01-2-2v-3.586z" />
-      </svg>
-    );
-  }
-
-  return (
-    <img
-      src={thumbnailUrl}
-      alt={filename}
-      className={className}
-      onError={() => setImageError(true)}
-    />
-  );
-}
 
 // Main Library Page Component
 export default function LibraryPage() {
@@ -177,10 +131,13 @@ export default function LibraryPage() {
                   <div className="flex h-full">
                     {/* Left section - Thumbnail (full height) */}
                     <div className="w-24 h-full flex items-center justify-center border-r">
-                      <ThumbnailImage
-                        thumbnailPath={doc.thumbnail_path || null}
-                        filename={doc.filename}
-                      />
+                      {doc?.thumbnail_path && (
+                        <img
+                          className="max-h-full max-w-full object-contain"
+                          src={doc.thumbnail_path}
+                          alt={doc.filename}
+                        />
+                      )}
                     </div>
 
                     {/* Right section - File Info (full height) */}

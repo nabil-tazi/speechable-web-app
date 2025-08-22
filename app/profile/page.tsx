@@ -41,7 +41,7 @@ export default function ProfilePage() {
         setDisplayName(userProfile.display_name || "");
       } else {
         console.log("No profile found, redirecting to login");
-        router.push("/signin");
+        router.push("login");
       }
     } catch (err) {
       console.error("Error loading profile:", err);

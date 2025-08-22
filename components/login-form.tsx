@@ -65,7 +65,7 @@ export function LoginForm({
         router.push("/library");
       }
     } catch (err) {
-      console.error("Sign in error:", err);
+      console.error("Log in error:", err);
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -117,7 +117,7 @@ export function LoginForm({
       }
       // Note: isLoading will stay true as user is being redirected
     } catch (err) {
-      console.error("Google sign in error:", err);
+      console.error("Google Log in error:", err);
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }
@@ -161,7 +161,7 @@ export function LoginForm({
                 onClick={() => setResetEmailSent(false)}
                 className="w-full"
               >
-                Back to Sign In
+                Back to Log in
               </Button>
             </div>
           </CardContent>

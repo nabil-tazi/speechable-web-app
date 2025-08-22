@@ -49,7 +49,7 @@ export default function SignInPage() {
         router.push("/library");
       }
     } catch (err) {
-      console.error("Sign in error:", err);
+      console.error("Log in error:", err);
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
@@ -101,7 +101,7 @@ export default function SignInPage() {
       }
       // Note: isLoading will stay true as user is being redirected
     } catch (err) {
-      console.error("Google sign in error:", err);
+      console.error("Google Log in error:", err);
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }
@@ -144,7 +144,7 @@ export default function SignInPage() {
               onClick={() => setResetEmailSent(false)}
               className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
             >
-              Back to Sign In
+              Back to Log in
             </button>
           </div>
         </div>
@@ -157,7 +157,7 @@ export default function SignInPage() {
       <div className="max-w-md w-full space-y-8 p-8">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900">
-            Sign in to your account
+            Log in to your account
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             Welcome back! Please enter your details.
@@ -171,7 +171,7 @@ export default function SignInPage() {
             </div>
           )}
 
-          {/* Google Sign In Button */}
+          {/* Google Log in Button */}
           <button
             type="button"
             onClick={handleGoogleSignIn}
@@ -292,7 +292,7 @@ export default function SignInPage() {
                 Signing in...
               </div>
             ) : (
-              "Sign in"
+              "Log in"
             )}
           </button>
 

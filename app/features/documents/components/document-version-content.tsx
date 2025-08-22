@@ -50,7 +50,8 @@ export function DocumentVersionContent({
                     </Badge>
                   )}
                   <Badge variant="secondary">
-                    <MicVocal /> {audioVersion.voice_name}
+                    <MicVocal />{" "}
+                    {audioVersion.segments.map((s) => s.voice_name).join(", ")}
                   </Badge>
                   {documentVersion.language && (
                     <Badge variant="secondary">
