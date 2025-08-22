@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { LEVEL_PROMPT } from "./constants";
 import { PROCESSING_ARRAY } from "@/app/features/pdf/types";
 
+import OpenAI from "openai";
+
+import { z } from "zod";
+import { zodTextFormat } from "openai/helpers/zod";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_SECRET_KEY,
+});
+
 // Types
 interface SpeechObject {
   text: string;
@@ -32,6 +41,40 @@ interface SectionIdentificationResult {
   sections: IdentifiedSection[];
 }
 
+const SectionIdentificationSchema = z.object({
+  sections: z
+    .array(
+      z.object({
+        title: z.string().min(1, "Title cannot be empty"),
+        startMarker: z.string().min(1, "Start marker cannot be empty"),
+        order: z.number().int().positive("Order must be a positive integer"),
+      })
+    )
+    .min(1, "Must contain at least one section")
+    .refine(
+      (sections) => {
+        // Validate that order numbers are sequential starting from 1
+        const orders = sections.map((s) => s.order).sort((a, b) => a - b);
+        return orders.every((order, index) => order === index + 1);
+      },
+      {
+        message: "Order numbers must be sequential starting from 1",
+      }
+    ),
+});
+
+// Define the Zod schema for the dialogue structure
+const DialogueSchema = z.object({
+  dialogue: z
+    .array(
+      z.object({
+        text: z.string().min(1, "Dialogue content only, no markup"),
+        reader_id: z.union([z.literal("questioner"), z.literal("expert")]),
+      })
+    )
+    .min(1, "Dialogue must contain at least one speech object"),
+});
+
 // Section identification prompt
 const SECTION_IDENTIFICATION_PROMPT = `Find top-level section titles in this document.
 
@@ -50,18 +93,18 @@ For each TOP-LEVEL title you find, return:
 - title: The exact title text
 - startMarker: The exact first 5 words AFTER the title
 
-Return JSON:
-{
-  "sections": [
-    {
-      "title": "Introduction",
-      "startMarker": "First five words of content",
-      "order": 1
-    }
-  ]
-}
-
 Focus on major document divisions only. Each section should contain substantial content.`;
+
+// Return JSON:
+// {
+//   "sections": [
+//     {
+//       "title": "Introduction",
+//       "startMarker": "First five words of content",
+//       "order": 1
+//     }
+//   ]
+// }
 
 export async function POST(req: NextRequest) {
   const {
@@ -78,98 +121,45 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-
-  try {
-    console.log("Starting section-by-section processing...");
-
-    // Step 1: Identify all sections
-    const identifiedSections = await identifySections(input);
-    console.log(`Identified ${identifiedSections.sections.length} sections`);
-
-    // Step 2: Extract and process each section
-    const processedSections: Section[] = [];
-
-    for (let i = 0; i < identifiedSections.sections.length; i++) {
-      const sectionInfo = identifiedSections.sections[i];
-      const nextSection = identifiedSections.sections[i + 1]; // undefined for last section
-
-      console.log(`Processing section: ${sectionInfo.title}`);
-
-      // Extract section content from original text
-      const sectionContent = extractSectionContent(
-        input,
-        sectionInfo,
-        nextSection
-      );
-
-      // Process this section (with chunking if needed)
-      const processedSection = await processSingleSection(
-        sectionContent,
-        sectionInfo,
-        LEVEL_PROMPT[level],
-        PROCESSING_ARRAY[level].temperature
-      );
-
-      processedSections.push(processedSection);
-    }
-
-    // Step 3: Combine all processed sections
-    const result: ProcessedText = {
-      processed_text: {
-        sections: processedSections,
-      },
-    };
-
-    return NextResponse.json({
-      message: result,
-      metadata: {
-        level,
-        processingMethod: "section-by-section",
-        sectionsProcessed: processedSections.length,
-        originalLength: input.length,
-        processedLength: JSON.stringify(result).length,
-      },
-    });
-  } catch (error) {
-    console.error("Error:", error);
-    return NextResponse.json({ error: "Request failed" }, { status: 500 });
-  }
+  if (level === 0 || level === 1) return processSectionBySection(input, level);
+  if (level === 2 || level === 3) return processAllAtOnce(input, level);
 }
 
 async function identifySections(
   input: string
 ): Promise<SectionIdentificationResult> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_SECRET_KEY}`,
-      "Content-Type": "application/json",
+  const response = await openai.responses.parse({
+    model: "gpt-5-nano",
+    input: [
+      {
+        role: "system",
+        content:
+          "You are a precise document analyzer that returns only valid JSON responses.",
+      },
+      {
+        role: "user",
+        content: `${SECTION_IDENTIFICATION_PROMPT}\n\nTEXT TO ANALYZE:\n${input}`,
+      },
+    ],
+    // temperature: 0,
+    max_output_tokens: 100000,
+    text: {
+      format: zodTextFormat(
+        SectionIdentificationSchema,
+        "section_identification"
+      ),
     },
-    body: JSON.stringify({
-      model: "gpt-4.1-nano",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a precise document analyzer that returns only valid JSON responses.",
-        },
-        {
-          role: "user",
-          content: `${SECTION_IDENTIFICATION_PROMPT}\n\nTEXT TO ANALYZE:\n${input}`,
-        },
-      ],
-      temperature: 0,
-      max_tokens: 4000,
-      response_format: { type: "json_object" },
-    }),
   });
 
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
+  console.log(response);
+
+  const validatedResult = response.output_parsed;
+
+  if (!validatedResult) {
+    throw new Error("Failed to parse section identification from OpenAI");
   }
 
-  const data = await response.json();
-  return JSON.parse(data.choices[0].message.content);
+  return validatedResult;
 }
 
 function extractSectionContent(
@@ -208,6 +198,7 @@ function extractSectionContent(
 }
 
 async function processSingleSection(
+  level: number,
   sectionContent: string,
   sectionInfo: IdentifiedSection,
   prompt: string,
@@ -241,9 +232,11 @@ async function processSectionSingle(
   temperature: number
 ): Promise<Section> {
   // Inject section info into the prompt
-  const contextualizedPrompt = prompt
-    .replace("{SECTION_TITLE}", sectionInfo.title)
-    .replace("{START_MARKER}", sectionInfo.startMarker);
+  const contextualizedPrompt = prompt.replace(
+    "{SECTION_TITLE}",
+    sectionInfo.title
+  );
+  // .replace("{START_MARKER}", sectionInfo.startMarker);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -252,7 +245,7 @@ async function processSectionSingle(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4.1-nano",
+      model: "gpt-5-nano",
       messages: [
         {
           role: "system",
@@ -264,7 +257,7 @@ async function processSectionSingle(
           content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
         },
       ],
-      temperature: temperature,
+      // temperature: temperature,
       max_tokens: 32000,
       // Remove response_format constraint - we want plain text
     }),
@@ -311,7 +304,7 @@ CHUNK ${i + 1} of ${
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4.1-nano",
+        model: "gpt-5-nano",
         messages: [
           {
             role: "system",
@@ -323,7 +316,7 @@ CHUNK ${i + 1} of ${
             content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
           },
         ],
-        temperature: temperature,
+        // temperature: temperature,
         max_tokens: 32000,
       }),
     });
@@ -344,100 +337,18 @@ CHUNK ${i + 1} of ${
 }
 
 function createSectionFromText(cleanedText: string, title: string): Section {
-  // Split text into natural speech segments for TTS
-  const speechSegments = splitIntoSpeechSegments(cleanedText);
-
   return {
     title: title,
     content: {
-      speech: speechSegments.map((text) => ({
-        text: text.trim(),
-        reader_id: "default",
-      })),
+      speech: [
+        {
+          text: cleanedText,
+          reader_id: "default",
+        },
+      ],
     },
   };
 }
-
-function splitIntoSpeechSegments(text: string): string[] {
-  // Split at paragraph breaks first
-  const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim());
-  const segments: string[] = [];
-  let currentSegment = "";
-
-  for (const paragraph of paragraphs) {
-    // Target 200-800 words per segment
-    const wordCount =
-      currentSegment.split(/\s+/).length + paragraph.split(/\s+/).length;
-
-    if (wordCount > 800 && currentSegment) {
-      // Current segment is getting too long, finalize it
-      segments.push(currentSegment.trim());
-      currentSegment = paragraph;
-    } else if (currentSegment) {
-      // Add to current segment
-      currentSegment += "\n\n" + paragraph;
-    } else {
-      // Start new segment
-      currentSegment = paragraph;
-    }
-  }
-
-  // Add the final segment
-  if (currentSegment.trim()) {
-    segments.push(currentSegment.trim());
-  }
-
-  // If no segments created, return the whole text as one segment
-  return segments.length > 0 ? segments : [text.trim()];
-}
-
-// function createSectionFromText(cleanedText: string, title: string): Section {
-//   // Split text into natural speech segments for TTS
-//   const speechSegments = splitIntoSpeechSegments(cleanedText);
-
-//   return {
-//     title: title,
-//     content: {
-//       speech: speechSegments.map((text) => ({
-//         text: text.trim(),
-//         reader_id: "default",
-//       })),
-//     },
-//   };
-// }
-
-// function splitIntoSpeechSegments(text: string): string[] {
-//   // Split at paragraph breaks first
-//   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim());
-//   const segments: string[] = [];
-//   let currentSegment = "";
-
-//   for (const paragraph of paragraphs) {
-//     // Target 200-800 words per segment
-//     const wordCount =
-//       currentSegment.split(/\s+/).length + paragraph.split(/\s+/).length;
-
-//     if (wordCount > 800 && currentSegment) {
-//       // Current segment is getting too long, finalize it
-//       segments.push(currentSegment.trim());
-//       currentSegment = paragraph;
-//     } else if (currentSegment) {
-//       // Add to current segment
-//       currentSegment += "\n\n" + paragraph;
-//     } else {
-//       // Start new segment
-//       currentSegment = paragraph;
-//     }
-//   }
-
-//   // Add the final segment
-//   if (currentSegment.trim()) {
-//     segments.push(currentSegment.trim());
-//   }
-
-//   // If no segments created, return the whole text as one segment
-//   return segments.length > 0 ? segments : [text.trim()];
-// }
 
 function chunkText(text: string, maxChunkSize: number): string[] {
   // Split by paragraphs first, then by sentences if needed
@@ -477,4 +388,181 @@ function chunkText(text: string, maxChunkSize: number): string[] {
   }
 
   return chunks;
+}
+
+async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
+  try {
+    console.log("Starting section-by-section processing...");
+
+    // Step 1: Identify all sections
+    const identifiedSections = await identifySections(input);
+    console.log(`Identified ${identifiedSections.sections.length} sections`);
+
+    // Step 2: Extract and process each section
+    const processedSections: Section[] = [];
+
+    for (let i = 0; i < identifiedSections.sections.length; i++) {
+      const sectionInfo = identifiedSections.sections[i];
+      const nextSection = identifiedSections.sections[i + 1]; // undefined for last section
+
+      console.log(`Processing section: ${sectionInfo.title}`);
+
+      // Extract section content from original text
+      const sectionContent = extractSectionContent(
+        input,
+        sectionInfo,
+        nextSection
+      );
+
+      // Process this section (with chunking if needed)
+      const processedSection = await processSingleSection(
+        level,
+        sectionContent,
+        sectionInfo,
+        LEVEL_PROMPT[level],
+        PROCESSING_ARRAY[level].temperature
+      );
+
+      processedSections.push(processedSection);
+    }
+
+    // Step 3: Combine all processed sections
+    const result: ProcessedText = {
+      processed_text: {
+        sections: processedSections,
+      },
+    };
+
+    return NextResponse.json({
+      message: result,
+      metadata: {
+        level,
+        processingMethod: "section-by-section",
+        sectionsProcessed: processedSections.length,
+        originalLength: input.length,
+        processedLength: JSON.stringify(result).length,
+      },
+    });
+  } catch (error) {
+    console.error("Error:", error);
+    return NextResponse.json({ error: "Request failed" }, { status: 500 });
+  }
+}
+
+async function processAllAtOnce(input: string, level: 2 | 3) {
+  try {
+    console.log(`Starting all-at-once processing for level ${level}...`);
+    return await processAllAtOnceSingle(input, level);
+    // Check if input needs chunking (80k chars ~= 20k tokens)
+    // const needsChunking = input.length > 80000;
+
+    // if (needsChunking) {
+    //   return await processAllAtOnceInChunks(input, level);
+    // } else {
+    //   return await processAllAtOnceSingle(input, level);
+    // }
+  } catch (error) {
+    console.error("Error:", error);
+    return NextResponse.json({ error: "Request failed" }, { status: 500 });
+  }
+}
+
+export async function processAllAtOnceSingle(input: string, level: 2 | 3) {
+  const prompt = LEVEL_PROMPT[level];
+  const temperature = PROCESSING_ARRAY[level].temperature;
+
+  let processedResult: ProcessedText;
+
+  if (level === 3) {
+    // ✅ Structured JSON output
+    const response = await openai.responses.parse({
+      model: "gpt-5-nano",
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a conversational content transformer. Create engaging dialogues between exactly 2 speakers with strict alternation.",
+        },
+        {
+          role: "user",
+          content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
+        },
+      ],
+      // temperature: temperature,
+      max_output_tokens: 32000,
+      text: {
+        format: zodTextFormat(DialogueSchema, "dialogue_response"),
+      },
+    });
+
+    const validatedResult = response.output_parsed;
+
+    if (!validatedResult) {
+      throw new Error("Failed to parse structured output from OpenAI");
+    }
+
+    const speechArray = response.output_parsed;
+    if (!speechArray) {
+      throw new Error("Failed to parse response into SpeechObject[]");
+    }
+    processedResult = createProcessedTextFromSpeechArray(speechArray.dialogue);
+
+    processedResult = createProcessedTextFromSpeechArray(speechArray.dialogue);
+  } else {
+    // ✅ Plain text output
+    const response = await openai.responses.create({
+      model: "gpt-5-nano",
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
+        },
+        {
+          role: "user",
+          content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
+        },
+      ],
+      // temperature,
+      max_output_tokens: 32000,
+    });
+
+    const result = response.output_text.trim();
+
+    processedResult = createProcessedTextFromSpeechArray([
+      { text: result, reader_id: "default" },
+    ]);
+  }
+
+  return NextResponse.json({
+    message: processedResult,
+    metadata: {
+      level,
+      processingMethod: "all-at-once",
+      originalLength: input.length,
+      processedLength: JSON.stringify(processedResult).length,
+      ...(level === 3 && {
+        speakersCount:
+          processedResult.processed_text.sections[0].content.speech.length,
+      }),
+    },
+  });
+}
+
+function createProcessedTextFromSpeechArray(
+  speechArray: SpeechObject[]
+): ProcessedText {
+  console.log();
+  return {
+    processed_text: {
+      sections: [
+        {
+          title: "Conversational Content",
+          content: {
+            speech: speechArray,
+          },
+        },
+      ],
+    },
+  };
 }

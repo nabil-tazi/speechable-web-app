@@ -29,10 +29,10 @@ export default async function Home() {
             ) : (
               <div className="flex space-x-4">
                 <Link
-                  href="/signin"
+                  href="/login"
                   className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
                 >
-                  Sign in
+                  log in
                 </Link>
                 <Link
                   href="/signup"
@@ -82,10 +82,10 @@ export default async function Home() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link
-                  href="/signin"
+                  href="/login"
                   className="inline-flex justify-center items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                 >
-                  Sign in
+                  Log in
                 </Link>
                 <Link
                   href="/signup"

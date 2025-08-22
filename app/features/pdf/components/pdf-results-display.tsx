@@ -40,8 +40,12 @@ interface PDFResultsDisplayProps {
   // New section-based props
   sectionAudioUrls: Record<number, string>;
   generatingAudioSections: Set<number>;
-  onGenerateAudioForSection: (sectionIndex: number) => void;
+  onGenerateAudioForSection: (
+    sectionIndex: number,
+    voiceMap: Record<string, string>
+  ) => void;
   onGenerateAllAudio: () => void;
+  voiceMap: Record<string, string>;
 }
 
 export default function PDFResultsDisplay({
@@ -56,6 +60,7 @@ export default function PDFResultsDisplay({
   generatingAudioSections,
   onGenerateAudioForSection,
   onGenerateAllAudio,
+  voiceMap,
 }: PDFResultsDisplayProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState("");
@@ -279,8 +284,12 @@ export default function PDFResultsDisplay({
                   <AudioPlayer
                     audioUrl={sectionAudioUrls[sectionIndex] || null}
                     isGenerating={generatingAudioSections.has(sectionIndex)}
-                    onGenerate={() => onGenerateAudioForSection(sectionIndex)}
-                    onRegenerate={() => onGenerateAudioForSection(sectionIndex)}
+                    onGenerate={() =>
+                      onGenerateAudioForSection(sectionIndex, voiceMap)
+                    }
+                    onRegenerate={() =>
+                      onGenerateAudioForSection(sectionIndex, voiceMap)
+                    }
                   />
                 </div>
 

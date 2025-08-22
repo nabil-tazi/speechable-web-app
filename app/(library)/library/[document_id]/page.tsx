@@ -14,41 +14,7 @@ import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
-
-// Thumbnail Image Component
-function ThumbnailImage({
-  thumbnailPath,
-  filename,
-  className = "max-h-full max-w-full object-contain",
-}: {
-  thumbnailPath: string | null;
-  filename: string;
-  className?: string;
-}) {
-  const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>();
-  const [imageError, setImageError] = useState(false);
-
-  if (!thumbnailPath || imageError || !thumbnailUrl) {
-    return (
-      <svg
-        className="w-8 h-8 text-gray-400"
-        fill="currentColor"
-        viewBox="0 0 20 20"
-      >
-        <path d="M4 3a2 2 0 00-2 2v1.586l.293-.293a1 1 0 011.414 0L8 10.586l2.293-2.293a1 1 0 011.414 0L14 10.586V5a2 2 0 00-2-2H4zM2 13.414l2.293-2.293a1 1 0 011.414 0L8 13.414l2.293-2.293a1 1 0 011.414 0L14 13.414V17a2 2 0 01-2 2H4a2 2 0 01-2-2v-3.586z" />
-      </svg>
-    );
-  }
-
-  return (
-    <img
-      src={thumbnailUrl}
-      alt={filename}
-      className={className}
-      onError={() => setImageError(true)}
-    />
-  );
-}
+import { generateWithAi } from "@/app/features/generate-with-ai";
 
 // Document Detail View Component
 function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
@@ -66,7 +32,16 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     );
   }, [document.versions]);
 
-  function handleGenerateVersion() {}
+  function handleGenerateVersion(processingLevel: 0 | 1 | 2 | 3) {
+    if (document.raw_text)
+      generateWithAi({
+        documentId: document.id,
+        rawInputText: document.raw_text,
+        voicesArray: ["heart", "fable"],
+        processingLevel,
+      });
+    else console.log("empty text");
+  }
 
   function handleCloseCreateVersionModal() {
     setCreateVersionModalOpen(false);
@@ -108,9 +83,10 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
               <div className="w-16 h-20 flex items-center justify-center border rounded">
                 {document.thumbnail_path ? (
                   <>
-                    <ThumbnailImage
-                      thumbnailPath={document.thumbnail_path}
-                      filename={document.filename}
+                    <img
+                      className="max-h-full max-w-full object-contain"
+                      src={document.thumbnail_path}
+                      alt={document.filename}
                     />
                   </>
                 ) : (

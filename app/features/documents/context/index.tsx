@@ -21,6 +21,7 @@ import {
   type DocumentsState,
 } from "./reducer";
 import { createClient } from "@/app/lib/supabase/client";
+import { getThumbnailUrl } from "@/app/utils/storage";
 
 const supabase = createClient();
 // Initial State
@@ -92,7 +93,19 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
       if (error) {
         dispatch({ type: "SET_ERROR", payload: error });
       } else {
-        dispatch({ type: "SET_DOCUMENTS", payload: data || [] });
+        const dataWithThumbnailURL = data;
+        if (dataWithThumbnailURL)
+          await Promise.all(
+            dataWithThumbnailURL.map(async (doc) => {
+              if (doc.thumbnail_path) {
+                doc.thumbnail_path = await getThumbnailUrl(doc.thumbnail_path);
+              }
+            })
+          );
+        dispatch({
+          type: "SET_DOCUMENTS",
+          payload: dataWithThumbnailURL || [],
+        });
         hasLoadedDocuments.current = true;
       }
     } catch (error) {

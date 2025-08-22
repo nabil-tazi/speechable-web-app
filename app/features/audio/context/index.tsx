@@ -45,7 +45,6 @@ interface AudioActions {
   createAudioVersion: (audioVersionData: {
     document_version_id: string;
     tts_model: string;
-    voice_name: string;
     speed: number;
   }) => Promise<{
     success: boolean;
@@ -60,6 +59,7 @@ interface AudioActions {
       section_title?: string;
       start_page?: number;
       end_page?: number;
+      voice_name: string;
       text_start_index?: number;
       text_end_index?: number;
       audio_duration?: number;
@@ -123,6 +123,7 @@ interface AudioProviderProps {
 // Provider Component
 export function AudioProvider({ children }: AudioProviderProps) {
   const [state, dispatch] = useReducer(audioReducer, emptyState);
+  const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);
 
   // Actions
@@ -441,6 +442,8 @@ export function AudioProvider({ children }: AudioProviderProps) {
           payload: { audioVersionId, segments },
         });
       });
+
+      hasLoadedDocuments.current = true;
     } catch (error) {
       dispatch({ type: "SET_ERROR", payload: "Failed to load audio data" });
     }
@@ -457,10 +460,17 @@ export function AudioProvider({ children }: AudioProviderProps) {
         const newUserId = session?.user?.id || null;
 
         if (event === "SIGNED_IN" && session?.user) {
-          currentUserId.current = newUserId;
-          await loadAllAudio();
+          if (
+            currentUserId.current !== newUserId ||
+            !hasLoadedDocuments.current
+          ) {
+            currentUserId.current = newUserId;
+            hasLoadedDocuments.current = false;
+            await loadAllAudio();
+          }
         } else if (event === "SIGNED_OUT") {
           currentUserId.current = null;
+          hasLoadedDocuments.current = false;
           dispatch({ type: "CLEAR_AUDIO" });
         }
       }, 0);
@@ -488,106 +498,106 @@ export function AudioProvider({ children }: AudioProviderProps) {
   }, []);
 
   // Real-time subscriptions for audio changes
-  useEffect(() => {
-    const setupRealtimeSubscriptions = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  // useEffect(() => {
+  //   const setupRealtimeSubscriptions = async () => {
+  //     const {
+  //       data: { user },
+  //     } = await supabase.auth.getUser();
 
-      if (!user) return;
+  //     if (!user) return;
 
-      // Subscribe to audio_versions changes
-      const audioVersionsChannel = supabase
-        .channel("audio_versions_changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "audio_versions",
-          },
-          (payload) => {
-            console.log("Audio version change received:", payload);
+  //     // Subscribe to audio_versions changes
+  //     const audioVersionsChannel = supabase
+  //       .channel("audio_versions_changes")
+  //       .on(
+  //         "postgres_changes",
+  //         {
+  //           event: "*",
+  //           schema: "public",
+  //           table: "audio_versions",
+  //         },
+  //         (payload) => {
+  //           console.log("Audio version change received:", payload);
 
-            switch (payload.eventType) {
-              case "INSERT":
-                const newAudioVersion: AudioVersionWithSegments = {
-                  ...(payload.new as AudioVersion),
-                  segments: [],
-                };
-                dispatch({
-                  type: "ADD_AUDIO_VERSION",
-                  payload: newAudioVersion,
-                });
-                break;
-              case "UPDATE":
-                dispatch({
-                  type: "UPDATE_AUDIO_VERSION",
-                  payload: {
-                    id: payload.new.id,
-                    updates: payload.new as Partial<AudioVersionWithSegments>,
-                  },
-                });
-                break;
-              case "DELETE":
-                dispatch({
-                  type: "REMOVE_AUDIO_VERSION",
-                  payload: payload.old.id,
-                });
-                break;
-            }
-          }
-        )
-        .subscribe();
+  //           switch (payload.eventType) {
+  //             case "INSERT":
+  //               const newAudioVersion: AudioVersionWithSegments = {
+  //                 ...(payload.new as AudioVersion),
+  //                 segments: [],
+  //               };
+  //               dispatch({
+  //                 type: "ADD_AUDIO_VERSION",
+  //                 payload: newAudioVersion,
+  //               });
+  //               break;
+  //             case "UPDATE":
+  //               dispatch({
+  //                 type: "UPDATE_AUDIO_VERSION",
+  //                 payload: {
+  //                   id: payload.new.id,
+  //                   updates: payload.new as Partial<AudioVersionWithSegments>,
+  //                 },
+  //               });
+  //               break;
+  //             case "DELETE":
+  //               dispatch({
+  //                 type: "REMOVE_AUDIO_VERSION",
+  //                 payload: payload.old.id,
+  //               });
+  //               break;
+  //           }
+  //         }
+  //       )
+  //       .subscribe();
 
-      // Subscribe to audio_segments changes
-      const audioSegmentsChannel = supabase
-        .channel("audio_segments_changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "audio_segments",
-          },
-          (payload) => {
-            console.log("Audio segment change received:", payload);
+  //     // Subscribe to audio_segments changes
+  //     const audioSegmentsChannel = supabase
+  //       .channel("audio_segments_changes")
+  //       .on(
+  //         "postgres_changes",
+  //         {
+  //           event: "*",
+  //           schema: "public",
+  //           table: "audio_segments",
+  //         },
+  //         (payload) => {
+  //           console.log("Audio segment change received:", payload);
 
-            switch (payload.eventType) {
-              case "INSERT":
-                dispatch({
-                  type: "ADD_AUDIO_SEGMENT",
-                  payload: payload.new as AudioSegment,
-                });
-                break;
-              case "UPDATE":
-                dispatch({
-                  type: "UPDATE_AUDIO_SEGMENT",
-                  payload: {
-                    id: payload.new.id,
-                    updates: payload.new as Partial<AudioSegment>,
-                  },
-                });
-                break;
-              case "DELETE":
-                dispatch({
-                  type: "REMOVE_AUDIO_SEGMENT",
-                  payload: payload.old.id,
-                });
-                break;
-            }
-          }
-        )
-        .subscribe();
+  //           switch (payload.eventType) {
+  //             case "INSERT":
+  //               dispatch({
+  //                 type: "ADD_AUDIO_SEGMENT",
+  //                 payload: payload.new as AudioSegment,
+  //               });
+  //               break;
+  //             case "UPDATE":
+  //               dispatch({
+  //                 type: "UPDATE_AUDIO_SEGMENT",
+  //                 payload: {
+  //                   id: payload.new.id,
+  //                   updates: payload.new as Partial<AudioSegment>,
+  //                 },
+  //               });
+  //               break;
+  //             case "DELETE":
+  //               dispatch({
+  //                 type: "REMOVE_AUDIO_SEGMENT",
+  //                 payload: payload.old.id,
+  //               });
+  //               break;
+  //           }
+  //         }
+  //       )
+  //       .subscribe();
 
-      return () => {
-        supabase.removeChannel(audioVersionsChannel);
-        supabase.removeChannel(audioSegmentsChannel);
-      };
-    };
+  //     return () => {
+  //       supabase.removeChannel(audioVersionsChannel);
+  //       supabase.removeChannel(audioSegmentsChannel);
+  //     };
+  //   };
 
-    setupRealtimeSubscriptions();
-  }, []);
+  //   setupRealtimeSubscriptions();
+  // }, []);
 
   return (
     <AudioStateContext.Provider value={state}>
