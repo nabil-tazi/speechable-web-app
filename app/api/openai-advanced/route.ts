@@ -141,7 +141,9 @@ async function identifySections(
         content: `${SECTION_IDENTIFICATION_PROMPT}\n\nTEXT TO ANALYZE:\n${input}`,
       },
     ],
-    // temperature: 0,
+    reasoning: {
+      effort: "minimal",
+    },
     max_output_tokens: 100000,
     text: {
       format: zodTextFormat(
@@ -238,37 +240,59 @@ async function processSectionSingle(
   );
   // .replace("{START_MARKER}", sectionInfo.startMarker);
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_SECRET_KEY}`,
-      "Content-Type": "application/json",
+  // const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  //   method: "POST",
+  //   headers: {
+  //     Authorization: `Bearer ${process.env.OPENAI_SECRET_KEY}`,
+  //     "Content-Type": "application/json",
+  //   },
+  //   body: JSON.stringify({
+  //     model: "gpt-5-nano",
+  //     messages: [
+  //       {
+  //         role: "system",
+  //         content:
+  //           "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
+  //       },
+  //       {
+  //         role: "user",
+  //         content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
+  //       },
+  //     ],
+  //     // temperature: temperature,
+  //     max_tokens: 32000,
+  //     // Remove response_format constraint - we want plain text
+  //   }),
+  // });
+
+  // if (!response.ok) {
+  //   throw new Error(`OpenAI API error: ${response.status}`);
+  // }
+
+  // const data = await response.json();
+  // const cleanedText = data.choices[0].message.content.trim();
+
+  const response = await openai.responses.create({
+    model: "gpt-5-nano",
+    input: [
+      {
+        role: "system",
+        content:
+          "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
+      },
+      {
+        role: "user",
+        content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
+      },
+    ],
+    reasoning: {
+      effort: "minimal",
     },
-    body: JSON.stringify({
-      model: "gpt-5-nano",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
-        },
-        {
-          role: "user",
-          content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
-        },
-      ],
-      // temperature: temperature,
-      max_tokens: 32000,
-      // Remove response_format constraint - we want plain text
-    }),
+    // temperature,
+    max_output_tokens: 32000,
   });
 
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const cleanedText = data.choices[0].message.content.trim();
+  const cleanedText = response.output_text.trim();
 
   // Build the JSON structure ourselves
   return createSectionFromText(cleanedText, sectionInfo.title);
@@ -297,36 +321,59 @@ CHUNK ${i + 1} of ${
       chunks.length
     }: Process this portion and return only the cleaned text.`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_SECRET_KEY}`,
-        "Content-Type": "application/json",
+    // const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    //   method: "POST",
+    //   headers: {
+    //     Authorization: `Bearer ${process.env.OPENAI_SECRET_KEY}`,
+    //     "Content-Type": "application/json",
+    //   },
+    //   body: JSON.stringify({
+    //     model: "gpt-5-nano",
+    //     messages: [
+    //       {
+    //         role: "system",
+    //         content:
+    //           "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
+    //       },
+    //       {
+    //         role: "user",
+    //         content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
+    //       },
+    //     ],
+    //     // temperature: temperature,
+    //     max_tokens: 32000,
+    //   }),
+    // });
+
+    // if (!response.ok) {
+    //   throw new Error(`OpenAI API error: ${response.status}`);
+    // }
+
+    // const data = await response.json();
+
+    const response = await openai.responses.create({
+      model: "gpt-5-nano",
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
+        },
+        {
+          role: "user",
+          content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
+        },
+      ],
+      reasoning: {
+        effort: "minimal",
       },
-      body: JSON.stringify({
-        model: "gpt-5-nano",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
-          },
-          {
-            role: "user",
-            content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
-          },
-        ],
-        // temperature: temperature,
-        max_tokens: 32000,
-      }),
+      // temperature,
+      max_output_tokens: 32000,
     });
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
+    const cleanedChunk = response.output_text.trim();
 
-    const data = await response.json();
-    cleanedChunks.push(data.choices[0].message.content.trim());
+    cleanedChunks.push(cleanedChunk);
   }
 
   // Combine all cleaned chunks
@@ -488,6 +535,9 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
           content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
         },
       ],
+      reasoning: {
+        effort: "minimal",
+      },
       // temperature: temperature,
       max_output_tokens: 32000,
       text: {
@@ -523,6 +573,9 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
           content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
         },
       ],
+      reasoning: {
+        effort: "minimal",
+      },
       // temperature,
       max_output_tokens: 32000,
     });
