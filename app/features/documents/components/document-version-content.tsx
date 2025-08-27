@@ -18,7 +18,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { WaveSurferPlayer } from "../../audio/components/wave-surfer-player";
+import { WaveSurferPlayer } from "../../audio/components/legacy/wave-surfer-player";
 
 export function DocumentVersionContent({
   documentVersion,

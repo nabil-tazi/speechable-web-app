@@ -84,17 +84,19 @@ Look for:
 - Other standalone major headings that divide the document
 
 IGNORE:
-- Subsections
-- Minor headings within sections
 - Figure/table captions
 - References or Bibliography entries
 
 For each TOP-LEVEL title you find, return:
-- title: The exact title text
-- startMarker: The exact first 5 words AFTER the title
+- title: The exact title text (e.g., "1. Introduction")
+- startMarker: EXACTLY the first 5 words of the content that follows this title (not including the title itself)
 
 Focus on major document divisions only. Each section should contain substantial content.`;
 
+// IGNORE
+// - Subsections
+// - Minor headings within sections
+//
 // Return JSON:
 // {
 //   "sections": [
@@ -610,7 +612,7 @@ function createProcessedTextFromSpeechArray(
     processed_text: {
       sections: [
         {
-          title: "Conversational Content",
+          title: "Conversation",
           content: {
             speech: speechArray,
           },

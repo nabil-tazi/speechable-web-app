@@ -7,7 +7,11 @@ import React, {
   useMemo,
 } from "react";
 import WaveSurfer from "wavesurfer.js";
-import { UndoDot, RedoDot } from "lucide-react";
+import { UndoDot, RedoDot, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { WordHighlightDisplay } from "./word-highlight";
+import { AudioPlayerControls } from "./audio-player-controls";
 
 interface WordTimestamp {
   word: string;
@@ -45,21 +49,25 @@ interface GroupedWord {
 }
 
 const PlayIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+  <svg viewBox="0 0 24 24" fill="currentColor">
     <path d="M8 5v14l11-7z" />
   </svg>
 );
 
 const PauseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+  <svg viewBox="0 0 24 24" fill="currentColor">
     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
   </svg>
 );
 
 export function UnifiedAudioPlayer({
+  documentTitle,
+  versionName,
   segments,
   enabledSegmentIds,
 }: {
+  documentTitle: string;
+  versionName: string;
   segments: AudioSegment[];
   enabledSegmentIds: string[];
 }) {
@@ -99,7 +107,9 @@ export function UnifiedAudioPlayer({
     let cumulativeTime = 0;
     return enabledSegments.map((segment) => {
       const startTime = cumulativeTime;
-      const duration = segment.audio_duration || 0;
+      const duration =
+        segment?.word_timestamps?.[segment?.word_timestamps.length - 1].end ||
+        0;
       const endTime = cumulativeTime + duration;
       cumulativeTime += duration;
 
@@ -337,10 +347,10 @@ export function UnifiedAudioPlayer({
         waveColor: "rgba(148, 163, 184, 0.6)",
         progressColor: "rgba(148, 163, 184, 0.6)",
         cursorColor: "transparent",
-        barWidth: 3,
+        barWidth: 2,
         barGap: 1,
         barRadius: 2,
-        height: 80,
+        height: 40,
         normalize: true,
         interact: false,
         backend: "MediaElement",
@@ -372,6 +382,7 @@ export function UnifiedAudioPlayer({
     if (concatenatedUrl) {
       const audio = new Audio(concatenatedUrl);
       audio.preload = "metadata";
+      // audio.playbackRate = 1.3;
       audioRef.current = audio;
 
       const updateTime = () => {
@@ -611,126 +622,46 @@ export function UnifiedAudioPlayer({
 
   return (
     <div className="bg-white overflow-hidden">
-      <div className="space-y-3">
+      <div className="flex flex-col space-y-3">
         {/* Waveform Visualization */}
-        <div className="relative">
-          {(isLoading || !waveformReady) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 rounded-lg z-10">
-              <div className="text-center">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-2" />
-                <div className="text-sm text-gray-600">
-                  Loading unified audio...
-                </div>
-              </div>
-            </div>
-          )}
 
-          <div
-            ref={containerRef}
-            className={`w-full bg-gray-50 rounded-lg p-4 pb-8 relative ${
-              isLoading || !waveformReady ? "opacity-0" : "opacity-100"
-            } transition-opacity duration-500`}
-            style={{ minHeight: "112px" }}
-          />
+        <AudioPlayerControls
+          isLoading={isLoading}
+          waveformReady={waveformReady}
+          isPlaying={isPlaying}
+          isReady={isReady}
+          currentTime={currentTime}
+          totalDuration={totalDuration}
+          progress={progress}
+          isDragging={isDragging}
+          containerRef={containerRef}
+          onTogglePlayback={togglePlayback}
+          onSkipBackward={skipBackward}
+          onSkipForward={skipForward}
+          onProgressClick={handleProgressClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onDrawSegmentSeparators={drawSegmentSeparators}
+        />
 
-          <span className="absolute left-4 bottom-2 text-sm font-medium text-gray-800">
+        {/* <span className="absolute left-4 bottom-2 text-sm font-medium text-gray-800">
             {formatTime(currentTime)}
           </span>
           <span className="absolute right-4 bottom-2 text-sm font-medium text-gray-800">
             {formatTime(totalDuration)}
-          </span>
-
-          {/* Progress indicator overlay */}
-          {totalDuration > 0 && isReady && waveformReady && !isLoading && (
-            <div className="absolute top-4 left-4 right-4 bottom-4 pointer-events-none z-20">
-              <div className="relative h-full">
-                <div
-                  ref={progressContainerRef}
-                  className="absolute inset-0 cursor-pointer pointer-events-auto z-10"
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
-                >
-                  <div
-                    className="absolute top-0 bottom-4 w-px bg-blue-500 z-30 transition-all duration-100 ease-out"
-                    style={{
-                      left: `${Math.max(0, Math.min(100, progress))}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
+          </span> */}
         {/* Controls */}
-        <div className="flex items-center justify-between">
-          {/* Current section display */}
-          {currentSegmentInfo && isPlaying ? (
-            <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 rounded-lg p-2">
-              <PlayIcon />
-              <span className="font-medium">
-                {currentSegmentInfo.segment.section_title ||
-                  `Section ${currentSegmentInfo.segment.segment_number}`}
-              </span>
-            </div>
-          ) : (
-            <div></div>
-          )}
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={skipBackward}
-              className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-50"
-              disabled={!isReady || !waveformReady}
-              title="Skip back 10 seconds"
-            >
-              <UndoDot className="w-4 h-4" />
-            </button>
+        {/* <div className="flex items-center justify-between"></div> */}
 
-            <button
-              onClick={togglePlayback}
-              className="p-3 rounded-full bg-blue-500 hover:bg-blue-600 text-white transition-all transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:transform-none shadow-lg"
-              disabled={!isReady || !waveformReady}
-            >
-              {isPlaying ? <PauseIcon /> : <PlayIcon />}
-            </button>
-
-            <button
-              onClick={skipForward}
-              className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-50"
-              disabled={!isReady || !waveformReady}
-              title="Skip forward 10 seconds"
-            >
-              <RedoDot className="w-4 h-4" />
-            </button>
-          </div>
-          <div></div>
-        </div>
-
-        {/* Word timestamps */}
-        {groupedWords.length > 0 && (
-          <div className="bg-gray-50 rounded-lg p-4 leading-relaxed h-32 overflow-y-auto">
-            {groupedWords.map((wordGroup, index) => (
-              <span
-                key={index}
-                ref={index === currentWordIndex ? highlightedWordRef : null}
-                className={`${
-                  index === currentWordIndex
-                    ? "bg-blue-200 px-1 rounded"
-                    : "text-gray-800 hover:bg-gray-200"
-                } transition-all cursor-pointer px-1 py-0.5 rounded inline-block`}
-                onClick={() => handleWordClick(wordGroup.start)}
-                title={`Jump to ${formatTime(wordGroup.start)} - ${
-                  wordGroup.segmentTitle
-                }`}
-              >
-                {wordGroup.text}
-                {index < groupedWords.length - 1 && " "}
-              </span>
-            ))}
-          </div>
-        )}
+        <WordHighlightDisplay
+          documentTitle={documentTitle}
+          versionName={versionName}
+          groupedWords={groupedWords}
+          segmentTimeline={segmentTimeline}
+          currentTime={currentTime}
+          onWordClick={handleWordClick}
+        />
       </div>
     </div>
   );

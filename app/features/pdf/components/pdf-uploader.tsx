@@ -734,8 +734,10 @@ export default function PDFUploader({ userId }: Props) {
       // Create document record
       const { data: doc, error: docError } = await createDocumentAction({
         mime_type: file.type || "application/pdf",
+        file_type: "pdf",
+        author: pdfData.metadata.Author,
+        title: pdfData.metadata.Title || file.name,
         filename: file.name, // Use actual filename
-        original_filename: file.name, // Use actual original filename
         document_type: "",
         raw_text: pdfData.text, // Store the extracted text
         page_count: pdfData.numPages, // Store page count if available

@@ -7,13 +7,16 @@ import {
   useEffect,
   useRef,
   ReactNode,
+  useMemo,
 } from "react";
 import type { Document, DocumentWithVersions } from "../types";
+
 import {
   createDocumentAction,
   uploadDocumentThumbnailAction,
   getUserDocumentsAction,
   getUserDocumentsWithVersionsAction,
+  updateDocumentAction,
 } from "../actions";
 import {
   documentsReducer,
@@ -22,14 +25,29 @@ import {
 } from "./reducer";
 import { createClient } from "@/app/lib/supabase/client";
 import { getThumbnailUrl } from "@/app/utils/storage";
+import { DOCUMENT_TYPES } from "../constants";
+import type { DocumentType } from "../types";
 
 const supabase = createClient();
+
+// Get valid document types from constants
+const validDocumentTypes = Object.keys(DOCUMENT_TYPES) as DocumentType[];
+
+// Type for grouped documents
+export type GroupedDocuments = Record<string, DocumentWithVersions[]>;
+
+// Extended state to include grouped documents
+interface ExtendedDocumentsState extends DocumentsState {
+  groupedDocuments: GroupedDocuments;
+}
+
 // Initial State
-const emptyState: DocumentsState = {
+const emptyState: ExtendedDocumentsState = {
   documents: [],
   loading: true,
   error: null,
   uploadingDocuments: {},
+  groupedDocuments: {},
 };
 
 // Context Types
@@ -40,7 +58,9 @@ interface DocumentsActions {
   createDocument: (documentData: {
     mime_type: string;
     filename: string;
-    original_filename: string;
+    author: string;
+    title: string;
+    file_type: string;
     document_type: string;
     raw_text?: string;
     page_count?: number;
@@ -49,6 +69,15 @@ interface DocumentsActions {
   }) => Promise<{
     success: boolean;
     document?: DocumentWithVersions;
+    error?: string;
+  }>;
+
+  updateDocument: (
+    documentId: string,
+    updates: Partial<Omit<Document, "id" | "user_id" | "upload_date">>
+  ) => Promise<{
+    success: boolean;
+    document?: Document;
     error?: string;
   }>;
 
@@ -62,8 +91,33 @@ interface DocumentsActions {
   removeDocument: (documentId: string) => void;
 }
 
+// Helper functions (updated to use new constants)
+export const formatDocumentType = (type: string): string => {
+  // Check if it's a valid document type
+  if (type in DOCUMENT_TYPES) {
+    return DOCUMENT_TYPES[type as DocumentType];
+  }
+
+  // Fallback to "General Document" for any unknown types
+  return "General Document";
+};
+
+export const getDocumentCount = (docs: DocumentWithVersions[]) => {
+  return docs.length === 1 ? "1 document" : `${docs.length} documents`;
+};
+
+// Utility function to validate document type
+export const isValidDocumentType = (type: string): type is DocumentType => {
+  return validDocumentTypes.includes(type as DocumentType);
+};
+
+// Utility function to get safe document type (fallback to 'general')
+export const getSafeDocumentType = (type: string): DocumentType => {
+  return isValidDocumentType(type) ? type : "general";
+};
+
 // Contexts
-const DocumentsStateContext = createContext<DocumentsState>(emptyState);
+const DocumentsStateContext = createContext<ExtendedDocumentsState>(emptyState);
 const DocumentsDispatchContext = createContext<DocumentsDispatch | undefined>(
   undefined
 );
@@ -81,6 +135,44 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
   const [state, dispatch] = useReducer(documentsReducer, emptyState);
   const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);
+
+  // Group documents by document_type (using new constants)
+  const groupedDocuments = useMemo(() => {
+    const groups: Record<string, DocumentWithVersions[]> = {};
+
+    state.documents.forEach((doc) => {
+      // Use the document type as-is, fallback to 'general' if invalid
+      const documentType = getSafeDocumentType(doc.document_type);
+
+      if (!groups[documentType]) {
+        groups[documentType] = [];
+      }
+      groups[documentType].push(doc);
+    });
+
+    // Sort groups by the defined order and sort documents within each group by upload date (newest first)
+    const sortedGroups: Record<string, DocumentWithVersions[]> = {};
+    validDocumentTypes.forEach((type) => {
+      if (groups[type]) {
+        sortedGroups[type] = groups[type].sort(
+          (a, b) =>
+            new Date(b.upload_date).getTime() -
+            new Date(a.upload_date).getTime()
+        );
+      }
+    });
+
+    return sortedGroups;
+  }, [state.documents]);
+
+  // Extended state with grouped documents
+  const extendedState: ExtendedDocumentsState = useMemo(
+    () => ({
+      ...state,
+      groupedDocuments,
+    }),
+    [state, groupedDocuments]
+  );
 
   // Load initial documents WITH versions
   async function loadDocuments() {
@@ -151,6 +243,40 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
     }
   };
 
+  const updateDocument = async (
+    documentId: string,
+    updates: Partial<Omit<Document, "id" | "user_id" | "upload_date">>
+  ) => {
+    try {
+      const { data, error } = await updateDocumentAction(documentId, updates);
+
+      if (error) {
+        return { success: false, error };
+      }
+
+      if (data) {
+        // Convert thumbnail_path to full URL if it exists
+        if (data.thumbnail_path) {
+          data.thumbnail_path = await getThumbnailUrl(data.thumbnail_path);
+        }
+
+        // Update the document in the state
+        dispatch({
+          type: "UPDATE_DOCUMENT",
+          payload: {
+            id: documentId,
+            updates: data,
+          },
+        });
+        return { success: true, document: data };
+      }
+
+      return { success: false, error: "Unknown error occurred" };
+    } catch (error) {
+      return { success: false, error: "Failed to update document" };
+    }
+  };
+
   const uploadThumbnail = async (
     documentId: string,
     thumbnailData: string | File
@@ -202,9 +328,10 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
     dispatch({ type: "REMOVE_DOCUMENT", payload: documentId });
   };
 
-  // Fix: Define the actions object
+  // Define the actions object
   const actions: DocumentsActions = {
     createDocument,
+    updateDocument,
     uploadThumbnail,
     refreshDocuments,
     removeDocument,
@@ -321,7 +448,7 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
   }, []); // Fix: Remove supabase from dependencies
 
   return (
-    <DocumentsStateContext.Provider value={state}>
+    <DocumentsStateContext.Provider value={extendedState}>
       <DocumentsDispatchContext.Provider value={dispatch}>
         <DocumentsActionsContext.Provider value={actions}>
           {children}
@@ -366,6 +493,12 @@ export function useDocumentsActions() {
 export function useDocuments() {
   const { documents, loading, error } = useDocumentsState();
   return { documents, loading, error };
+}
+
+// New hook for grouped documents
+export function useGroupedDocuments() {
+  const { groupedDocuments, loading, error } = useDocumentsState();
+  return { groupedDocuments, loading, error };
 }
 
 export function useDocumentUpload() {

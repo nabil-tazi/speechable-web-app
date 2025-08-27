@@ -38,14 +38,12 @@ export function formatBytes(bytes: number): string {
 export function formatProcessingType(processingLevel: string) {
   switch (processingLevel) {
     case "0":
-      return "raw";
+      return "original";
     case "1":
-      return "faithful";
-    case "2":
       return "natural";
+    case "2":
+      return "lecture";
     case "3":
-      return "insights";
-    case "4":
       return "conversational";
     default:
       return "";

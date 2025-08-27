@@ -8,11 +8,12 @@ export interface Document {
   document_type: string;
   language?: string;
   page_count?: number;
+  file_type: string;
   file_size?: number;
   upload_date: string;
   updated_at: string;
+  title: string;
   filename: string;
-  original_filename: string;
   mime_type: string;
   metadata?: Record<string, any>;
 }
@@ -20,7 +21,7 @@ export interface Document {
 export interface DocumentVersion {
   id: string;
   document_id: string;
-  version_name?: string;
+  version_name: string;
   language?: string;
   processed_text: string;
   processing_type: string;
@@ -64,3 +65,13 @@ export interface ProcessedText {
     sections: ProcessedSection[];
   };
 }
+
+export type DocumentType =
+  | "general"
+  | "academic"
+  | "legal"
+  | "financial"
+  | "technical"
+  | "manual"
+  | "news" // For news articles, newspapers, press releases
+  | "literature"; // For fiction, non-fiction, novels, essays, books
