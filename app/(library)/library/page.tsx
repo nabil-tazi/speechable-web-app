@@ -1,209 +1,196 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
-import { useMemo } from "react";
-import { useRouter } from "next/navigation";
-import type { Document } from "@/app/features/documents/types";
-import React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useMemo, useState, useTransition } from "react";
 import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
-import { useDocumentsState } from "@/app/features/documents/context";
-
-// Define valid document types
-const validDocumentTypes = [
-  "academic_paper",
-  "business_report",
-  "legal_document",
-  "technical_manual",
-  "book_chapter",
-  "news_article",
-];
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  useGroupedDocuments,
+  formatDocumentType,
+  getDocumentCount,
+} from "@/app/features/documents/context";
+import { Badge } from "@/components/ui/badge";
+import { DocumentCard } from "@/app/features/documents/components/document-card";
+import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+} from "@/components/ui/breadcrumb";
 
 // Main Library Page Component
 export default function LibraryPage() {
-  const { documents, loading } = useDocumentsState();
+  const { groupedDocuments, loading } = useGroupedDocuments();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Group documents by document_type
-  const groupedDocuments = useMemo(() => {
-    const groups: Record<string, Document[]> = {};
+  // Add state for tracking the active tab locally
+  const [localActiveTab, setLocalActiveTab] = useState<string>("");
+  const [, startTransition] = useTransition();
 
-    documents.forEach((doc) => {
-      let type = doc.document_type;
+  // Get category filter from URL
+  const categoryFilter = searchParams.get("category");
 
-      // If document type is not in our valid list, put it in "others"
-      if (!type || !validDocumentTypes.includes(type)) {
-        type = "others";
-      }
-
-      if (!groups[type]) {
-        groups[type] = [];
-      }
-      groups[type].push(doc);
-    });
-
-    // Define sort order: valid types first (in order), then "others"
-    const sortOrder = [...validDocumentTypes, "others"];
-
-    // Sort groups by the defined order and sort documents within each group by upload date (newest first)
-    const sortedGroups: Record<string, Document[]> = {};
-    sortOrder.forEach((type) => {
-      if (groups[type]) {
-        sortedGroups[type] = groups[type].sort(
-          (a, b) =>
-            new Date(b.upload_date).getTime() -
-            new Date(a.upload_date).getTime()
-        );
-      }
-    });
-
-    return sortedGroups;
-  }, [documents]);
-
-  // Handle document selection - now navigates to separate page
-  const handleDocumentClick = (docId: string) => {
-    router.push(`/library/${docId}`);
-  };
-
-  // Helper functions
-  function truncateFilename(filename: string, maxLength: number = 20) {
-    if (filename.length <= maxLength) return filename;
-
-    const extension = filename.split(".").pop();
-    const nameWithoutExt = filename.replace(`.${extension}`, "");
-    const truncatedName = nameWithoutExt.slice(
-      0,
-      maxLength - 3 - (extension?.length || 0)
+  // Create tab data from grouped documents
+  const availableCategories = useMemo(() => {
+    return Object.keys(groupedDocuments).filter(
+      (category) => groupedDocuments[category].length > 0
     );
+  }, [groupedDocuments]);
 
-    return `${truncatedName}...${extension ? `.${extension}` : ""}`;
-  }
+  // Current active tab (use 'all' when no filter is applied)
+  const urlActiveTab = categoryFilter || "all";
+  const activeTab = localActiveTab || urlActiveTab;
 
-  const formatDocumentType = (type: string) => {
-    const typeMap: Record<string, string> = {
-      academic_paper: "Academic paper",
-      business_report: "Business report",
-      legal_document: "Legal document",
-      technical_manual: "Technical manual",
-      book_chapter: "Book chapter",
-      news_article: "News article",
-      others: "Other",
-    };
+  // Handle tab change with instant UI update
+  const handleTabChange = (value: string) => {
+    // Update local state immediately for instant UI feedback
+    setLocalActiveTab(value);
 
-    return typeMap[type] || "Other";
+    // Update URL in a transition to avoid blocking the UI
+    startTransition(() => {
+      if (value === "all") {
+        router.push("/library");
+      } else {
+        router.push(`/library?category=${value}`);
+      }
+      // Reset local state once URL is updated
+      setLocalActiveTab("");
+    });
   };
 
-  const getDocumentCount = (docs: Document[]) => {
-    return docs.length === 1 ? "1 document" : `${docs.length} documents`;
+  // Get documents for current tab
+  const currentDocuments = useMemo(() => {
+    if (activeTab === "all") {
+      return groupedDocuments;
+    }
+
+    if (groupedDocuments[activeTab]) {
+      return { [activeTab]: groupedDocuments[activeTab] };
+    }
+
+    return {};
+  }, [groupedDocuments, activeTab]);
+
+  // Handle document selection - preserve category filter in URL
+  const handleDocumentClick = (docId: string) => {
+    if (activeTab !== "all") {
+      router.push(`/library/${docId}?category=${activeTab}`);
+    } else {
+      router.push(`/library/${docId}`);
+    }
   };
+
+  // Calculate total document count
+  // const totalDocumentCount = useMemo(() => {
+  //   return Object.values(groupedDocuments).reduce(
+  //     (total, docs) => total + docs.length,
+  //     0
+  //   );
+  // }, [groupedDocuments]);
 
   // Show loading state
   if (loading) {
     return <LibraryLoader />;
   }
 
+  // Check if we have any documents
+  const hasDocuments = Object.keys(groupedDocuments).length > 0;
+
   return (
-    <div className="w-full flex justify-center p-4">
-      <div className="max-w-7xl w-full space-y-8">
-        {Object.entries(groupedDocuments).map(([documentType, docs]) => (
-          <section key={documentType} className="space-y-4">
-            {/* Section Header */}
-            <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {formatDocumentType(documentType)}
-                  {docs.length > 1 ? "s" : ""}
-                </h2>
-                <p className="text-sm text-gray-500">
-                  {getDocumentCount(docs)}
-                </p>
-              </div>
-            </div>
-
-            {/* Documents Grid */}
-            <div className="flex flex-wrap gap-4">
-              {docs.map((doc) => (
-                <Card
-                  key={doc.id}
-                  className="w-80 h-32 p-0 relative group overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                  onClick={() => handleDocumentClick(doc.id)}
+    <Tabs value={activeTab} onValueChange={handleTabChange}>
+      <header className="flex items-center gap-2 border-b">
+        <div className="flex w-full items-center gap-3 px-6 py-4">
+          {/* <h1 className="text-base font-small">Library</h1> */}
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>Library</BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <Separator
+            orientation="vertical"
+            className="mx-2 data-[orientation=vertical]:h-4"
+          />
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            {availableCategories.map((category) => (
+              <TabsTrigger key={category} value={category}>
+                {formatDocumentType(category)}{" "}
+                <Badge
+                  variant="secondary"
+                  className="rounded-full bg-gray-300 text-xs"
                 >
-                  <div className="flex h-full">
-                    {/* Left section - Thumbnail (full height) */}
-                    <div className="w-24 h-full flex items-center justify-center border-r">
-                      {doc?.thumbnail_path && (
-                        <img
-                          className="max-h-full max-w-full object-contain"
-                          src={doc.thumbnail_path}
-                          alt={doc.filename}
-                        />
-                      )}
-                    </div>
-
-                    {/* Right section - File Info (full height) */}
-                    <div className="flex-1 p-3 flex flex-col justify-between">
-                      <div>
-                        <h3
-                          className="font-medium text-sm text-gray-900 leading-tight mb-2"
-                          title={doc.filename}
-                        >
-                          {truncateFilename(doc.filename, 20)}
-                        </h3>
-
-                        <div className="text-xs text-gray-600 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="uppercase font-medium">
-                              {doc.document_type || "Unknown"}
-                            </span>
-                            {doc.file_size && (
-                              <span>
-                                {(doc.file_size / (1024 * 1024)).toFixed(1)} MB
-                              </span>
-                            )}
-                          </div>
-
-                          {doc.page_count && (
-                            <div>
-                              {doc.page_count} page
-                              {doc.page_count > 1 ? "s" : ""}
-                            </div>
-                          )}
+                  {groupedDocuments[category].length}
+                </Badge>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+      </header>
+      <div className="w-full flex justify-center p-16 pt-8">
+        <div className="max-w-7xl w-full space-y-6">
+          {/* <h1 className="text-2xl font-regular">Library</h1> */}
+          {hasDocuments && (
+            <>
+              {/* All Documents Tab */}
+              <TabsContent value="all" className="space-y-8">
+                {Object.entries(currentDocuments).map(
+                  ([documentType, docs]) => (
+                    <section key={documentType} className="space-y-4">
+                      {/* Section Header */}
+                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                        <div>
+                          <h2 className="text-lg font-semibold text-gray-900">
+                            {formatDocumentType(documentType)}
+                            {docs.length > 1 ? "s" : ""}
+                          </h2>
+                          <p className="text-sm text-gray-500">
+                            {getDocumentCount(docs)}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="text-xs text-gray-500">
-                        {new Date(doc.upload_date).toLocaleDateString()}
+                      {/* Documents Grid */}
+                      <div className="flex flex-wrap gap-4">
+                        {docs.map((doc) => (
+                          <DocumentCard
+                            key={doc.id}
+                            doc={doc}
+                            onClick={() => handleDocumentClick(doc.id)}
+                          />
+                        ))}
                       </div>
-                    </div>
-                  </div>
+                    </section>
+                  )
+                )}
+              </TabsContent>
 
-                  {/* Hover Actions */}
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-1 rounded-full bg-white shadow-md hover:bg-gray-50">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                        />
-                      </svg>
-                    </button>
+              {availableCategories.map((category) => (
+                <TabsContent
+                  key={category}
+                  value={category}
+                  className="space-y-6"
+                >
+                  <div className="flex flex-wrap gap-4">
+                    {(currentDocuments[category] || []).map((doc) => (
+                      <DocumentCard
+                        key={doc.id}
+                        doc={doc}
+                        onClick={() => handleDocumentClick(doc.id)}
+                      />
+                    ))}
                   </div>
-                </Card>
+                </TabsContent>
               ))}
-            </div>
-          </section>
-        ))}
+            </>
+          )}
 
-        {/* Empty state - only show when not loading and no documents */}
-        {!loading && documents.length === 0 && <NoDocuments />}
-      </div>
-    </div>
+          {/* Empty state - show when no documents at all */}
+          {!loading && !hasDocuments && <NoDocuments />}
+        </div>
+      </div>{" "}
+    </Tabs>
   );
 }

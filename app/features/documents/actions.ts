@@ -6,8 +6,10 @@ import type { Document, DocumentVersion, DocumentWithVersions } from "./types";
 // Server Action: Create a document
 export async function createDocumentAction(documentData: {
   mime_type: string;
+  file_type: string;
+  title: string;
+  author: string;
   filename: string;
-  original_filename: string;
   document_type: string;
   raw_text?: string;
   page_count?: number;
