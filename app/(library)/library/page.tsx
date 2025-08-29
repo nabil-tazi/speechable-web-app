@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { useMemo, useState, useTransition } from "react";
+import React, { useMemo, useState, useTransition, Suspense } from "react";
 import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,8 +20,8 @@ import {
   BreadcrumbList,
 } from "@/components/ui/breadcrumb";
 
-// Main Library Page Component
-export default function LibraryPage() {
+// Separate component that uses useSearchParams
+function LibraryContent() {
   const { groupedDocuments, loading } = useGroupedDocuments();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -83,14 +83,6 @@ export default function LibraryPage() {
     }
   };
 
-  // Calculate total document count
-  // const totalDocumentCount = useMemo(() => {
-  //   return Object.values(groupedDocuments).reduce(
-  //     (total, docs) => total + docs.length,
-  //     0
-  //   );
-  // }, [groupedDocuments]);
-
   // Show loading state
   if (loading) {
     return <LibraryLoader />;
@@ -103,7 +95,6 @@ export default function LibraryPage() {
     <Tabs value={activeTab} onValueChange={handleTabChange}>
       <header className="flex items-center gap-2 border-b">
         <div className="flex w-full items-center gap-3 px-6 py-4">
-          {/* <h1 className="text-base font-small">Library</h1> */}
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>Library</BreadcrumbItem>
@@ -131,7 +122,6 @@ export default function LibraryPage() {
       </header>
       <div className="w-full flex justify-center p-16 pt-8">
         <div className="max-w-7xl w-full space-y-6">
-          {/* <h1 className="text-2xl font-regular">Library</h1> */}
           {hasDocuments && (
             <>
               {/* All Documents Tab */}
@@ -190,7 +180,16 @@ export default function LibraryPage() {
           {/* Empty state - show when no documents at all */}
           {!loading && !hasDocuments && <NoDocuments />}
         </div>
-      </div>{" "}
+      </div>
     </Tabs>
+  );
+}
+
+// Main Library Page Component with Suspense wrapper
+export default function LibraryPage() {
+  return (
+    <Suspense fallback={<LibraryLoader />}>
+      <LibraryContent />
+    </Suspense>
   );
 }
