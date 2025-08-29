@@ -4,6 +4,8 @@ export interface WordTimestamp {
   end: number;
   start: number;
   word: string;
+  isTitle?: boolean; // Whether this word is part of a section title
+  titleWordIndex?: number; // Index of this word within the title (0-based)
 }
 
 export interface AudioVersion {
@@ -29,6 +31,7 @@ export interface AudioSegment {
   audio_file_size: number;
   word_timestamps?: WordTimestamp[];
   created_at: string;
+  includes_title?: boolean; // Whether this segment includes the section title audio
 }
 
 // Extended types with relationships
@@ -38,4 +41,16 @@ export interface AudioVersionWithSegments extends AudioVersion {
 
 export interface AudioSegmentWithVersion extends AudioSegment {
   audio_version: AudioVersion;
+}
+
+export interface SpeechObject {
+  text: string;
+  reader_id: string;
+}
+
+export interface SectionTTSInput {
+  title: string;
+  content: {
+    speech: SpeechObject[];
+  };
 }

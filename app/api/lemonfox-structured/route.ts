@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     maxSections = 5, // safety limit
     maxCharsPerSection = 10000, // character limit per section
     maxCharsPerSpeech = 2000, // character limit per speech
-    mergeSectionSpeeches = true, // whether to merge speeches within a section
+    includeTitles = false, // whether to include titles in the audio
   }: {
     processedText: ProcessedText;
     voice?: string;
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     maxSections?: number;
     maxCharsPerSection?: number;
     maxCharsPerSpeech?: number;
-    mergeSectionSpeeches?: boolean;
+    includeTitles?: boolean;
   } = await req.json();
 
   // Validate input
@@ -97,18 +97,108 @@ export async function POST(req: NextRequest) {
       const section = sectionsToProcess[sIdx];
       const actualSectionIndex = startIndex + sIdx;
 
-      if (mergeSectionSpeeches) {
-        // Original behavior: merge all speeches into one with single voice
-        const mergedText = section.content.speech
-          .map((speech) => speech.text.slice(0, maxCharsPerSpeech))
-          .join(" ")
-          .slice(0, maxCharsPerSection);
+      // Generate individual audio files with correct voices, then merge them
+      const individualAudioSegments: ArrayBuffer[] = [];
+      const individualWordTimestamps: WordTimestamp[] = [];
+      const allTexts: string[] = [];
+      const allReaderIds: string[] = [];
+      let sectionCharCount = 0;
 
-        if (!mergedText.trim()) {
-          continue; // Skip empty sections
+      // Generate title audio if includeTitles is true
+      let titleAudioBuffer: ArrayBuffer | null = null;
+      let titleTimestamps: any = null;
+      let titleText = "";
+
+      if (includeTitles) {
+        titleText = `\n\n${section.title}\n\n`;
+
+        // Use the voice of the first speech for the title
+        const firstSpeechVoice =
+          section.content.speech.length > 0
+            ? voiceMap[section.content.speech[0].reader_id] || voice
+            : voice;
+
+        const titleAudioResponse = await fetch(
+          "https://api.lemonfox.ai/v1/audio/speech",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.LEMONFOX_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              input: titleText,
+              voice: firstSpeechVoice,
+              response_format,
+              word_timestamps: true,
+            }),
+          }
+        );
+
+        if (!titleAudioResponse.ok) {
+          throw new Error(
+            `LemonFox AI API error for title of section ${actualSectionIndex}: ${titleAudioResponse.status}`
+          );
         }
 
-        // Generate single audio for merged section
+        // Handle title response format
+        const contentType = titleAudioResponse.headers.get("content-type");
+        if (word_timestamps && contentType?.includes("application/json")) {
+          const responseData = await titleAudioResponse.json();
+          titleAudioBuffer = Uint8Array.from(atob(responseData.audio), (c) =>
+            c.charCodeAt(0)
+          ).buffer;
+          titleTimestamps = responseData.word_timestamps;
+
+          // Mark all title timestamps as title words
+          if (titleTimestamps && Array.isArray(titleTimestamps)) {
+            titleTimestamps = titleTimestamps.map(
+              (timestamp: any, index: number) => ({
+                ...timestamp,
+                isTitle: true,
+                titleWordIndex: index,
+              })
+            );
+          }
+        } else {
+          titleAudioBuffer = await titleAudioResponse.arrayBuffer();
+        }
+
+        // Add title to the audio segments and texts
+        individualAudioSegments.push(titleAudioBuffer);
+        individualWordTimestamps.push(titleTimestamps);
+        allTexts.push(titleText);
+        allReaderIds.push(section.content.speech[0]?.reader_id || "default");
+        sectionCharCount += titleText.length;
+      }
+
+      // Generate audio for each speech separately
+      for (let spIdx = 0; spIdx < section.content.speech.length; spIdx++) {
+        const speech = section.content.speech[spIdx];
+        const speechText = speech.text;
+
+        // Apply character limits
+        const truncatedText = speechText.slice(0, maxCharsPerSpeech);
+
+        // Check section character limit
+        if (sectionCharCount + truncatedText.length > maxCharsPerSection) {
+          console.warn(
+            `Section ${actualSectionIndex} exceeded character limit, truncating`
+          );
+          break;
+        }
+
+        // Skip empty speech
+        if (!truncatedText.trim()) {
+          continue;
+        }
+
+        sectionCharCount += truncatedText.length;
+
+        console.log("voice selected for speech: ");
+        console.log(voiceMap[speech.reader_id]);
+
+        // Generate audio for this speech with correct voice
         const audioResponse = await fetch(
           "https://api.lemonfox.ai/v1/audio/speech",
           {
@@ -118,17 +208,17 @@ export async function POST(req: NextRequest) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              input: mergedText,
-              voice: voice, // Use default voice for merged content
+              input: truncatedText,
+              voice: voiceMap[speech.reader_id],
               response_format,
-              word_timestamps,
+              word_timestamps: true, // Always get timestamps for individual segments
             }),
           }
         );
 
         if (!audioResponse.ok) {
           throw new Error(
-            `LemonFox AI API error for merged section ${actualSectionIndex}: ${audioResponse.status}`
+            `LemonFox AI API error for section ${actualSectionIndex}, speech ${spIdx}: ${audioResponse.status}`
           );
         }
 
@@ -143,119 +233,45 @@ export async function POST(req: NextRequest) {
             c.charCodeAt(0)
           ).buffer;
           timestamps = responseData.word_timestamps;
+
+          // Mark speech timestamps as non-title words
+          if (timestamps && Array.isArray(timestamps)) {
+            timestamps = timestamps.map((timestamp: any) => ({
+              ...timestamp,
+              isTitle: false,
+            }));
+          }
         } else {
           audioBuffer = await audioResponse.arrayBuffer();
         }
 
+        individualAudioSegments.push(audioBuffer);
+        individualWordTimestamps.push(timestamps);
+        allTexts.push(truncatedText);
+        allReaderIds.push(speech.reader_id);
+      }
+
+      // Merge all audio segments into one
+      if (individualAudioSegments.length > 0) {
+        const mergedAudioBuffer = await mergeAudioBuffers(
+          individualAudioSegments
+        );
+        const combinedText = allTexts.join(" ");
+        const combinedReaderIds = [...new Set(allReaderIds)].join(", "); // Unique reader IDs
+
+        const mergedWordTimestamps = word_timestamps
+          ? await mergeWordTimestamps(individualWordTimestamps, allReaderIds)
+          : null;
+
         audioSegments.push({
           sectionIndex: actualSectionIndex,
           sectionTitle: section.title,
-          speechIndex: 0,
-          readerId: "merged",
-          audioBuffer,
-          text: mergedText,
-          word_timestamps: timestamps,
+          speechIndex: 0, // Single merged segment
+          readerId: combinedReaderIds,
+          audioBuffer: mergedAudioBuffer,
+          text: combinedText,
+          word_timestamps: mergedWordTimestamps,
         });
-      } else {
-        // NEW BEHAVIOR: Generate individual audio files with correct voices, then merge them
-        const individualAudioSegments: ArrayBuffer[] = [];
-        const individualWordTimestamps: WordTimestamp[] = [];
-        const allTexts: string[] = [];
-        const allReaderIds: string[] = [];
-        let sectionCharCount = 0;
-
-        // Generate audio for each speech separately
-        for (let spIdx = 0; spIdx < section.content.speech.length; spIdx++) {
-          const speech = section.content.speech[spIdx];
-
-          // Apply character limits
-          const truncatedText = speech.text.slice(0, maxCharsPerSpeech);
-
-          // Check section character limit
-          if (sectionCharCount + truncatedText.length > maxCharsPerSection) {
-            console.warn(
-              `Section ${actualSectionIndex} exceeded character limit, truncating`
-            );
-            break;
-          }
-
-          // Skip empty speech
-          if (!truncatedText.trim()) {
-            continue;
-          }
-
-          sectionCharCount += truncatedText.length;
-
-          console.log("voice selected for speech: ");
-          console.log(voiceMap[speech.reader_id]);
-
-          // Generate audio for this speech with correct voice
-          const audioResponse = await fetch(
-            "https://api.lemonfox.ai/v1/audio/speech",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${process.env.LEMONFOX_API_KEY}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                input: truncatedText,
-                voice: voiceMap[speech.reader_id],
-                response_format,
-                word_timestamps: true, // Disable for individual segments since we're merging
-              }),
-            }
-          );
-
-          if (!audioResponse.ok) {
-            throw new Error(
-              `LemonFox AI API error for section ${actualSectionIndex}, speech ${spIdx}: ${audioResponse.status}`
-            );
-          }
-
-          let audioBuffer: ArrayBuffer;
-          let timestamps: any = null;
-
-          // Handle response format
-          const contentType = audioResponse.headers.get("content-type");
-          if (word_timestamps && contentType?.includes("application/json")) {
-            const responseData = await audioResponse.json();
-            audioBuffer = Uint8Array.from(atob(responseData.audio), (c) =>
-              c.charCodeAt(0)
-            ).buffer;
-            timestamps = responseData.word_timestamps;
-          } else {
-            audioBuffer = await audioResponse.arrayBuffer();
-          }
-
-          individualAudioSegments.push(audioBuffer);
-          individualWordTimestamps.push(timestamps);
-          allTexts.push(truncatedText);
-          allReaderIds.push(speech.reader_id);
-        }
-
-        // Merge all audio segments into one
-        if (individualAudioSegments.length > 0) {
-          const mergedAudioBuffer = await mergeAudioBuffers(
-            individualAudioSegments
-          );
-          const combinedText = allTexts.join(" ");
-          const combinedReaderIds = [...new Set(allReaderIds)].join(", "); // Unique reader IDs
-
-          const mergedWordTimestamps = word_timestamps
-            ? await mergeWordTimestamps(individualWordTimestamps, allReaderIds)
-            : null;
-
-          audioSegments.push({
-            sectionIndex: actualSectionIndex,
-            sectionTitle: section.title,
-            speechIndex: 0, // Single merged segment
-            readerId: combinedReaderIds,
-            audioBuffer: mergedAudioBuffer,
-            text: combinedText,
-            word_timestamps: mergedWordTimestamps, // Not available for merged audio
-          });
-        }
       }
     }
 
@@ -270,13 +286,13 @@ export async function POST(req: NextRequest) {
         text: segment.text,
         audioBase64: Buffer.from(segment.audioBuffer).toString("base64"),
         textLength: segment.text.length,
-        isMerged: !mergeSectionSpeeches || segment.readerId === "merged",
+        includeTitles,
         word_timestamps: segment.word_timestamps || null,
       })),
       totalSegments: audioSegments.length,
       processedSections: sectionsToProcess.length,
       format: response_format,
-      mergeSectionSpeeches,
+      includeTitles,
       limits: {
         maxCharsPerSection,
         maxCharsPerSpeech,

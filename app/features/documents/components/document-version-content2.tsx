@@ -4,18 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { AudioVersionWithSegments } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
-import { Clock, MicVocal, Download, MoreVertical } from "lucide-react";
+import { Clock, MicVocal, Download, MoreVertical, Gauge } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { getAudioUrl } from "@/app/utils/storage";
 import WaveSurfer from "wavesurfer.js";
 import { AudioPlayerControls } from "../../audio/components/audio-player-controls";
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
+import { SectionSelector } from "./section-selector";
+import { SpeedSelector } from "./speed-selector";
 
 interface WordTimestamp {
   word: string;
   start: number;
   end: number;
+  isTitle?: boolean;
+  titleWordIndex?: number;
 }
 
 interface AudioSegment {
@@ -32,11 +36,8 @@ interface AudioSegment {
   audio_file_size: number;
   word_timestamps?: WordTimestamp[];
   created_at: string;
-}
-
-interface UnifiedWordTimestamp extends WordTimestamp {
-  segmentId: string;
-  segmentTitle: string;
+  includes_title?: boolean;
+  voice_name: string;
 }
 
 interface GroupedWord {
@@ -45,11 +46,24 @@ interface GroupedWord {
   end: number;
   segmentId: string;
   segmentTitle: string;
+  isTitle?: boolean;
+  titleWordIndex?: number;
+}
+
+interface UnifiedWordTimestamp extends WordTimestamp {
+  segmentId: string;
+  segmentTitle: string;
 }
 
 interface SectionToggleState {
   [segmentId: string]: boolean;
 }
+
+const SkipForwardIcon = ({ className = "w-2 h-2" }: { className?: string }) => (
+  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <path d="M16 12.667L5.777 19.482A.5.5 0 0 1 5 19.066V4.934a.5.5 0 0 1 .777-.416L16 11.333V5a1 1 0 1 1 2 0v14a1 1 0 1 1-2 0v-6.333Z" />
+  </svg>
+);
 
 export function DocumentVersionContent({
   document,
@@ -90,6 +104,7 @@ export function DocumentVersionContent({
   const [isDragging, setIsDragging] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [browserDuration, setBrowserDuration] = useState(0);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [concatenatedBuffer, setConcatenatedBuffer] =
     useState<AudioBuffer | null>(null);
@@ -104,6 +119,23 @@ export function DocumentVersionContent({
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [gain, setGain] = useState<number>(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
+  useEffect(() => {
+    if (!concatenatedBuffer) return;
+
+    let rafId: number;
+    const updateGain = () => {
+      const g = getGainAtTime(concatenatedBuffer, currentTime, 2048);
+      setGain(g);
+      rafId = requestAnimationFrame(updateGain);
+    };
+    updateGain();
+
+    return () => cancelAnimationFrame(rafId);
+  }, [concatenatedBuffer, currentTime]);
 
   // Initialize section toggles (all enabled by default)
   useEffect(() => {
@@ -163,6 +195,45 @@ export function DocumentVersionContent({
     });
   }, [enabledSegments]);
 
+  function getSegmentProgress(segmentId: string) {
+    const segment = segmentTimeline.find((s) => s.segmentId === segmentId);
+
+    if (!segment || segment.startTime > currentTime) {
+      return 0;
+    }
+    if (currentTime > segment.endTime) return 1;
+    console.log((currentTime - segment.startTime) / segment.duration);
+    return (currentTime - segment.startTime) / segment.duration;
+  }
+
+  function getGainAtTime(buffer: AudioBuffer, time: number, windowSize = 1024) {
+    const sampleRate = buffer.sampleRate;
+    const channelData = buffer.getChannelData(0); // first channel (mono or left)
+
+    // Index in samples
+    const centerIndex = Math.floor(time * sampleRate);
+
+    // Pick a small window around that point (e.g. ±512 samples)
+    const start = Math.max(0, centerIndex - windowSize / 2);
+    const end = Math.min(channelData.length, centerIndex + windowSize / 2);
+
+    let sumSquares = 0;
+    for (let i = start; i < end; i++) {
+      const sample = channelData[i];
+      sumSquares += sample * sample;
+    }
+
+    const rms = Math.sqrt(sumSquares / (end - start));
+    return rms; // 0.0–1.0 (roughly), higher = louder
+  }
+
+  const handleSpeedChange = useCallback((speed: number) => {
+    setPlaybackSpeed(speed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed;
+    }
+  }, []);
+
   // Create unified word timestamps
   const unifiedWordTimestamps = useMemo(() => {
     const words: UnifiedWordTimestamp[] = [];
@@ -196,34 +267,90 @@ export function DocumentVersionContent({
       return /^[.!?,:;'"()[\]{}""''—–-]+$/.test(word.trim());
     };
 
-    unifiedWordTimestamps.forEach((wordTimestamp) => {
+    const isOpeningPunctuation = (word: string) => {
+      return /^[([{""']+$/.test(word.trim());
+    };
+
+    const isClosingPunctuation = (word: string) => {
+      return /^[)\]}.!?,:;""'—–-]+$/.test(word.trim());
+    };
+
+    unifiedWordTimestamps.forEach((wordTimestamp, index) => {
       const word = wordTimestamp.word;
 
       if (isPunctuation(word)) {
-        if (currentGroup) {
-          currentGroup.text += word;
-          currentGroup.end = wordTimestamp.end;
-        } else {
+        if (isOpeningPunctuation(word)) {
+          // Opening punctuation: merge with FOLLOWING word
+          if (currentGroup) {
+            // Push current group first
+            groups.push(currentGroup);
+          }
+
+          // Start new group with opening punctuation
           currentGroup = {
             text: word,
             start: wordTimestamp.start,
             end: wordTimestamp.end,
             segmentId: wordTimestamp.segmentId,
             segmentTitle: wordTimestamp.segmentTitle,
+            isTitle: wordTimestamp.isTitle,
+            titleWordIndex: wordTimestamp.titleWordIndex,
           };
+        } else {
+          // Closing punctuation: merge with PRECEDING word (current behavior)
+          if (currentGroup) {
+            currentGroup.text += word;
+            currentGroup.end = wordTimestamp.end;
+            // Inherit title properties from the current group
+          } else {
+            currentGroup = {
+              text: word,
+              start: wordTimestamp.start,
+              end: wordTimestamp.end,
+              segmentId: wordTimestamp.segmentId,
+              segmentTitle: wordTimestamp.segmentTitle,
+              isTitle: wordTimestamp.isTitle,
+              titleWordIndex: wordTimestamp.titleWordIndex,
+            };
+          }
         }
       } else {
+        // Regular word
         if (currentGroup) {
-          groups.push(currentGroup);
+          // If current group exists, merge this word with it (for opening punctuation case)
+          // or push the current group and start new one
+          if (isOpeningPunctuation(currentGroup.text)) {
+            // Merge word with opening punctuation
+            currentGroup.text += word;
+            currentGroup.end = wordTimestamp.end;
+            // Use the word's title properties (more important than punctuation's)
+            currentGroup.isTitle = wordTimestamp.isTitle;
+            currentGroup.titleWordIndex = wordTimestamp.titleWordIndex;
+          } else {
+            // Push current group and start new one
+            groups.push(currentGroup);
+            currentGroup = {
+              text: word,
+              start: wordTimestamp.start,
+              end: wordTimestamp.end,
+              segmentId: wordTimestamp.segmentId,
+              segmentTitle: wordTimestamp.segmentTitle,
+              isTitle: wordTimestamp.isTitle,
+              titleWordIndex: wordTimestamp.titleWordIndex,
+            };
+          }
+        } else {
+          // Start new group with word
+          currentGroup = {
+            text: word,
+            start: wordTimestamp.start,
+            end: wordTimestamp.end,
+            segmentId: wordTimestamp.segmentId,
+            segmentTitle: wordTimestamp.segmentTitle,
+            isTitle: wordTimestamp.isTitle,
+            titleWordIndex: wordTimestamp.titleWordIndex,
+          };
         }
-
-        currentGroup = {
-          text: word,
-          start: wordTimestamp.start,
-          end: wordTimestamp.end,
-          segmentId: wordTimestamp.segmentId,
-          segmentTitle: wordTimestamp.segmentTitle,
-        };
       }
     });
 
@@ -407,7 +534,7 @@ export function DocumentVersionContent({
     try {
       const wavesurfer = WaveSurfer.create({
         container: containerRef.current,
-        waveColor: "rgba(148, 163, 184, 0.6)",
+        waveColor: "rgba(75, 85, 99, 0.9)",
         progressColor: "rgba(148, 163, 184, 0.6)",
         cursorColor: "transparent",
         barWidth: 1,
@@ -440,6 +567,7 @@ export function DocumentVersionContent({
   }, [concatenatedUrl]);
 
   // Create audio element for playback
+  // Replace your existing audio element useEffect with this version
   useEffect(() => {
     if (!concatenatedUrl) return;
 
@@ -447,10 +575,38 @@ export function DocumentVersionContent({
     audio.preload = "metadata";
     audioRef.current = audio;
 
-    const updateTime = () => {
-      if (!isDragging && audio) {
+    let animationFrameId: number;
+    let isAnimating = false;
+
+    // Smooth time updates using requestAnimationFrame
+    const smoothUpdateTime = () => {
+      if (!isDragging && audio && !audio.paused) {
         setCurrentTime(audio.currentTime);
         setProgress((audio.currentTime / totalDuration) * 100);
+      }
+
+      if (isAnimating) {
+        animationFrameId = requestAnimationFrame(smoothUpdateTime);
+      }
+    };
+
+    // Fallback time update (for when requestAnimationFrame isn't running)
+    const updateTime = () => {
+      if (!isDragging && audio && !isAnimating) {
+        setCurrentTime(audio.currentTime);
+        setProgress((audio.currentTime / totalDuration) * 100);
+      }
+    };
+
+    const handlePlay = () => {
+      isAnimating = true;
+      smoothUpdateTime(); // Start smooth updates
+    };
+
+    const handlePause = () => {
+      isAnimating = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
       }
     };
 
@@ -460,16 +616,30 @@ export function DocumentVersionContent({
     };
 
     const handleEnded = () => {
+      isAnimating = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       setIsPlaying(false);
       setCurrentTime(0);
       setProgress(0);
     };
 
-    audio.addEventListener("timeupdate", updateTime);
+    // Event listeners
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("timeupdate", updateTime); // Fallback
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("ended", handleEnded);
 
     return () => {
+      isAnimating = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("timeupdate", updateTime);
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
       audio.removeEventListener("ended", handleEnded);
@@ -484,39 +654,39 @@ export function DocumentVersionContent({
   }, [totalDuration, browserDuration]);
 
   // Draw segment separators on waveform
-  const drawSegmentSeparators = useCallback(() => {
-    if (!containerRef.current || !waveformReady || totalDuration === 0) return;
+  // const drawSegmentSeparators = useCallback(() => {
+  //   if (!containerRef.current || !waveformReady || totalDuration === 0) return;
 
-    const container = containerRef.current;
-    const existingSeparators = container.querySelectorAll(".segment-separator");
-    existingSeparators.forEach((el) => el.remove());
+  //   const container = containerRef.current;
+  //   const existingSeparators = container.querySelectorAll(".segment-separator");
+  //   existingSeparators.forEach((el) => el.remove());
 
-    let cumulativeTime = 0;
-    segmentTimeline.forEach((segmentInfo, index) => {
-      if (index === 0) {
-        cumulativeTime += segmentInfo.duration;
-        return;
-      }
+  //   let cumulativeTime = 0;
+  //   segmentTimeline.forEach((segmentInfo, index) => {
+  //     if (index === 0) {
+  //       cumulativeTime += segmentInfo.duration;
+  //       return;
+  //     }
 
-      const position = (cumulativeTime / totalDuration) * 100;
+  //     const position = (cumulativeTime / totalDuration) * 100;
 
-      const separator = window.document.createElement("div");
-      separator.className = "segment-separator";
-      separator.style.cssText = `
-        position: absolute;
-        left: ${position}%;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: rgba(59, 130, 246, 0.5);
-        pointer-events: none;
-        z-index: 25;
-      `;
+  //     const separator = window.document.createElement("div");
+  //     separator.className = "segment-separator";
+  //     separator.style.cssText = `
+  //       position: absolute;
+  //       left: ${position}%;
+  //       top: 0;
+  //       bottom: 0;
+  //       width: 2px;
+  //       background: rgba(59, 130, 246, 0.5);
+  //       pointer-events: none;
+  //       z-index: 25;
+  //     `;
 
-      container.appendChild(separator);
-      cumulativeTime += segmentInfo.duration;
-    });
-  }, [waveformReady, segmentTimeline, totalDuration]);
+  //     container.appendChild(separator);
+  //     cumulativeTime += segmentInfo.duration;
+  //   });
+  // }, [waveformReady, segmentTimeline, totalDuration]);
 
   // Playback controls
   const togglePlayback = useCallback(() => {
@@ -631,6 +801,9 @@ export function DocumentVersionContent({
   // Handle section toggle
   const handleSectionToggle = useCallback(
     (segmentId: string, enabled: boolean) => {
+      if (isPlaying) {
+        togglePlayback();
+      }
       setSectionToggles((prev) => ({
         ...prev,
         [segmentId]: enabled,
@@ -640,7 +813,43 @@ export function DocumentVersionContent({
   );
 
   // Handle download MP3
-  function handleDownloadMP3() {}
+  const handleDownloadMP3 = useCallback(async () => {
+    if (!concatenatedUrl) {
+      console.error("No audio available to download");
+      return;
+    }
+    setIsDownloading(true);
+
+    try {
+      // Create filename based on document and version
+      const filename = `${document.title.replace(
+        /[^a-z0-9]/gi,
+        "_"
+      )}_${documentVersion.version_name.replace(/[^a-z0-9]/gi, "_")}.mp3`;
+
+      // Fetch the audio blob
+      const response = await fetch(concatenatedUrl);
+      const blob = await response.blob();
+
+      // Create download link
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+
+      // Trigger download
+      window.document.body.appendChild(link);
+      link.click();
+
+      // Clean up
+      window.document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error downloading MP3:", error);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [concatenatedUrl, document.title, documentVersion.version_name]);
 
   // Toggle all sections
   const handleToggleAll = useCallback(
@@ -658,7 +867,7 @@ export function DocumentVersionContent({
     <div className="h-full flex flex-col overflow-hidden min-h-0 flex-1">
       {/* Full-width player at the top */}
       <div className="w-full border-b border-gray-200">
-        {versionAudioVersions.length > 0 && enabledSegmentIds.length > 0 && (
+        {versionAudioVersions.length > 0 && (
           <AudioPlayerControls
             isLoading={isLoading}
             waveformReady={waveformReady}
@@ -669,6 +878,7 @@ export function DocumentVersionContent({
             progress={progress}
             isDragging={isDragging}
             containerRef={containerRef}
+            gain={gain}
             onTogglePlayback={togglePlayback}
             onSkipBackward={skipBackward}
             onSkipForward={skipForward}
@@ -676,7 +886,7 @@ export function DocumentVersionContent({
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onDrawSegmentSeparators={drawSegmentSeparators}
+            // onDrawSegmentSeparators={drawSegmentSeparators}
           />
         )}
       </div>
@@ -706,13 +916,43 @@ export function DocumentVersionContent({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" className="h-6 w-6 p-0">
-                      <Download />
+                    <SpeedSelector
+                      currentSpeed={playbackSpeed} // You'll need to add this state
+                      onSpeedChange={handleSpeedChange} // You'll need to implement this handler
+                      disabled={
+                        !concatenatedUrl || enabledSegmentIds.length === 0
+                      }
+                      isLoading={isDownloading || isLoading}
+                    />
+                    <Separator orientation="vertical" />
+                    <Button
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={handleDownloadMP3}
+                      disabled={
+                        !concatenatedUrl ||
+                        enabledSegmentIds.length === 0 ||
+                        isDownloading ||
+                        isLoading
+                      }
+                      title={isDownloading ? "Downloading..." : "Download MP3"}
+                    >
+                      {isDownloading || isLoading ? (
+                        <div className="animate-spin h-3 w-3 border border-gray-900 border-t-transparent rounded-full" />
+                      ) : (
+                        <Download />
+                      )}
                     </Button>
                     <Separator orientation="vertical" />
-                    <Button variant="ghost" className="h-6 w-6 p-0">
+                    {/* <Button variant="ghost" className="h-6 w-6 p-0">
                       <MoreVertical />
-                    </Button>
+                    </Button> */}
+                    <SectionSelector
+                      allSegments={allSegments}
+                      sectionToggles={sectionToggles}
+                      onSectionToggle={handleSectionToggle}
+                      onToggleAll={handleToggleAll}
+                    />
                   </div>
                 </div>
               </div>
@@ -720,12 +960,19 @@ export function DocumentVersionContent({
                 {allSegments.map((segment) => (
                   <div
                     key={segment.id}
-                    className="flex justify-between border-b border-gray-200 p-4 cursor-pointer hover:bg-gray-50"
+                    className="group relative flex justify-between border-b border-gray-200 p-4"
                   >
-                    <div className="flex items-center gap-3">
+                    {/* section progress */}
+                    <div
+                      className="absolute bottom-0 top-0 left-0 h-full bg-gray-100"
+                      style={{
+                        width: `${getSegmentProgress(segment.id) * 100}%`,
+                      }}
+                    />
+                    <div className="flex items-center gap-3 z-1">
                       <Label
                         htmlFor={segment.id}
-                        className={`font-medium cursor-pointer ${
+                        className={`font-medium cursor-pointer leading-6 ${
                           !sectionToggles[segment.id]
                             ? "text-gray-400 line-through"
                             : ""
@@ -734,8 +981,32 @@ export function DocumentVersionContent({
                         {segment.section_title ||
                           `Section ${segment.segment_number}`}
                       </Label>
+                      {sectionToggles[segment.id] && (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded flex items-center justify-center shadow-none cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Find the segment in timeline and seek to its start time
+                            const segmentInfo = segmentTimeline.find(
+                              (s) => s.segmentId === segment.id
+                            );
+                            if (segmentInfo) {
+                              seekToTime(segmentInfo.startTime);
+                              // if (!isPlaying) togglePlayback();
+                            }
+                          }}
+                          title={`Skip to ${
+                            segment.section_title ||
+                            `Section ${segment.segment_number}`
+                          }`}
+                        >
+                          <SkipForwardIcon className="!w-3 !h-3" />
+                        </Button>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 z-1">
                       <div
                         className={`text-sm  ${
                           !sectionToggles[segment.id]
