@@ -13,24 +13,17 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_SECRET_KEY,
 });
 
-// type DocumentType =
-//   | "general"
-//   | "academic"
-//   | "legal"
-//   | "financial"
-//   | "technical"
-//   | "manual"
-//   | "news" // For news articles, newspapers, press releases
-//   | "literature"; // For fiction, non-fiction, novels, essays, books
-
-// function isValidDocumentType(type: string): type is DocumentType {
-//   return type in DOCUMENT_SPECIFIC_INSTRUCTIONS;
-// }
-
 const DocumentClassificationSchema = z.object({
-  documentType: z
-    .nativeEnum(DOCUMENT_TYPES)
-    .transform((key) => key as DocumentType),
+  documentType: z.enum([
+    "academic",
+    "legal",
+    "financial",
+    "technical",
+    "manual",
+    "news",
+    "literature",
+    "general",
+  ] as const),
   language: z
     .string()
     .refine((code) => VALID_LANGUAGE_CODES.has(code.toLowerCase()), {
@@ -102,9 +95,9 @@ async function classifyDocumentAndLanguage(text: string): Promise<{
       },
     ],
     reasoning: {
-      effort: "minimal",
+      effort: "medium",
     },
-    max_output_tokens: 200, // Increased slightly since we need reasoning for classification
+    max_output_tokens: 2000, // Increased slightly since we need reasoning for classification
     text: {
       format: zodTextFormat(
         DocumentClassificationSchema,
