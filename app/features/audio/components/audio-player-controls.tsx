@@ -1,6 +1,11 @@
 import React, { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { UndoDot, RedoDot } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AudioPlayerControlsProps {
   isLoading: boolean;
@@ -11,6 +16,7 @@ interface AudioPlayerControlsProps {
   totalDuration: number;
   progress: number;
   isDragging: boolean;
+  gain: number;
   containerRef: React.RefObject<HTMLDivElement | null>;
   onTogglePlayback: () => void;
   onSkipBackward: () => void;
@@ -19,7 +25,7 @@ interface AudioPlayerControlsProps {
   onMouseDown: (e: React.MouseEvent) => void;
   onMouseMove: (e: React.MouseEvent) => void;
   onMouseUp: () => void;
-  onDrawSegmentSeparators: () => void;
+  onDrawSegmentSeparators?: () => void;
 }
 
 const PlayIcon = () => (
@@ -44,6 +50,7 @@ export function AudioPlayerControls({
   progress,
   isDragging,
   containerRef,
+  gain,
   onTogglePlayback,
   onSkipBackward,
   onSkipForward,
@@ -57,7 +64,7 @@ export function AudioPlayerControls({
 
   // Call drawSegmentSeparators when waveform is ready
   React.useEffect(() => {
-    if (waveformReady) {
+    if (waveformReady && onDrawSegmentSeparators) {
       onDrawSegmentSeparators();
     }
   }, [waveformReady, onDrawSegmentSeparators]);
@@ -68,6 +75,8 @@ export function AudioPlayerControls({
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  const scale = 1 + Math.min(gain * 3, 0.6); // up to +30%
 
   return (
     <div className="bg-white">
@@ -91,10 +100,24 @@ export function AudioPlayerControls({
             <Button
               variant="secondary"
               size="icon"
-              className="p-0 hover:bg-gray-200"
+              className="relative p-0 bg-gray-200 hover:bg-gray-300 rounded-full"
               onClick={onTogglePlayback}
+              // style={{
+              //   transform: `scale(${scale})`,
+              //   transition: "transform 0.05s linear", // smooth but responsive
+              // }}
             >
-              {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              <span
+                className="absolute inset-0 rounded-full bg-gray-200" //bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"
+                style={{
+                  transform: `scale(${scale})`,
+                  transition: "transform 0.15s linear",
+                }}
+              />
+
+              <span className="relative z-10">
+                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </span>
             </Button>
             <Button
               variant="ghost"
@@ -125,9 +148,12 @@ export function AudioPlayerControls({
                     onMouseLeave={onMouseUp}
                   >
                     <div
-                      className="absolute top-0 bottom-0 w-px bg-gray-400 z-30 transition-all duration-100 ease-out"
+                      className={`absolute top-0 bottom-0 right-0 z-30 border-l border-gray-300 ${
+                        isDragging ? "cursor-grabbing" : "cursor-grab"
+                      }`}
                       style={{
-                        left: `${Math.max(0, Math.min(100, progress))}%`,
+                        width: `${Math.max(0, Math.min(100, 100 - progress))}%`,
+                        backgroundColor: "rgba(255,255,255,0.7)",
                       }}
                     />
                   </div>

@@ -24,6 +24,9 @@ import { getAudioDuration, getAudioDurationAccurate } from "../../audio/utils";
 import { ProcessedText } from "../../documents/types";
 import { Button } from "@/components/ui/button";
 import { assignVoicesToReaders } from "../../documents/utils";
+import { processText } from "../helpers/process-text";
+import type { SectionTTSInput } from "../../audio/types";
+import { metadata } from "@/app/layout";
 
 // Add new types for document classification
 type DocumentClassification = {
@@ -62,7 +65,8 @@ export default function PDFUploader({ userId }: Props) {
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [classification, setClassification] =
     useState<DocumentClassification | null>(null);
-  const [cleanedText, setCleanedText] = useState<ProcessedText | null>(null);
+  const [processedDocument, setProcessedDocument] =
+    useState<ProcessedText | null>(null);
   const [preprocessingLevel, setPreprocessingLevel] =
     useState<PreprocessingLevel>(0);
   const [processingMetadata, setProcessingMetadata] =
@@ -196,278 +200,103 @@ export default function PDFUploader({ userId }: Props) {
     }
   }
 
-  async function cleanTextWithOpenAI(text: string, retryCount = 0) {
-    const maxRetries = 2;
-    setIsCleaningText(true);
+  async function identifySections(text: string): Promise<any> {
+    setIsClassifying(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/openai-advanced", {
+      const response = await fetch("/api/identify-sections", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          input: text,
-          level: preprocessingLevel,
-          documentType: classification?.documentType,
-        }),
+        body: JSON.stringify({ text }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-
-        // Handle specific error codes (same as original)
-        if (
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 504
-        ) {
-          if (retryCount < maxRetries) {
-            setError(
-              `Server temporarily unavailable, retrying... (${retryCount + 1}/${
-                maxRetries + 1
-              })`
-            );
-            await new Promise((resolve) =>
-              setTimeout(resolve, (retryCount + 1) * 1000)
-            );
-            return cleanTextWithOpenAI(text, retryCount + 1);
-          } else {
-            throw new Error(
-              "OpenAI service is temporarily unavailable. Please try again in a few minutes."
-            );
-          }
-        } else if (response.status === 429) {
-          throw new Error(
-            "Rate limit exceeded. Please wait a moment and try again."
-          );
-        } else if (response.status === 401) {
-          throw new Error(
-            "Authentication failed. Please check your API configuration."
-          );
-        } else if (response.status >= 400 && response.status < 500) {
-          throw new Error(
-            errorData.error ||
-              `Request failed (${response.status}). Please check your input and try again.`
-          );
-        } else {
-          throw new Error(
-            errorData.error || `OpenAI API error: ${response.status}`
-          );
-        }
+        throw new Error(
+          errorData.error || `Section identification failed: ${response.status}`
+        );
       }
 
       const data = await response.json();
-      setError(null);
 
-      console.log(data.message);
+      console.log("DOCUMENT SECTIONS");
+      console.log(data);
 
-      return {
-        cleanedText: data.message,
-        metadata: data.metadata,
-      };
+      // setError(null);
+
+      return data; // Return the classification object
     } catch (err) {
-      console.error("Error processing text:", err);
-
-      if (err instanceof TypeError && err.message.includes("fetch")) {
-        setError("Network error. Please check your connection and try again.");
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Failed to process text with AI. Please try again.");
-      }
-
-      throw err; // Re-throw so startProcessing can handle it
+      console.error("Error identifying document sections:", err);
+      // setError(
+      //   err instanceof Error ? err.message : "Failed to identify sections"
+      // );
+      return null; // Return null on error
     } finally {
-      setIsCleaningText(false);
+      setIsClassifying(false);
     }
   }
 
-  // async function generateAudio(customText?: string) {
-  //   if (!currentDocumentVersionId) {
-  //     setError("No document version available for audio generation");
-  //     return;
-  //   }
+  async function cleanTextWithOpenAI(text: string, retryCount = 0) {
+    setIsCleaningText(true);
+    setError(null);
 
-  //   setIsGeneratingAudio(true);
-  //   setError(null);
+    if (preprocessingLevel === 0 || preprocessingLevel === 1) {
+      try {
+        const sectionIdentificationResult = await identifySections(text);
 
-  //   try {
-  //     let requestBody: any;
+        console.log(sectionIdentificationResult);
+        console.log("SECTION IDENTIFICATION SUCCESS");
+        const structuredDocumentInput: { title: string; content: string }[] =
+          sectionIdentificationResult.structuredDocument;
 
-  //     if (customText) {
-  //       // Handle custom text by converting to ProcessedText structure
-  //       const processedText: ProcessedText = {
-  //         processed_text: {
-  //           sections: [
-  //             {
-  //               title: "Custom Text",
-  //               content: {
-  //                 speech: [
-  //                   {
-  //                     text: customText,
-  //                     reader_id: "default",
-  //                   },
-  //                 ],
-  //               },
-  //             },
-  //           ],
-  //         },
-  //       };
+        console.log(sectionIdentificationResult);
 
-  //       requestBody = {
-  //         processedText: processedText,
-  //         sectionIndex: 3,
-  //         voice: "onyx",
-  //         response_format: "mp3",
-  //         word_timestamps: true,
-  //         maxCharsPerSection: 1000,
-  //         maxCharsPerSpeech: 300,
-  //         mergeSectionSpeeches: true,
-  //       };
-  //     } else if (
-  //       cleanedText &&
-  //       typeof cleanedText === "object" &&
-  //       cleanedText.processed_text?.sections
-  //     ) {
-  //       // Use structured content - generate audio for first section only
-  //       requestBody = {
-  //         processedText: cleanedText,
-  //         sectionIndex: 3,
-  //         voice: "onyx",
-  //         response_format: "mp3",
-  //         word_timestamps: true,
-  //         maxCharsPerSection: 1000,
-  //         maxCharsPerSpeech: 300,
-  //         mergeSectionSpeeches: true,
-  //       };
-  //     } else {
-  //       setError("No text available for audio generation");
-  //       return;
-  //     }
+        const processedSections: SectionTTSInput[] = [];
 
-  //     // Before making the API call, check the content:
-  //     if (cleanedText?.processed_text?.sections?.[0]?.content?.speech) {
-  //       const firstSection = cleanedText.processed_text.sections[0];
-  //       const totalText = firstSection.content.speech
-  //         .map((s) => s.text)
-  //         .join(" ");
-  //       console.log("Text to process:", totalText.substring(0, 100) + "...");
-  //       console.log("Text length:", totalText.length);
+        // Use Promise.all to wait for all sections to be processed
+        const sectionPromises = structuredDocumentInput.map(
+          async ({ title, content }) => {
+            console.log("CALLING PROCESS TEXT for: ", title);
+            const { cleanedText } = await processText(
+              content,
+              title,
+              preprocessingLevel
+            );
 
-  //       if (!totalText.trim()) {
-  //         setError("First section contains no text content");
-  //         return;
-  //       }
-  //     }
+            console.log(cleanedText);
+            return cleanedText;
+          }
+        );
 
-  //     // Call the new structured audio API
-  //     const response = await fetch("/api/lemonfox-structured", {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //       },
-  //       body: JSON.stringify(requestBody),
-  //     });
+        // Wait for all sections to complete
+        const results = await Promise.all(sectionPromises);
+        processedSections.push(...results);
 
-  //     if (!response.ok) {
-  //       const errorData = await response.json().catch(() => ({}));
-  //       throw new Error(errorData.error || "Failed to generate audio");
-  //     }
+        console.log(processedSections);
 
-  //     // Always JSON response now
-  //     const responseData = await response.json();
-
-  //     if (!responseData.segments || responseData.segments.length === 0) {
-  //       throw new Error("No audio segments generated");
-  //     }
-
-  //     // Use the first segment
-  //     const firstSegment = responseData.segments[0];
-  //     const audioBuffer = Uint8Array.from(atob(firstSegment.audioBase64), (c) =>
-  //       c.charCodeAt(0)
-  //     );
-  //     const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
-
-  //     // Calculate duration
-  //     const audioDuration = await getAudioDurationAccurate(audioBlob);
-
-  //     if (!audioDuration || !isFinite(audioDuration) || audioDuration <= 0) {
-  //       throw new Error("Invalid audio duration calculated");
-  //     }
-
-  //     console.log(
-  //       `Calculated audio duration: ${audioDuration.toFixed(2)} seconds`
-  //     );
-
-  //     // Create AudioVersion
-  //     const { data: audioVersion, error: versionError } =
-  //       await createAudioVersionAction({
-  //         document_version_id: currentDocumentVersionId,
-  //         tts_model: "lemonfox",
-  //         voice_name: "onyx",
-  //         speed: 1.0,
-  //       });
-
-  //     if (versionError || !audioVersion) {
-  //       throw new Error(versionError || "Failed to create audio version");
-  //     }
-
-  //     // Convert to File for upload
-  //     const audioFile = new File(
-  //       [audioBlob],
-  //       `audio-segment-${firstSegment.sectionIndex + 1}.mp3`,
-  //       {
-  //         type: "audio/mpeg",
-  //       }
-  //     );
-
-  //     // Create AudioSegment with word timestamps
-  //     const { data: audioSegment, error: segmentError } =
-  //       await createAudioSegmentAction(
-  //         {
-  //           audio_version_id: audioVersion.id,
-  //           segment_number: 1,
-  //           section_title: firstSegment.sectionTitle,
-  //           text_start_index: 0,
-  //           text_end_index: firstSegment.textLength,
-  //           audio_duration: Math.round(audioDuration * 100) / 100,
-  //           word_timestamps: firstSegment.word_timestamps || [],
-  //         },
-  //         audioFile
-  //       );
-
-  //     if (segmentError || !audioSegment) {
-  //       await deleteAudioVersionAction(audioVersion.id);
-  //       throw new Error(segmentError || "Failed to create audio segment");
-  //     }
-
-  //     // Create local URL for playback
-  //     const newAudioUrl = URL.createObjectURL(audioBlob);
-
-  //     if (audioUrl) {
-  //       URL.revokeObjectURL(audioUrl);
-  //     }
-
-  //     setAudioUrl(newAudioUrl);
-  //     setCurrentAudioVersionId(audioVersion.id);
-
-  //     console.log("Audio generated successfully:", {
-  //       sectionTitle: firstSegment.sectionTitle,
-  //       sectionIndex: firstSegment.sectionIndex,
-  //       audioDuration,
-  //       textLength: firstSegment.textLength,
-  //       hasWordTimestamps: !!firstSegment.word_timestamps,
-  //       totalSegments: responseData.totalSegments,
-  //     });
-  //   } catch (err) {
-  //     console.error("Error generating audio:", err);
-  //     setError(err instanceof Error ? err.message : "Failed to generate audio");
-  //   } finally {
-  //     setIsGeneratingAudio(false);
-  //   }
-  // }
+        return {
+          cleanedText: { processed_text: { sections: processedSections } },
+          metadata: {},
+        };
+      } finally {
+        setIsCleaningText(false);
+      }
+    } else {
+      try {
+        const result = await processText(
+          text,
+          "Conversation",
+          preprocessingLevel
+        );
+        return result;
+      } finally {
+        setIsCleaningText(false);
+      }
+    }
+  }
 
   async function generateAudioTest() {
     console.log(customText);
@@ -511,8 +340,8 @@ export default function PDFUploader({ userId }: Props) {
     existingAudioVersionId?: string
   ) => {
     if (
-      !cleanedText ||
-      !isStructuredContent(cleanedText) ||
+      !processedDocument ||
+      !isStructuredContent(processedDocument) ||
       !currentDocumentVersionId
     ) {
       setError("Missing requirements for audio generation");
@@ -527,7 +356,7 @@ export default function PDFUploader({ userId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          processedText: cleanedText,
+          processedText: processedDocument,
           sectionIndex: sectionIndex,
           voice: "onyx",
           voiceMap: readerVoiceMap,
@@ -535,7 +364,7 @@ export default function PDFUploader({ userId }: Props) {
           word_timestamps: true,
           maxCharsPerSection: 3000,
           maxCharsPerSpeech: 100,
-          mergeSectionSpeeches: false,
+          includeTitles: true,
         }),
       });
 
@@ -633,7 +462,7 @@ export default function PDFUploader({ userId }: Props) {
   };
 
   const generateAllAudio = async () => {
-    if (!cleanedText || !isStructuredContent(cleanedText)) {
+    if (!processedDocument || !isStructuredContent(processedDocument)) {
       setError("No structured content available for audio generation");
       return;
     }
@@ -643,7 +472,7 @@ export default function PDFUploader({ userId }: Props) {
       return;
     }
 
-    const readerVoiceMap = assignVoicesToReaders(cleanedText, [
+    const readerVoiceMap = assignVoicesToReaders(processedDocument, [
       "heart",
       "fable",
     ]);
@@ -663,7 +492,7 @@ export default function PDFUploader({ userId }: Props) {
     }
 
     setCurrentAudioVersionId(audioVersion.id);
-    const totalSections = cleanedText.processed_text.sections.length;
+    const totalSections = processedDocument.processed_text.sections.length;
 
     // Generate audio for each section using the same audio version
     for (let i = 0; i < totalSections; i++) {
@@ -683,7 +512,7 @@ export default function PDFUploader({ userId }: Props) {
     setParsedPDF(null);
     setFileInfo(null);
     setClassification(null);
-    setCleanedText(null);
+    setProcessedDocument(null);
     setProcessingMetadata(null);
 
     // if (audioUrl) {
@@ -787,6 +616,10 @@ export default function PDFUploader({ userId }: Props) {
       if (pdfData.text.trim().length > 0) {
         const result = await classifyDocument(pdfData.text.trim());
 
+        // console.log("INPUT SIZE: ", pdfData.text.trim().length);
+
+        // await identifySections(pdfData.text.trim());
+
         if (result) {
           updateDocumentAction(doc.id, {
             language: result.language,
@@ -813,7 +646,7 @@ export default function PDFUploader({ userId }: Props) {
     setParsedPDF(null);
     setFileInfo(null);
     setClassification(null);
-    setCleanedText(null);
+    setProcessedDocument(null);
     setProcessingMetadata(null);
     setError(null);
 
@@ -837,7 +670,7 @@ export default function PDFUploader({ userId }: Props) {
 
       if (processedContent) {
         // Store the structured content directly
-        setCleanedText(processedContent.cleanedText); // This should now be the ProcessedText object
+        setProcessedDocument(processedContent.cleanedText); // This should now be the ProcessedText object
         setProcessingMetadata(processedContent.metadata);
 
         // Create document version with the structured content
@@ -894,7 +727,7 @@ export default function PDFUploader({ userId }: Props) {
       },
     };
 
-    setCleanedText(processedText);
+    setProcessedDocument(processedText);
 
     // if (audioUrl) {
     //   URL.revokeObjectURL(audioUrl);
@@ -945,7 +778,7 @@ export default function PDFUploader({ userId }: Props) {
             <ProcessingLevelSelector
               level={preprocessingLevel}
               onLevelChange={setPreprocessingLevel}
-              canReprocess={!!cleanedText}
+              canReprocess={!!processedDocument}
               isProcessing={isCleaningText}
               onReprocess={reprocessText}
               handleProcessWithAi={startProcessing}
@@ -965,11 +798,11 @@ export default function PDFUploader({ userId }: Props) {
         </div>
 
         {/* Results Display */}
-        {parsedPDF && cleanedText && (
+        {parsedPDF && processedDocument && (
           <div className="p-6">
             <PDFResultsDisplay
               parsedPDF={parsedPDF}
-              cleanedText={cleanedText}
+              cleanedText={processedDocument}
               processingMetadata={processingMetadata}
               isCleaningText={isCleaningText}
               error={error}
@@ -980,7 +813,10 @@ export default function PDFUploader({ userId }: Props) {
               generatingAudioSections={generatingAudioSections}
               onGenerateAudioForSection={generateAudioForSection}
               onGenerateAllAudio={generateAllAudio}
-              voiceMap={assignVoicesToReaders(cleanedText, ["heart", "fable"])}
+              voiceMap={assignVoicesToReaders(processedDocument, [
+                "heart",
+                "fable",
+              ])}
             />
           </div>
         )}

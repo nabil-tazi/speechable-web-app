@@ -80,4 +80,4 @@ export const PREPROCESSING_LEVELS = {
 export const PROCESSING_ARRAY: ProcessingType[] =
   Object.values(PREPROCESSING_LEVELS);
 
-export type PreprocessingLevel = 0 | 1 | 2 | 3 | 4;
+export type PreprocessingLevel = 0 | 1 | 2 | 3;

@@ -6,6 +6,7 @@ import OpenAI from "openai";
 
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
+import { SectionTTSInput } from "@/app/features/audio/types";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_SECRET_KEY,
@@ -110,21 +111,25 @@ Focus on major document divisions only. Each section should contain substantial 
 
 export async function POST(req: NextRequest) {
   const {
-    input,
+    text,
+    title,
     level = 0,
   }: {
-    input: string;
+    text: string;
+    title: string;
     level: 0 | 1 | 2 | 3;
   } = await req.json();
 
-  if (typeof input !== "string") {
+  if (typeof text !== "string") {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
     );
   }
-  if (level === 0 || level === 1) return processSectionBySection(input, level);
-  if (level === 2 || level === 3) return processAllAtOnce(input, level);
+  if (level === 0 || level === 1)
+    return processSingleSection(text, title, level);
+  // if (level === 0 || level === 1) return processSectionBySection(input, level);
+  if (level === 2 || level === 3) return processAllAtOnce(text, level);
 }
 
 async function identifySections(
@@ -202,44 +207,50 @@ function extractSectionContent(
 }
 
 async function processSingleSection(
-  level: number,
   sectionContent: string,
-  sectionInfo: IdentifiedSection,
-  prompt: string,
-  temperature: number
-): Promise<Section> {
+  sectionTitle: string,
+  level: 0 | 1 | 2 | 3
+  // temperature: number
+) {
+  console.log("PROCESSING SECTION: ", sectionTitle);
+
   // Check if section needs chunking (80k chars ~= 20k tokens)
   const needsChunking = sectionContent.length > 80000;
 
+  const prompt = LEVEL_PROMPT[level];
+
+  let section: Section;
+
   if (needsChunking) {
-    return await processSectionInChunks(
+    section = await processSectionInChunks(
       sectionContent,
-      sectionInfo,
-      prompt,
-      temperature
+      sectionTitle,
+      prompt
     );
   } else {
-    return await processSectionSingle(
-      sectionContent,
-      sectionInfo,
-      prompt,
-      temperature
-    );
+    section = await processSectionSingle(sectionContent, sectionTitle, prompt);
   }
+
+  return NextResponse.json({
+    message: section,
+    metadata: {
+      level,
+      processingMethod: "section-by-section",
+      // sectionsProcessed: processedSections.length,
+      originalLength: sectionContent.length,
+      processedLength: JSON.stringify(section.content).length,
+    },
+  });
 }
 
 // Updated processing functions
 async function processSectionSingle(
   sectionContent: string,
-  sectionInfo: IdentifiedSection,
-  prompt: string,
-  temperature: number
+  sectionTitle: string,
+  prompt: string
 ): Promise<Section> {
   // Inject section info into the prompt
-  const contextualizedPrompt = prompt.replace(
-    "{SECTION_TITLE}",
-    sectionInfo.title
-  );
+  const contextualizedPrompt = prompt.replace("{SECTION_TITLE}", sectionTitle);
   // .replace("{START_MARKER}", sectionInfo.startMarker);
 
   // const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -297,22 +308,32 @@ async function processSectionSingle(
   const cleanedText = response.output_text.trim();
 
   // Build the JSON structure ourselves
-  return createSectionFromText(cleanedText, sectionInfo.title);
+
+  const section = createSectionFromText(cleanedText, sectionTitle);
+  return section;
+
+  // return NextResponse.json({
+  //     message: result,
+  //     metadata: {
+  //       level,
+  //       processingMethod: "section-by-section",
+  //       sectionsProcessed: processedSections.length,
+  //       originalLength: input.length,
+  //       processedLength: JSON.stringify(result).length,
+  //     },
+  //   });
 }
 
 async function processSectionInChunks(
   sectionContent: string,
-  sectionInfo: IdentifiedSection,
-  prompt: string,
-  temperature: number
+  sectionTitle: string,
+  prompt: string
 ): Promise<Section> {
   const chunks = chunkText(sectionContent, 80000);
   const cleanedChunks: string[] = [];
 
   // Inject section info into the base prompt
-  const contextualizedPrompt = prompt
-    .replace("{SECTION_TITLE}", sectionInfo.title)
-    .replace("{START_MARKER}", sectionInfo.startMarker);
+  const contextualizedPrompt = prompt.replace("{SECTION_TITLE}", sectionTitle);
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -382,10 +403,13 @@ CHUNK ${i + 1} of ${
   const combinedText = cleanedChunks.join("\n\n");
 
   // Build the JSON structure ourselves
-  return createSectionFromText(combinedText, sectionInfo.title);
+  return createSectionFromText(combinedText, sectionTitle);
 }
 
-function createSectionFromText(cleanedText: string, title: string): Section {
+function createSectionFromText(
+  cleanedText: string,
+  title: string
+): SectionTTSInput {
   return {
     title: title,
     content: {
@@ -465,14 +489,12 @@ async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
 
       // Process this section (with chunking if needed)
       const processedSection = await processSingleSection(
-        level,
         sectionContent,
-        sectionInfo,
-        LEVEL_PROMPT[level],
-        PROCESSING_ARRAY[level].temperature
+        sectionInfo.title,
+        level
       );
 
-      processedSections.push(processedSection);
+      // processedSections.push(processedSection);
     }
 
     // Step 3: Combine all processed sections

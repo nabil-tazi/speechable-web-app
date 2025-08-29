@@ -4,6 +4,8 @@ interface WordTimestamp {
   word: string;
   start: number;
   end: number;
+  isTitle?: boolean;
+  titleWordIndex?: number;
 }
 
 interface AudioSegment {
@@ -20,6 +22,7 @@ interface AudioSegment {
   audio_file_size: number;
   word_timestamps?: WordTimestamp[];
   created_at: string;
+  includes_title?: boolean;
 }
 
 interface GroupedWord {
@@ -28,6 +31,8 @@ interface GroupedWord {
   end: number;
   segmentId: string;
   segmentTitle: string;
+  isTitle?: boolean;
+  titleWordIndex?: number;
 }
 
 interface SegmentTimelineItem {
@@ -85,10 +90,58 @@ export function WordHighlightDisplay({
     }
   }, [currentWordIndex]);
 
+  // Helper function to get word styling based on type and state
+  const getWordStyling = (
+    wordGroup: GroupedWord,
+    globalIndex: number,
+    isCurrentWord: boolean
+  ) => {
+    const baseClasses =
+      "transition-all cursor-pointer px-1 py-0.5 rounded inline-block";
+
+    // Debug log to check if isTitle is being detected
+    if (wordGroup.isTitle) {
+      console.log("Title word detected:", wordGroup.text, wordGroup.isTitle);
+    }
+
+    if (wordGroup.isTitle === true) {
+      // Title word styling
+      if (isCurrentWord) {
+        return `${baseClasses} bg-gray-200 font-bold text-lg text-gray-900 `;
+      } else {
+        return `${baseClasses} font-bold text-lg text-gray-800 hover:bg-gray-100`;
+      }
+    } else {
+      // Regular speech word styling
+      if (isCurrentWord) {
+        return `${baseClasses} bg-gray-200 text-gray-900`;
+      } else {
+        return `${baseClasses} text-gray-800 hover:bg-gray-100`;
+      }
+    }
+  };
+
+  // Helper function to determine if we should add spacing after a word
+  const shouldAddSpacing = (
+    wordGroup: GroupedWord,
+    nextWordGroup?: GroupedWord
+  ) => {
+    // Add line break after title section
+    if (wordGroup.isTitle && (!nextWordGroup || !nextWordGroup.isTitle)) {
+      return "title-end";
+    }
+    // Add line break before title section (except for the first word)
+    if (!wordGroup.isTitle && nextWordGroup?.isTitle) {
+      return "before-title";
+    }
+    // Regular spacing
+    return "normal";
+  };
+
   return (
     <div className="flex flex-col h-full overflow-y-auto min-h-0">
       <div className="flex-shrink-0 px-4 py-4">
-        <h2 className="text-lg font-semibold">{documentTitle}</h2>
+        <h2 className="text-2xl font-semibold">{documentTitle}</h2>
         <h3 className="text-sm font-medium text-gray-500">{versionName}</h3>
       </div>
 
@@ -105,40 +158,49 @@ export function WordHighlightDisplay({
 
             return (
               <div key={segmentId} className="mb-6">
-                {/* Segment Title */}
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {segment.section_title || `Section ${segment.segment_number}`}
-                </h3>
-
-                {/* Words for this segment */}
-                <div className="space-y-1 px-8">
+                {/* Words for this segment - titles and speech are now rendered from word_timestamps */}
+                <div className="space-y-1">
                   {segmentWords.map((wordGroup, wordIndex) => {
                     // Find the global index of this word in the original groupedWords array
                     const globalIndex = groupedWords.findIndex(
                       (w) => w === wordGroup
                     );
 
+                    const isCurrentWord = globalIndex === currentWordIndex;
+                    const nextWord = segmentWords[wordIndex + 1];
+                    const spacingType = shouldAddSpacing(wordGroup, nextWord);
+
                     return (
-                      <span
-                        key={`${segmentId}-${wordIndex}`}
-                        ref={
-                          globalIndex === currentWordIndex
-                            ? highlightedWordRef
-                            : null
-                        }
-                        className={`${
-                          globalIndex === currentWordIndex
-                            ? "bg-gray-200 px-1 rounded"
-                            : "text-gray-800 hover:bg-gray-100"
-                        } transition-all cursor-pointer px-1 py-0.5 rounded inline-block`}
-                        onClick={() => onWordClick(wordGroup.start)}
-                        title={`Jump to ${formatTime(wordGroup.start)} - ${
-                          wordGroup.segmentTitle
-                        }`}
-                      >
-                        {wordGroup.text}
-                        {wordIndex < segmentWords.length - 1 && " "}
-                      </span>
+                      <React.Fragment key={`${segmentId}-${wordIndex}`}>
+                        <span
+                          ref={isCurrentWord ? highlightedWordRef : null}
+                          className={getWordStyling(
+                            wordGroup,
+                            globalIndex,
+                            isCurrentWord
+                          )}
+                          onClick={() => onWordClick(wordGroup.start)}
+                          title={`${
+                            wordGroup.isTitle ? "Title: " : ""
+                          }Jump to ${formatTime(wordGroup.start)} - ${
+                            wordGroup.segmentTitle
+                          }`}
+                        >
+                          {wordGroup.text}
+                        </span>
+
+                        {/* Handle spacing and line breaks */}
+                        {spacingType === "title-end" && <br />}
+                        {spacingType === "before-title" && (
+                          <>
+                            <br />
+                            <br />
+                          </>
+                        )}
+                        {/* {spacingType === "normal" &&
+                          wordIndex < segmentWords.length - 1 &&
+                          " "} */}
+                      </React.Fragment>
                     );
                   })}
                 </div>
