@@ -11,19 +11,17 @@ import {
 } from "react";
 import type { Document, DocumentWithVersions } from "../types";
 
-import {
-  createDocumentAction,
-  uploadDocumentThumbnailAction,
-  getUserDocumentsAction,
-  getUserDocumentsWithVersionsAction,
-  updateDocumentAction,
-} from "../actions";
+import { getUserDocumentsWithVersionsAction } from "../actions";
 import {
   documentsReducer,
   type DocumentsAction,
   type DocumentsState,
 } from "./reducer";
 import { createClient } from "@/app/lib/supabase/client";
+import {
+  createDocumentsActions,
+  type DocumentsActions,
+} from "./create-documents-actions";
 import { getThumbnailUrl } from "@/app/utils/storage";
 import { DOCUMENT_TYPES } from "../constants";
 import type { DocumentType } from "../types";
@@ -52,44 +50,6 @@ const emptyState: ExtendedDocumentsState = {
 
 // Context Types
 type DocumentsDispatch = (action: DocumentsAction) => void;
-
-// Document Actions Interface
-interface DocumentsActions {
-  createDocument: (documentData: {
-    mime_type: string;
-    filename: string;
-    author: string;
-    title: string;
-    file_type: string;
-    document_type: string;
-    raw_text?: string;
-    page_count?: number;
-    file_size?: number;
-    metadata?: Record<string, any>;
-  }) => Promise<{
-    success: boolean;
-    document?: DocumentWithVersions;
-    error?: string;
-  }>;
-
-  updateDocument: (
-    documentId: string,
-    updates: Partial<Omit<Document, "id" | "user_id" | "upload_date">>
-  ) => Promise<{
-    success: boolean;
-    document?: Document;
-    error?: string;
-  }>;
-
-  uploadThumbnail: (
-    documentId: string,
-    thumbnailData: string | File
-  ) => Promise<{ success: boolean; error?: string | null }>;
-
-  refreshDocuments: () => Promise<void>;
-
-  removeDocument: (documentId: string) => void;
-}
 
 // Helper functions (updated to use new constants)
 export const formatDocumentType = (type: string): string => {
@@ -205,137 +165,14 @@ export function DocumentsProvider({ children }: DocumentsProviderProps) {
     }
   }
 
-  // Actions
-  const createDocument = async (
-    documentData: Parameters<typeof createDocumentAction>[0]
-  ) => {
-    try {
-      const tempId = `temp-${Date.now()}`;
-      dispatch({
-        type: "SET_UPLOADING",
-        payload: { id: tempId, uploading: true },
-      });
-
-      const { data, error } = await createDocumentAction(documentData);
-
-      dispatch({
-        type: "SET_UPLOADING",
-        payload: { id: tempId, uploading: false },
-      });
-
-      if (error) {
-        return { success: false, error };
-      }
-
-      if (data) {
-        // Convert Document to DocumentWithVersions by adding empty versions array
-        const documentWithVersions: DocumentWithVersions = {
-          ...data,
-          versions: [],
-        };
-        dispatch({ type: "ADD_DOCUMENT", payload: documentWithVersions });
-        return { success: true, document: documentWithVersions };
-      }
-
-      return { success: false, error: "Unknown error occurred" };
-    } catch (error) {
-      return { success: false, error: "Failed to create document" };
-    }
-  };
-
-  const updateDocument = async (
-    documentId: string,
-    updates: Partial<Omit<Document, "id" | "user_id" | "upload_date">>
-  ) => {
-    try {
-      const { data, error } = await updateDocumentAction(documentId, updates);
-
-      if (error) {
-        return { success: false, error };
-      }
-
-      if (data) {
-        // Convert thumbnail_path to full URL if it exists
-        if (data.thumbnail_path) {
-          data.thumbnail_path = await getThumbnailUrl(data.thumbnail_path);
-        }
-
-        // Update the document in the state
-        dispatch({
-          type: "UPDATE_DOCUMENT",
-          payload: {
-            id: documentId,
-            updates: data,
-          },
-        });
-        return { success: true, document: data };
-      }
-
-      return { success: false, error: "Unknown error occurred" };
-    } catch (error) {
-      return { success: false, error: "Failed to update document" };
-    }
-  };
-
-  const uploadThumbnail = async (
-    documentId: string,
-    thumbnailData: string | File
-  ) => {
-    try {
-      dispatch({
-        type: "SET_UPLOADING",
-        payload: { id: documentId, uploading: true },
-      });
-
-      const { success, error } = await uploadDocumentThumbnailAction(
-        documentId,
-        thumbnailData
-      );
-
-      dispatch({
-        type: "SET_UPLOADING",
-        payload: { id: documentId, uploading: false },
-      });
-
-      if (success) {
-        // Update the document to reflect the thumbnail upload
-        dispatch({
-          type: "UPDATE_DOCUMENT",
-          payload: {
-            id: documentId,
-            updates: { thumbnail_path: `${documentId}.png` },
-          },
-        });
-        return { success: true };
-      }
-
-      return { success: false, error: error || undefined };
-    } catch (error) {
-      dispatch({
-        type: "SET_UPLOADING",
-        payload: { id: documentId, uploading: false },
-      });
-      return { success: false, error: "Failed to upload thumbnail" };
-    }
-  };
-
+  // Refresh documents function for the hook
   const refreshDocuments = async () => {
     hasLoadedDocuments.current = false;
     await loadDocuments();
   };
 
-  const removeDocument = (documentId: string) => {
-    dispatch({ type: "REMOVE_DOCUMENT", payload: documentId });
-  };
-
-  // Define the actions object
-  const actions: DocumentsActions = {
-    createDocument,
-    updateDocument,
-    uploadThumbnail,
-    refreshDocuments,
-    removeDocument,
-  };
+  // Create the documents actions object
+  const actions = createDocumentsActions(dispatch, refreshDocuments);
 
   // Load documents on mount and listen for auth changes
   useEffect(() => {

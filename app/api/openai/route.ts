@@ -2,25 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { DOCUMENT_SPECIFIC_INSTRUCTIONS } from "./constants";
 
 import type { DocumentType } from "./constants";
-// interface ProcessingConfig {
-//   level: 0 | 1 | 2 | 3 | 4;
-//   chunkSize?: number;
-//   preserveStructure?: boolean;
-// }
-
-// interface DocumentStructure {
-//   sections: Array<{
-//     title: string;
-//     content: string;
-//     type: "chapter" | "section" | "subsection" | "content";
-//     level: number;
-//   }>;
-//   metadata: {
-//     title?: string;
-//     author?: string;
-//     abstract?: string;
-//   };
-// }
 
 function isValidDocumentType(type: string): type is DocumentType {
   return type in DOCUMENT_SPECIFIC_INSTRUCTIONS;

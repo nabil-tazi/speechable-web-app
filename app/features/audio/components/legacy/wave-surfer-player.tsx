@@ -8,28 +8,7 @@ import React, {
 } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { UndoDot, RedoDot } from "lucide-react";
-
-interface WordTimestamp {
-  word: string;
-  start: number;
-  end: number;
-}
-
-interface AudioSegment {
-  id: string;
-  audio_version_id: string;
-  segment_number: number;
-  section_title?: string;
-  start_page?: number;
-  end_page?: number;
-  text_start_index?: number;
-  text_end_index?: number;
-  audio_path: string;
-  audio_duration?: number;
-  audio_file_size: number;
-  word_timestamps?: WordTimestamp[];
-  created_at: string;
-}
+import { WordTimestamp, AudioSegment } from "@/app/features/audio/types";
 
 interface GroupedWord {
   text: string;

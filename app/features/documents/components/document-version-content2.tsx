@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import type { AudioSegment, AudioVersionWithSegments } from "../../audio/types";
+import type { AudioSegment, AudioVersionWithSegments, WordTimestamp } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
 import { Clock, MicVocal, Download, MoreVertical, Gauge } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
@@ -14,31 +14,7 @@ import { WordHighlightDisplay } from "../../audio/components/word-highlight";
 import { SectionSelector } from "./section-selector";
 import { SpeedSelector } from "./speed-selector";
 
-interface WordTimestamp {
-  word: string;
-  start: number;
-  end: number;
-  isTitle?: boolean;
-  titleWordIndex?: number;
-}
 
-// interface AudioSegment {
-//   id: string;
-//   audio_version_id: string;
-//   segment_number: number;
-//   section_title?: string;
-//   start_page?: number;
-//   end_page?: number;
-//   text_start_index?: number;
-//   text_end_index?: number;
-//   audio_path: string;
-//   audio_duration?: number;
-//   audio_file_size: number;
-//   word_timestamps?: WordTimestamp[];
-//   created_at: string;
-//   includes_title?: boolean;
-//   voice_name: string;
-// }
 
 interface GroupedWord {
   text: string;
