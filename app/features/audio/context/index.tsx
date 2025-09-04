@@ -60,6 +60,7 @@ interface AudioActions {
       start_page?: number;
       end_page?: number;
       voice_name: string;
+      voices: string[];
       text_start_index?: number;
       text_end_index?: number;
       audio_duration?: number;
