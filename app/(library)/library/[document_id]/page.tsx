@@ -5,7 +5,11 @@ import { useDocumentsState } from "../../../features/documents/context";
 import { useMemo, useState, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { DocumentWithVersions } from "@/app/features/documents/types";
-import { useAudioState } from "@/app/features/audio/context";
+import {
+  useAudioState,
+  useAudioActions,
+  AudioProvider,
+} from "@/app/features/audio/context";
 import React, { use } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +41,7 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
 
   const { audioVersions } = useAudioState();
+  const { loadAudioVersions, loadAudioSegments } = useAudioActions();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -56,6 +61,47 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     }
     return sortedVersions[0]?.id || "";
   }, [searchParams, sortedVersions]);
+
+  // Load audio data for all document versions when component mounts
+  useEffect(() => {
+    const loadAudioForDocument = async () => {
+      // Load audio versions for each document version
+      // These will be added to the existing audioVersions array (not replaced)
+      for (const version of document.versions) {
+        await loadAudioVersions(version.id);
+      }
+    };
+
+    loadAudioForDocument();
+  }, [document.versions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load segments when audio versions are available or when active version changes
+  useEffect(() => {
+    async function loadSegmentsForActiveVersion() {
+      // Find the active version
+      const activeVersion = sortedVersions.find(
+        (v) => v.id === activeVersionId
+      );
+
+      if (!activeVersion) return;
+
+      // Find audio versions for the active document version
+      const activeAudioVersions = audioVersions.filter(
+        (av) => av.document_version_id === activeVersion.id
+      );
+
+      // Load segments for each audio version of the active document version
+      for (const audioVersion of activeAudioVersions) {
+        await loadAudioSegments(audioVersion.id);
+      }
+    }
+
+    if (activeVersionId && audioVersions.length > 0) {
+      // console.log("loading segments for: ");
+      // console.log(activeVersionId);
+      loadSegmentsForActiveVersion();
+    }
+  }, [activeVersionId, audioVersions.length, sortedVersions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update activeTab index when activeVersionId changes
   // useEffect(() => {
@@ -315,5 +361,9 @@ export default function DocumentDetailPage({
     );
   }
 
-  return <DocumentDetailView document={document!} />;
+  return (
+    <AudioProvider autoLoad={false}>
+      <DocumentDetailView document={document!} />
+    </AudioProvider>
+  );
 }

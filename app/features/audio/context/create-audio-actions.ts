@@ -137,7 +137,7 @@ export function createAudioActions(dispatch: (action: AudioAction) => void): Aud
       if (error) {
         dispatch({ type: "SET_ERROR", payload: error });
       } else {
-        dispatch({ type: "SET_AUDIO_VERSIONS", payload: data || [] });
+        dispatch({ type: "ADD_AUDIO_VERSIONS", payload: data || [] });
       }
     } catch (error) {
       dispatch({ type: "SET_ERROR", payload: "Failed to load audio versions" });

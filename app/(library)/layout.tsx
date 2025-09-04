@@ -16,6 +16,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { DocumentsProvider } from "../features/documents/context";
 
 export default function RootLayout({
   children,
@@ -23,11 +24,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="h-screen flex flex-col">
-      <SidebarProvider className="flex-1 p-4">
-        <AppSidebar />
-        <SidebarInset>{children}</SidebarInset>
-      </SidebarProvider>
-    </div>
+    <DocumentsProvider autoLoad={false}>
+      <div className="h-screen flex flex-col">
+        <SidebarProvider className="flex-1 p-4">
+          <AppSidebar />
+          <SidebarInset>{children}</SidebarInset>
+        </SidebarProvider>
+      </div>
+    </DocumentsProvider>
   );
 }

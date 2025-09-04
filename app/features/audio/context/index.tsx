@@ -41,10 +41,11 @@ const AudioActionsContext = createContext<AudioActions | undefined>(undefined);
 // Provider Props
 interface AudioProviderProps {
   children: ReactNode;
+  autoLoad?: boolean; // If false, won't automatically load audio on mount
 }
 
 // Provider Component
-export function AudioProvider({ children }: AudioProviderProps) {
+export function AudioProvider({ children, autoLoad = true }: AudioProviderProps) {
   const [state, dispatch] = useReducer(audioReducer, emptyState);
   const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);
@@ -147,7 +148,9 @@ export function AudioProvider({ children }: AudioProviderProps) {
           ) {
             currentUserId.current = newUserId;
             hasLoadedDocuments.current = false;
-            await loadAllAudio();
+            if (autoLoad) {
+              await loadAllAudio();
+            }
           }
         } else if (event === "SIGNED_OUT") {
           currentUserId.current = null;
@@ -165,7 +168,9 @@ export function AudioProvider({ children }: AudioProviderProps) {
 
       if (session?.user) {
         currentUserId.current = session.user.id;
-        await loadAllAudio();
+        if (autoLoad) {
+          await loadAllAudio();
+        }
       } else {
         dispatch({ type: "SET_LOADING", payload: false });
       }
@@ -176,7 +181,7 @@ export function AudioProvider({ children }: AudioProviderProps) {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [autoLoad]);
 
   // Real-time subscriptions for audio changes
   // useEffect(() => {
