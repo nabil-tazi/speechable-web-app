@@ -8,24 +8,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_SECRET_KEY,
 });
 
-const SECTION_IDENTIFICATION_PROMPT2 = `Find section titles in this document.
-
-Look for:
-- An abstract at the beginning of the document
-- Common academic sections: Abstract, Introduction, Methods, Results, Discussion, Conclusion,...
-- Top level numbered sections
-- Other standalone major headings that divide the document
-
-IGNORE:
-- Figure/table captions
-- References or Bibliography entries
-
-For each TOP-LEVEL title you find, return:
-- title: The exact title text (e.g., "1. Introduction")
-- startMarker: the first 5-7 words of the section content (e.g., the words after "1. Introduction")
-
-Focus on major document divisions only. Each section should contain substantial content.`;
-
 //original prompt
 const SECTION_IDENTIFICATION_PROMPT = `You are a document structure analyzer. Your task is to identify ONLY the main top-level sections that divide a document.
 

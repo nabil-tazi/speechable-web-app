@@ -39,7 +39,6 @@ export function DocumentTypeBadge({
   type,
   size = "sm",
   showLabel = true,
-  className = "",
 }: DocumentTypeBadgeProps) {
   // Use the specific config if it exists, otherwise fall back to default
   const config = DOCUMENT_TYPE_CONFIG[type] || DEFAULT_CONFIG;

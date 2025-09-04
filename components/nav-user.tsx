@@ -25,7 +25,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { UserProfile } from "@/app/features/users/types";
 import { useUser, useUserProfile } from "@/app/features/users/hooks/use-user";
 import { useAuth } from "@/app/features/users/hooks/use-auth";
 

@@ -14,7 +14,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DocumentCard } from "@/app/features/documents/components/document-card";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
   BreadcrumbItem,

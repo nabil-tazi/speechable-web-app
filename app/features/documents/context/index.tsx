@@ -9,7 +9,7 @@ import {
   ReactNode,
   useMemo,
 } from "react";
-import type { Document, DocumentWithVersions } from "../types";
+import type { Document, DocumentWithVersions , DocumentType } from "../types";
 
 import { getUserDocumentsWithVersionsAction } from "../actions";
 import {
@@ -24,7 +24,6 @@ import {
 } from "./create-documents-actions";
 import { getThumbnailUrl } from "@/app/utils/storage";
 import { DOCUMENT_TYPES } from "../constants";
-import type { DocumentType } from "../types";
 
 const supabase = createClient();
 

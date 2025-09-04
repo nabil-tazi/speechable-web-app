@@ -10,14 +10,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
-import React from "react";
+import React, { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { PROCESSING_ARRAY, type ProcessingType } from "../../pdf/types";
 import {
-  FileAudio,
   FileText,
-  GraduationCap,
   MessagesSquare,
   MicVocal,
   Presentation,
@@ -28,10 +25,8 @@ import {
   Text,
   Venus,
   Mars,
-  ArrowBigRight,
   MoveRight,
   AudioLines,
-  CheckCheck,
 } from "lucide-react";
 import { TransitionPanel } from "@/components/ui/transition-panel";
 import {
@@ -43,7 +38,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { unifiedVoices } from "../../audio/voice-constants";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Language } from "../../audio/voice-types";
 
 // Type for individual voice

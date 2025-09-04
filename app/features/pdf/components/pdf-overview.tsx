@@ -1,5 +1,6 @@
 import { LANGUAGE_MAP } from "@/app/api/classify-document/constants";
 import { ParsedPDF } from "../types";
+import Image from "next/image";
 
 // Helper function to get language name from code
 const getLanguageName = (code: string): string => {
@@ -66,7 +67,7 @@ export default function PDFDocumentOverview({
           <div className="flex-shrink-0 group">
             <div className="relative">
               {fileInfo?.thumbnailUrl ? (
-                <img
+                <Image
                   src={fileInfo.thumbnailUrl}
                   alt="PDF thumbnail"
                   className="w-40 h-60 object-cover rounded-xl border-1 border-gray-200 "

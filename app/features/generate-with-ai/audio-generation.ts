@@ -1,7 +1,4 @@
-import {
-  createAudioSegmentAction,
-  createAudioVersionAction,
-} from "../audio/actions";
+import { createAudioSegmentAction } from "../audio/actions";
 import type { AudioVersion } from "../audio/types";
 import { getAudioDurationAccurate } from "../audio/utils";
 import type { ProcessedText } from "../documents/types";
@@ -170,7 +167,7 @@ async function generateAudioForSection({
         throw new Error(segmentError || "Failed to create audio segment");
       }
 
-      const audioUrl = URL.createObjectURL(audioBlob);
+      // const audioUrl = URL.createObjectURL(audioBlob);
 
       //   if (sectionAudioUrls[sectionIndex]) {
       //     URL.revokeObjectURL(sectionAudioUrls[sectionIndex]);

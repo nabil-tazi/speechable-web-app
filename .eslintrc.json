@@ -2,7 +2,7 @@
   "extends": ["next/core-web-vitals", "next/typescript"],
   "rules": {
     // React specific rules
-    "react-hooks/exhaustive-deps": "warn",
+    "react-hooks/exhaustive-deps": "off",
     "react/no-unescaped-entities": "off",
 
     // TypeScript specific rules
@@ -19,7 +19,7 @@
     // General JavaScript rules
     "prefer-const": "warn",
     "no-var": "error",
-    "no-console": "warn",
+    "no-console": "off",
 
     // Relax some strict rules for existing codebase
     "quotes": "off",

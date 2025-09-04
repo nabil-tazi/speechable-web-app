@@ -1,8 +1,7 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
 import { useDocumentsState } from "../../../features/documents/context";
-import { useMemo, useState, useEffect, useTransition } from "react";
+import React, { useMemo, useState, useEffect, useTransition, use } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { DocumentWithVersions } from "@/app/features/documents/types";
 import {
@@ -10,7 +9,6 @@ import {
   useAudioActions,
   AudioProvider,
 } from "@/app/features/audio/context";
-import React, { use } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +18,6 @@ import { DocumentVersionLoader } from "@/app/features/documents/components/docum
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
 import { generateWithAi } from "@/app/features/generate-with-ai";
 import Link from "next/link";
-import { DocumentCard } from "@/app/features/documents/components/document-card";
 import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
@@ -132,7 +129,7 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
   function handleGenerateVersion(
     processingLevel: 0 | 1 | 2 | 3,
     voiceArray: string[],
-    language: string
+    _language: string
   ) {
     if (document.raw_text)
       generateWithAi({
