@@ -1,27 +1,9 @@
 import { WordTimestamp } from "@/app/features/audio/types";
+import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
 import { NextRequest, NextResponse } from "next/server";
 import { mergeWordTimestamps } from "./helper";
 
 // Types for the structured content
-interface SpeechObject {
-  text: string;
-  reader_id: string;
-}
-
-interface SectionContent {
-  speech: SpeechObject[];
-}
-
-interface ProcessedSection {
-  title: string;
-  content: SectionContent;
-}
-
-interface ProcessedText {
-  processed_text: {
-    sections: ProcessedSection[];
-  };
-}
 
 interface AudioSegmentResult {
   sectionIndex: number;

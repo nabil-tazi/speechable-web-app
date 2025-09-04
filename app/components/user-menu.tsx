@@ -4,14 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { useAuth } from "../features/users/hooks/use-auth";
-
-interface UserProfile {
-  id: string;
-  display_name: string | null;
-  created_at: string;
-  updated_at: string;
-  profile_image_url?: string | null; // Add this field
-}
+import { UserProfile } from "../features/users/types";
 
 interface UserMenuProps {
   user: User | null;

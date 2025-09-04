@@ -1,21 +1,6 @@
 import { getAudioUrl } from "@/app/utils/storage";
 import React, { useState, useEffect, useRef } from "react";
-
-interface WordTimestamp {
-  word: string;
-  start: number;
-  end: number;
-}
-
-interface AudioSegment {
-  audio_path: string;
-  segment_number: number;
-  section_title?: string;
-  start_page?: number;
-  end_page?: number;
-  audio_duration?: number;
-  word_timestamps?: WordTimestamp[];
-}
+import { WordTimestamp, AudioSegment } from "@/app/features/audio/types";
 
 export function InPagePlayerDrifting({ segment }: { segment: AudioSegment }) {
   const [audioUrl, setAudioUrl] = useState<string>();

@@ -7,31 +7,13 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { SectionTTSInput } from "@/app/features/audio/types";
+import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_SECRET_KEY,
 });
 
 // Types
-interface SpeechObject {
-  text: string;
-  reader_id: string;
-}
-
-interface SectionContent {
-  speech: SpeechObject[];
-}
-
-interface Section {
-  title: string;
-  content: SectionContent;
-}
-
-interface ProcessedText {
-  processed_text: {
-    sections: Section[];
-  };
-}
 
 interface IdentifiedSection {
   title: string;
@@ -219,7 +201,7 @@ async function processSingleSection(
 
   const prompt = LEVEL_PROMPT[level];
 
-  let section: Section;
+  let section: ProcessedSection;
 
   if (needsChunking) {
     section = await processSectionInChunks(
@@ -248,7 +230,7 @@ async function processSectionSingle(
   sectionContent: string,
   sectionTitle: string,
   prompt: string
-): Promise<Section> {
+): Promise<ProcessedSection> {
   // Inject section info into the prompt
   const contextualizedPrompt = prompt.replace("{SECTION_TITLE}", sectionTitle);
   // .replace("{START_MARKER}", sectionInfo.startMarker);
@@ -328,7 +310,7 @@ async function processSectionInChunks(
   sectionContent: string,
   sectionTitle: string,
   prompt: string
-): Promise<Section> {
+): Promise<ProcessedSection> {
   const chunks = chunkText(sectionContent, 80000);
   const cleanedChunks: string[] = [];
 
@@ -409,7 +391,7 @@ CHUNK ${i + 1} of ${
 function createSectionFromText(
   cleanedText: string,
   title: string
-): SectionTTSInput {
+): ProcessedSection {
   return {
     title: title,
     content: {
@@ -472,7 +454,7 @@ async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
     console.log(`Identified ${identifiedSections.sections.length} sections`);
 
     // Step 2: Extract and process each section
-    const processedSections: Section[] = [];
+    const processedSections: ProcessedSection[] = [];
 
     for (let i = 0; i < identifiedSections.sections.length; i++) {
       const sectionInfo = identifiedSections.sections[i];

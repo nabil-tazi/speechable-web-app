@@ -1,4 +1,5 @@
 // features/audio/types.ts
+import { SpeechObject } from "@/app/features/documents/types";
 
 export interface WordTimestamp {
   end: number;
@@ -44,10 +45,6 @@ export interface AudioSegmentWithVersion extends AudioSegment {
   audio_version: AudioVersion;
 }
 
-export interface SpeechObject {
-  text: string;
-  reader_id: string;
-}
 
 export interface SectionTTSInput {
   title: string;

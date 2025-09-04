@@ -7,27 +7,9 @@ import {
   PROCESSING_ARRAY,
 } from "@/app/features/pdf/types";
 import AudioPlayer from "@/app/features/speech/components/audio-player";
+import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
 
 // Add new types for the structured content
-interface SpeechObject {
-  text: string;
-  reader_id: string;
-}
-
-interface SectionContent {
-  speech: SpeechObject[];
-}
-
-interface ProcessedSection {
-  title: string;
-  content: SectionContent;
-}
-
-interface ProcessedText {
-  processed_text: {
-    sections: ProcessedSection[];
-  };
-}
 
 interface PDFResultsDisplayProps {
   parsedPDF: ParsedPDF;
