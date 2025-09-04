@@ -83,12 +83,17 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     router.push(`/library/${document.id}?${params.toString()}`);
   };
 
-  function handleGenerateVersion(processingLevel: 0 | 1 | 2 | 3) {
+  function handleGenerateVersion(
+    processingLevel: 0 | 1 | 2 | 3,
+    voiceArray: string[],
+    language: string
+  ) {
     if (document.raw_text)
       generateWithAi({
         documentId: document.id,
+        existingDocumentVersions: document.versions,
         rawInputText: document.raw_text,
-        voicesArray: ["heart", "fable"],
+        voicesArray: voiceArray,
         processingLevel,
       });
     else console.log("empty text");

@@ -423,6 +423,7 @@ export default function PDFUploader({ userId }: Props) {
               audio_duration: Math.round(audioDuration * 100) / 100,
               word_timestamps: firstSegment.word_timestamps || [],
               voice_name: "onyx",
+              voices: ["onyx"],
             },
             audioFile
           );

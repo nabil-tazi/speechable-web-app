@@ -118,6 +118,8 @@ export async function POST(req: NextRequest) {
             ? voiceMap[section.content.speech[0].reader_id] || voice
             : voice;
 
+        console.log(firstSpeechVoice);
+
         const titleAudioResponse = await fetch(
           "https://api.lemonfox.ai/v1/audio/speech",
           {

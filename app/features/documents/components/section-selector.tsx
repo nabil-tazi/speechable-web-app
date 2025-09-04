@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical } from "lucide-react";
+import { List, MoreVertical } from "lucide-react";
 import { AudioSegment } from "../../audio/types";
 import { formatDuration } from "../../audio/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,7 +39,8 @@ export function SectionSelector({
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-6 w-6 p-0">
-          <MoreVertical />
+          {/* <MoreVertical /> */}
+          <List />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">

@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import type { AudioVersionWithSegments } from "../../audio/types";
+import type { AudioSegment, AudioVersionWithSegments } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
 import { Clock, MicVocal, Download, MoreVertical, Gauge } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
@@ -22,23 +22,23 @@ interface WordTimestamp {
   titleWordIndex?: number;
 }
 
-interface AudioSegment {
-  id: string;
-  audio_version_id: string;
-  segment_number: number;
-  section_title?: string;
-  start_page?: number;
-  end_page?: number;
-  text_start_index?: number;
-  text_end_index?: number;
-  audio_path: string;
-  audio_duration?: number;
-  audio_file_size: number;
-  word_timestamps?: WordTimestamp[];
-  created_at: string;
-  includes_title?: boolean;
-  voice_name: string;
-}
+// interface AudioSegment {
+//   id: string;
+//   audio_version_id: string;
+//   segment_number: number;
+//   section_title?: string;
+//   start_page?: number;
+//   end_page?: number;
+//   text_start_index?: number;
+//   text_end_index?: number;
+//   audio_path: string;
+//   audio_duration?: number;
+//   audio_file_size: number;
+//   word_timestamps?: WordTimestamp[];
+//   created_at: string;
+//   includes_title?: boolean;
+//   voice_name: string;
+// }
 
 interface GroupedWord {
   text: string;
@@ -179,9 +179,11 @@ export function DocumentVersionContent({
     let cumulativeTime = 0;
     return enabledSegments.map((segment) => {
       const startTime = cumulativeTime;
-      const duration =
+      const duration = Math.max(
         segment?.word_timestamps?.[segment?.word_timestamps.length - 1].end ||
-        0;
+          0,
+        segment?.audio_duration || 0
+      );
       const endTime = cumulativeTime + duration;
       cumulativeTime += duration;
 
@@ -197,12 +199,13 @@ export function DocumentVersionContent({
 
   function getSegmentProgress(segmentId: string) {
     const segment = segmentTimeline.find((s) => s.segmentId === segmentId);
+    // console.log(segment?.duration);
 
     if (!segment || segment.startTime > currentTime) {
       return 0;
     }
     if (currentTime > segment.endTime) return 1;
-    console.log((currentTime - segment.startTime) / segment.duration);
+    // console.log((currentTime - segment.startTime) / segment.duration);
     return (currentTime - segment.startTime) / segment.duration;
   }
 
@@ -905,7 +908,7 @@ export function DocumentVersionContent({
                       <Clock className="w-3 h-3 mr-1" />
                       {formatDuration(totalDuration)}
                     </Badge>
-                    {currentVersionVoices[0] && (
+                    {/* {currentVersionVoices[0] && (
                       <Badge variant="secondary">
                         <MicVocal className="w-3 h-3 mr-1" />
                         {currentVersionVoices[0]}
@@ -913,7 +916,7 @@ export function DocumentVersionContent({
                           <> +{currentVersionVoices.length - 1}</>
                         )}
                       </Badge>
-                    )}
+                    )} */}
                   </div>
                   <div className="flex items-center gap-2">
                     <SpeedSelector
@@ -1036,6 +1039,8 @@ export function DocumentVersionContent({
           {versionAudioVersions.length > 0 && enabledSegmentIds.length > 0 ? (
             <WordHighlightDisplay
               documentTitle={document.title}
+              author={document.author}
+              voices={currentVersionVoices}
               versionName={documentVersion.version_name}
               groupedWords={groupedWords}
               segmentTimeline={segmentTimeline}
