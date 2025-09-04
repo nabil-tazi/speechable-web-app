@@ -2,9 +2,13 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import type { AudioSegment, AudioVersionWithSegments, WordTimestamp } from "../../audio/types";
+import type {
+  AudioSegment,
+  AudioVersionWithSegments,
+  WordTimestamp,
+} from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
-import { Clock, MicVocal, Download, MoreVertical, Gauge } from "lucide-react";
+import { Clock, Download } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { getAudioUrl } from "@/app/utils/storage";
@@ -13,8 +17,6 @@ import { AudioPlayerControls } from "../../audio/components/audio-player-control
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
 import { SectionSelector } from "./section-selector";
 import { SpeedSelector } from "./speed-selector";
-
-
 
 interface GroupedWord {
   text: string;
@@ -81,7 +83,7 @@ export function DocumentVersionContent({
   const [isReady, setIsReady] = useState(false);
   const [browserDuration, setBrowserDuration] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  // const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [concatenatedBuffer, setConcatenatedBuffer] =
     useState<AudioBuffer | null>(null);
   const [concatenatedUrl, setConcatenatedUrl] = useState<string | null>(null);
@@ -417,9 +419,9 @@ export function DocumentVersionContent({
         const ctx = new (window.AudioContext ||
           (window as any).webkitAudioContext)();
 
-        if (mounted) {
-          setAudioContext(ctx);
-        }
+        // if (mounted) {
+        //   setAudioContext(ctx);
+        // }
 
         // Get segments by IDs to avoid dependency issues
         const segmentsToUse = allSegments

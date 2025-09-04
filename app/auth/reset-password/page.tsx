@@ -14,7 +14,6 @@ function ResetPasswordForm() {
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
 
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = createClient();
 
   useEffect(() => {

@@ -1,11 +1,6 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { UndoDot, RedoDot } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface AudioPlayerControlsProps {
   isLoading: boolean;

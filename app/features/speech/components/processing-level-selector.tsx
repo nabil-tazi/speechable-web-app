@@ -1,10 +1,5 @@
-import React, { useState } from "react";
-import {
-  PREPROCESSING_LEVELS,
-  PreprocessingLevel,
-  PROCESSING_ARRAY,
-  ProcessingType,
-} from "@/app/features/pdf/types";
+import React from "react";
+import { PreprocessingLevel, PROCESSING_ARRAY } from "@/app/features/pdf/types";
 import { Tooltip } from "react-tooltip";
 
 interface ProcessingLevelSelectorProps {

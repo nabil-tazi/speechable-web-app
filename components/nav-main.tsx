@@ -5,9 +5,7 @@ import {
   DraftingCompass,
   LayoutDashboard,
   Library,
-  List,
   ListVideo,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -19,7 +17,6 @@ import {
 } from "@/components/ui/collapsible";
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuButton,

@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   BookOpen,
   Bot,
-  Command,
   Frame,
   LibraryBig,
   LifeBuoy,
@@ -12,11 +11,9 @@ import {
   PieChart,
   Send,
   Settings2,
-  SquareTerminal,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
-import { NavProjects } from "@/components/nav-projects";
 import { NavSecondary } from "@/components/nav-secondary";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -25,10 +22,9 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { useUser, useUserProfile } from "@/app/features/users/hooks/use-user";
+import Image from "next/image";
 
 const data = {
   user: {
@@ -163,7 +159,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             {/* <SidebarMenuButton size="lg" asChild> */}
             <div className="flex gap-0 items-center">
               {/* <a href="/" className="flex gap-0 items-center"> */}
-              <img src="/logo.svg" alt="Speechable" className="w-10" />
+              <Image src="/logo.svg" alt="Speechable" className="w-10" />
               <span className="text-xl font-medium">Speechable</span>
               {/* </a> */}
             </div>

@@ -5,6 +5,8 @@ import { useUserState } from "@/app/features/users/context";
 import { cn } from "@/lib/utils";
 import { Library, History, DiamondPlus } from "lucide-react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
 
 export function NavBar() {
   const pathname = usePathname();
@@ -36,10 +38,10 @@ export function NavBar() {
       <div className="flex h-20 items-center justify-between px-6 md:px-8">
         {/* Left: App Logo */}
         <div className="flex items-center">
-          <a href="/" className="flex gap-0 items-center">
-            <img src="/logo.svg" alt="Speechable" className="w-10" />
+          <Link href="/" className="flex gap-0 items-center">
+            <Image src="/logo.svg" alt="Speechable" className="w-10" />
             <span className="text-xl font-medium">Speechable</span>
-          </a>
+          </Link>
         </div>
 
         {/* Middle: Navigation Menu */}

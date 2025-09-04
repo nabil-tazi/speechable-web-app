@@ -1,7 +1,7 @@
 import { Separator } from "@/components/ui/separator";
-import { Mic, Mic2, UsersRound } from "lucide-react";
+import { Mic2, UsersRound } from "lucide-react";
 import React, { useRef, useEffect } from "react";
-import { WordTimestamp, AudioSegment } from "@/app/features/audio/types";
+import { AudioSegment } from "@/app/features/audio/types";
 
 interface GroupedWord {
   text: string;

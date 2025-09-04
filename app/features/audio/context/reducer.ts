@@ -15,6 +15,7 @@ export type AudioAction =
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "SET_AUDIO_VERSIONS"; payload: AudioVersionWithSegments[] }
+  | { type: "ADD_AUDIO_VERSIONS"; payload: AudioVersionWithSegments[] }
   | { type: "ADD_AUDIO_VERSION"; payload: AudioVersionWithSegments }
   | {
       type: "UPDATE_AUDIO_VERSION";
@@ -61,6 +62,21 @@ export function audioReducer(
       return {
         ...state,
         audioVersions: action.payload,
+        loading: false,
+        error: null,
+      };
+
+    case "ADD_AUDIO_VERSIONS":
+      // Add multiple audio versions, avoiding duplicates
+      const newVersions = action.payload.filter(
+        (newVersion) => !state.audioVersions.some(
+          (existingVersion) => existingVersion.id === newVersion.id
+        )
+      );
+      
+      return {
+        ...state,
+        audioVersions: [...state.audioVersions, ...newVersions],
         loading: false,
         error: null,
       };

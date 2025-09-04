@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { VALID_LANGUAGE_CODES } from "./constants";
-import { DOCUMENT_SPECIFIC_INSTRUCTIONS } from "../openai/constants";
 
 import OpenAI from "openai";
 
@@ -53,8 +52,6 @@ async function classifyDocumentAndLanguage(text: string): Promise<{
     const middle = text.substring(middleStart, middleEnd);
     sample = `${beginning}\n...\n${middle}`;
   }
-
-  const documentTypes = Object.keys(DOCUMENT_SPECIFIC_INSTRUCTIONS).join(", ");
 
   // Create a list of valid language codes for the prompt
   const supportedLanguages = Array.from(VALID_LANGUAGE_CODES)

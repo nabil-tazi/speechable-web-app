@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { ReactNode } from "react";
 
 interface AuthLayoutProps {
@@ -10,7 +11,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       <div className="flex w-full max-w-sm flex-col gap-6">
         <a href="#" className="flex items-center gap-2 self-center font-medium">
           <div className="flex gap-0 items-center">
-            <img src="/logo.svg" className="w-10" />
+            <Image src="/logo.svg" className="w-10" alt="logo" />
             <span className="text-xl">Speechable</span>
           </div>
         </a>

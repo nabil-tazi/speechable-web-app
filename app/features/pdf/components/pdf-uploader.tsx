@@ -18,15 +18,13 @@ import {
 import {
   createAudioSegmentAction,
   createAudioVersionAction,
-  deleteAudioVersionAction,
 } from "../../audio/actions";
-import { getAudioDuration, getAudioDurationAccurate } from "../../audio/utils";
+import { getAudioDurationAccurate } from "../../audio/utils";
 import { ProcessedText } from "../../documents/types";
 import { Button } from "@/components/ui/button";
 import { assignVoicesToReaders } from "../../documents/utils";
 import { processText } from "../helpers/process-text";
 import type { SectionTTSInput } from "../../audio/types";
-import { metadata } from "@/app/layout";
 
 // Add new types for document classification
 type DocumentClassification = {
@@ -60,7 +58,6 @@ export default function PDFUploader({ userId }: Props) {
   const [currentAudioVersionId, setCurrentAudioVersionId] = useState<
     string | null
   >(null);
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [parsedPDF, setParsedPDF] = useState<ParsedPDF | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [classification, setClassification] =

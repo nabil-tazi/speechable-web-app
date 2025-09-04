@@ -1,5 +1,5 @@
 import { WordTimestamp } from "@/app/features/audio/types";
-import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
+import { ProcessedSection, ProcessedText } from "@/app/features/documents/types";
 import { NextRequest, NextResponse } from "next/server";
 import { mergeWordTimestamps } from "./helper";
 
@@ -261,7 +261,7 @@ export async function POST(req: NextRequest) {
 
     // Always return structured JSON response
     const responseData = {
-      segments: audioSegments.map((segment, index) => ({
+      segments: audioSegments.map((segment, _index) => ({
         id: `${segment.sectionIndex}-${segment.speechIndex}`,
         sectionIndex: segment.sectionIndex,
         sectionTitle: segment.sectionTitle,

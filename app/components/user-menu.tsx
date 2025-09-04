@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { User } from "@supabase/supabase-js";
 import { useAuth } from "../features/users/hooks/use-auth";
 import { UserProfile } from "../features/users/types";
+import Image from "next/image";
 
 interface UserMenuProps {
   user: User | null;
@@ -72,7 +73,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
         }`}
       >
         {avatarUrl ? (
-          <img
+          <Image
             className="h-8 w-8 rounded-full object-cover border-2 border-gray-200"
             src={avatarUrl}
             alt={displayName}
@@ -108,7 +109,7 @@ export default function UserMenu({ user, userProfile }: UserMenuProps) {
           <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center space-x-3">
               {avatarUrl ? (
-                <img
+                <Image
                   className="h-10 w-10 rounded-full object-cover"
                   src={avatarUrl}
                   alt={displayName}

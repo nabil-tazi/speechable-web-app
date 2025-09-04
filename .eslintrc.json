@@ -1,0 +1,35 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    // React specific rules
+    "react-hooks/exhaustive-deps": "off",
+    "react/no-unescaped-entities": "off",
+
+    // TypeScript specific rules
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "args": "after-used",
+        "ignoreRestSiblings": true,
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "@typescript-eslint/no-explicit-any": "warn",
+
+    // General JavaScript rules
+    "prefer-const": "warn",
+    "no-var": "error",
+    "no-console": "off",
+
+    // Relax some strict rules for existing codebase
+    "quotes": "off",
+    "semi": "off",
+    "import/no-duplicates": "warn",
+    "import/order": "off"
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
+}

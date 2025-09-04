@@ -1,13 +1,11 @@
 import { useState, useCallback, useRef } from "react";
 import {
-  PREPROCESSING_LEVELS,
   type ParsedPDF,
   type ProcessingMetadata,
-  type PreprocessingLevel,
   PROCESSING_ARRAY,
 } from "@/app/features/pdf/types";
 import AudioPlayer from "@/app/features/speech/components/audio-player";
-import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
+import { ProcessedText } from "@/app/features/documents/types";
 
 // Add new types for the structured content
 

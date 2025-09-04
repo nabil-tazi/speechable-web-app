@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { List, MoreVertical } from "lucide-react";
+import { List } from "lucide-react";
 import { AudioSegment } from "../../audio/types";
 import { formatDuration } from "../../audio/utils";
 import { Checkbox } from "@/components/ui/checkbox";

@@ -10,16 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Earth,
-  File,
-  GalleryHorizontalEnd,
-  Globe,
-  Pen,
-  Save,
-  SquarePen,
-  X,
-} from "lucide-react";
+import { File, GalleryHorizontalEnd, Globe, Pen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   getLanguageName,
@@ -37,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { DOCUMENT_TYPES } from "../constants";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 interface DocumentCardProps {
   doc: DocumentWithVersions;
   onClick?: () => void;
@@ -112,7 +104,7 @@ export function DocumentCard({ doc, onClick }: DocumentCardProps) {
           {/* Left section - Thumbnail (full height) */}
           <div className="w-24 h-full flex items-center justify-center border-r shrink-0">
             {doc?.thumbnail_path && (
-              <img
+              <Image
                 className="max-h-full max-w-full object-contain"
                 src={doc.thumbnail_path}
                 alt={doc.filename}

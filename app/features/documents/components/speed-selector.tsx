@@ -6,7 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Gauge, X } from "lucide-react";
+import { Gauge } from "lucide-react";
 
 interface SpeedSelectorProps {
   currentSpeed?: number;
