@@ -52,6 +52,7 @@ export async function generateAllAudio({
   for (let i = 0; i < totalSections; i++) {
     // await generateAudioForSection(i, readerVoiceMap, audioVersion.id);
     await generateAudioForSection({
+      voicesArray,
       audioVersionId: audioVersion.id,
       processedText,
       sectionIndex: i,
@@ -67,11 +68,13 @@ export function isStructuredContent(content: any): content is ProcessedText {
 }
 
 async function generateAudioForSection({
+  voicesArray,
   audioVersionId,
   processedText,
   sectionIndex,
   readerVoiceMap,
 }: {
+  voicesArray: string[];
   audioVersionId: string;
   processedText: ProcessedText;
   sectionIndex: number;
@@ -158,6 +161,7 @@ async function generateAudioForSection({
             audio_duration: Math.round(audioDuration * 100) / 100,
             word_timestamps: firstSegment.word_timestamps || [],
             voice_name: "onyx",
+            voices: voicesArray,
           },
           audioFile
         );

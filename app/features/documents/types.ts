@@ -13,6 +13,7 @@ export interface Document {
   upload_date: string;
   updated_at: string;
   title: string;
+  author?: string;
   filename: string;
   mime_type: string;
   metadata?: Record<string, any>;

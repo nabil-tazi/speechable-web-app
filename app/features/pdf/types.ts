@@ -68,7 +68,7 @@ export const PREPROCESSING_LEVELS = {
   4: {
     name: "Conversational",
     description:
-      "Natural conversation between two speakers discussing the document topic",
+      "Natural conversation between two speakers covering the document content",
     time: "~15s",
     sourceAccuracy: 3, // Far from original
     listeningEase: 5, // Extremely easy to listen to

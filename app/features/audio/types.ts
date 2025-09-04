@@ -26,6 +26,7 @@ export interface AudioSegment {
   text_start_index?: number;
   text_end_index?: number;
   voice_name: string; // Moved from AudioVersion to AudioSegment
+  voices: string[];
   audio_path: string;
   audio_duration?: number;
   audio_file_size: number;

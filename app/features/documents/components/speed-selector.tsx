@@ -45,15 +45,17 @@ export function SpeedSelector({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="h-6 py-0 px-1"
+            className="h-5  px-1!"
             disabled={disabled}
             title="Playback speed"
           >
             {isLoading ? (
               <div className="animate-spin h-3 w-3 border border-gray-900 border-t-transparent rounded-full" />
             ) : (
-              //   <Gauge />
-              <>{currentSpeed}×</>
+              <>
+                <Gauge />
+                {currentSpeed}×
+              </>
             )}
           </Button>
         </DropdownMenuTrigger>

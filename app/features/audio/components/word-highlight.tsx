@@ -1,3 +1,5 @@
+import { Separator } from "@/components/ui/separator";
+import { Mic, Mic2, UsersRound } from "lucide-react";
 import React, { useRef, useEffect } from "react";
 
 interface WordTimestamp {
@@ -44,6 +46,8 @@ interface SegmentTimelineItem {
 }
 
 interface WordHighlightDisplayProps {
+  author?: string;
+  voices: string[];
   documentTitle: string;
   versionName: string;
   groupedWords: GroupedWord[];
@@ -60,6 +64,8 @@ const formatTime = (seconds: number) => {
 };
 
 export function WordHighlightDisplay({
+  author,
+  voices,
   documentTitle,
   versionName,
   groupedWords,
@@ -100,9 +106,9 @@ export function WordHighlightDisplay({
       "transition-all cursor-pointer px-1 py-0.5 rounded inline-block";
 
     // Debug log to check if isTitle is being detected
-    if (wordGroup.isTitle) {
-      console.log("Title word detected:", wordGroup.text, wordGroup.isTitle);
-    }
+    // if (wordGroup.isTitle) {
+    //   console.log("Title word detected:", wordGroup.text, wordGroup.isTitle);
+    // }
 
     if (wordGroup.isTitle === true) {
       // Title word styling
@@ -140,9 +146,24 @@ export function WordHighlightDisplay({
 
   return (
     <div className="flex flex-col h-full overflow-y-auto min-h-0">
-      <div className="flex-shrink-0 px-4 py-4">
+      <div className="flex flex-col gap-2 flex-shrink-0 px-4 py-4">
         <h2 className="text-2xl font-semibold">{documentTitle}</h2>
-        <h3 className="text-sm font-medium text-gray-500">{versionName}</h3>
+
+        <div className="flex items-center gap-4">
+          {author && (
+            <span className="flex items-center gap-2 text-gray-500">
+              <UsersRound size="16" />
+              <h3 className="text-sm font-medium ">{author}</h3>
+            </span>
+          )}
+          {author && <Separator orientation="vertical" />}
+          <span className="flex items-center gap-2 text-gray-500">
+            <Mic2 size="16" />
+            <h3 className="text-sm font-medium capitalize">
+              {voices.join(", ")}
+            </h3>
+          </span>
+        </div>
       </div>
 
       {/* Word timestamps */}
