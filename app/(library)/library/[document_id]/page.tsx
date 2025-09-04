@@ -73,7 +73,7 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     };
 
     loadAudioForDocument();
-  }, [document.versions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [document.versions]);
 
   // Load segments when audio versions are available or when active version changes
   useEffect(() => {

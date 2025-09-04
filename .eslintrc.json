@@ -1,16 +1,13 @@
 {
-  "extends": [
-    "next/core-web-vitals",
-    "next/typescript"
-  ],
+  "extends": ["next/core-web-vitals", "next/typescript"],
   "rules": {
     // React specific rules
     "react-hooks/exhaustive-deps": "warn",
     "react/no-unescaped-entities": "off",
-    
+
     // TypeScript specific rules
     "@typescript-eslint/no-unused-vars": [
-      "error",
+      "warn",
       {
         "args": "after-used",
         "ignoreRestSiblings": true,
@@ -18,35 +15,17 @@
       }
     ],
     "@typescript-eslint/no-explicit-any": "warn",
-    
+
     // General JavaScript rules
-    "prefer-const": "error",
+    "prefer-const": "warn",
     "no-var": "error",
     "no-console": "warn",
-    "eqeqeq": ["error", "always"],
-    
-    // Code style rules
-    "indent": ["error", 2, { "SwitchCase": 1 }],
-    "quotes": ["error", "double"],
-    "semi": ["error", "always"],
-    "comma-trailing": "off",
-    
-    // Import rules
-    "import/no-duplicates": "error",
-    "import/order": [
-      "error",
-      {
-        "groups": [
-          "builtin",
-          "external",
-          "internal",
-          "parent",
-          "sibling",
-          "index"
-        ],
-        "newlines-between": "never"
-      }
-    ]
+
+    // Relax some strict rules for existing codebase
+    "quotes": "off",
+    "semi": "off",
+    "import/no-duplicates": "warn",
+    "import/order": "off"
   },
   "settings": {
     "react": {

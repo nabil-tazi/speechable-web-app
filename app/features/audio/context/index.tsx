@@ -45,7 +45,10 @@ interface AudioProviderProps {
 }
 
 // Provider Component
-export function AudioProvider({ children, autoLoad = true }: AudioProviderProps) {
+export function AudioProvider({
+  children,
+  autoLoad = true,
+}: AudioProviderProps) {
   const [state, dispatch] = useReducer(audioReducer, emptyState);
   const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);

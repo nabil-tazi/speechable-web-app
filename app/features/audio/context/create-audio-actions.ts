@@ -57,7 +57,9 @@ interface AudioActions {
   clearAudio: () => void;
 }
 
-export function createAudioActions(dispatch: (action: AudioAction) => void): AudioActions {
+export function createAudioActions(
+  dispatch: (action: AudioAction) => void
+): AudioActions {
   const createAudioVersion = async (
     audioVersionData: Parameters<typeof createAudioVersionAction>[0]
   ) => {
