@@ -9,7 +9,7 @@ import type {
 } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
 import type { AudioPlayerHook } from "../../audio/hooks/use-audio-player";
-import { Clock } from "lucide-react";
+import { Clock, Download } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
 import { useMemo, useCallback } from "react";
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
@@ -68,6 +68,9 @@ export function DocumentVersionContent({
   const seekToTime = audioPlayer?.seekToTime || (() => {});
   const togglePlayback = audioPlayer?.togglePlayback || (() => {});
   const isPlaying = audioPlayer?.isPlaying || false;
+  const concatenatedUrl = audioPlayer?.concatenatedUrl || null;
+  const concatenatedBuffer = audioPlayer?.concatenatedBuffer || null;
+  const audioBufferToBlob = audioPlayer?.audioBufferToBlob || null;
   // const setPlaybackSpeed = audioPlayer?.setPlaybackSpeed || (() => {});
 
   function getSegmentProgress(segmentId: string) {
@@ -213,54 +216,6 @@ export function DocumentVersionContent({
     ];
   }, [versionAudioVersions]);
 
-  // Convert AudioBuffer to WAV Blob
-  // const audioBufferToBlob = async (buffer: AudioBuffer): Promise<Blob> => {
-  //   const numberOfChannels = buffer.numberOfChannels;
-  //   const length = buffer.length;
-  //   const sampleRate = buffer.sampleRate;
-
-  //   const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-  //   const view = new DataView(arrayBuffer);
-
-  //   const writeString = (offset: number, string: string) => {
-  //     for (let i = 0; i < string.length; i++) {
-  //       view.setUint8(offset + i, string.charCodeAt(i));
-  //     }
-  //   };
-
-  //   writeString(0, "RIFF");
-  //   view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-  //   writeString(8, "WAVE");
-  //   writeString(12, "fmt ");
-  //   view.setUint32(16, 16, true);
-  //   view.setUint16(20, 1, true);
-  //   view.setUint16(22, numberOfChannels, true);
-  //   view.setUint32(24, sampleRate, true);
-  //   view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-  //   view.setUint16(32, numberOfChannels * 2, true);
-  //   view.setUint16(34, 16, true);
-  //   writeString(36, "data");
-  //   view.setUint32(40, length * numberOfChannels * 2, true);
-
-  //   let offset = 44;
-  //   for (let i = 0; i < length; i++) {
-  //     for (let channel = 0; channel < numberOfChannels; channel++) {
-  //       const sample = Math.max(
-  //         -1,
-  //         Math.min(1, buffer.getChannelData(channel)[i])
-  //       );
-  //       view.setInt16(
-  //         offset,
-  //         sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-  //         true
-  //       );
-  //       offset += 2;
-  //     }
-  //   }
-
-  //   return new Blob([arrayBuffer], { type: "audio/wav" });
-  // };
-
   const handleWordClick = useCallback(
     (wordStartTime: number) => {
       seekToTime(wordStartTime);
@@ -293,6 +248,37 @@ export function DocumentVersionContent({
     },
     [allSegments, setSectionToggles]
   );
+
+  // Handle download
+  const handleDownload = useCallback(async () => {
+    if (!concatenatedBuffer || !audioBufferToBlob) return;
+
+    try {
+      // Convert AudioBuffer to WAV Blob
+      const wavBlob = await audioBufferToBlob(concatenatedBuffer);
+
+      // Create download URL
+      const downloadUrl = URL.createObjectURL(wavBlob);
+
+      // Create and trigger download
+      const link = window.document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `${document.title} - ${documentVersion.version_name}.wav`;
+      window.document.body.appendChild(link);
+      link.click();
+      window.document.body.removeChild(link);
+
+      // Clean up
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error downloading audio:", error);
+    }
+  }, [
+    concatenatedBuffer,
+    audioBufferToBlob,
+    document.title,
+    documentVersion.version_name,
+  ]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -327,6 +313,16 @@ export function DocumentVersionContent({
                       onSectionToggle={handleSectionToggle}
                       onToggleAll={handleToggleAll}
                     />
+                    {concatenatedBuffer && audioBufferToBlob && (
+                      <Button
+                        variant="ghost"
+                        onClick={handleDownload}
+                        className="h-6 w-6 p-0"
+                        title="Download WAV"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
