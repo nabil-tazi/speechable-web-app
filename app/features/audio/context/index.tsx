@@ -7,32 +7,41 @@ import {
   useEffect,
   useRef,
   ReactNode,
+  useState,
 } from "react";
 import type {
   AudioVersion,
   AudioSegment,
   AudioVersionWithSegments,
 } from "../types";
+import type { DocumentWithVersions } from "../../documents/types";
+import { getThumbnailUrl } from "@/app/utils/storage";
 import { type AudioAction, type AudioState, audioReducer } from "./reducer";
 import { createClient } from "@/app/lib/supabase/client";
 import { createAudioActions, type AudioActions } from "./create-audio-actions";
 
 const supabase = createClient();
+// Extended state to include document
+interface ExtendedAudioState extends AudioState {
+  document: DocumentWithVersions | null;
+}
+
 // Initial State
-const emptyState: AudioState = {
+const emptyState: ExtendedAudioState = {
   audioVersions: [],
   audioSegments: {},
   loading: true,
   error: null,
   uploadingAudio: {},
   processingAudio: {},
+  document: null,
 };
 
 // Context Types
 type AudioDispatch = (action: AudioAction) => void;
 
 // Contexts
-const AudioStateContext = createContext<AudioState>(emptyState);
+const AudioStateContext = createContext<ExtendedAudioState>(emptyState);
 const AudioDispatchContext = createContext<AudioDispatch | undefined>(
   undefined
 );
@@ -41,34 +50,44 @@ const AudioActionsContext = createContext<AudioActions | undefined>(undefined);
 // Provider Props
 interface AudioProviderProps {
   children: ReactNode;
-  autoLoad?: boolean; // If false, won't automatically load audio on mount
+  documentId: string; // The document ID to load audio for
 }
 
 // Provider Component
-export function AudioProvider({
-  children,
-  autoLoad = true,
-}: AudioProviderProps) {
-  const [state, dispatch] = useReducer(audioReducer, emptyState);
+export function AudioProvider({ children, documentId }: AudioProviderProps) {
+  const [audioState, dispatch] = useReducer(audioReducer, {
+    audioVersions: [],
+    audioSegments: {},
+    loading: true,
+    error: null,
+    uploadingAudio: {},
+    processingAudio: {},
+  });
+  const [document, setDocument] = useState<DocumentWithVersions | null>(null);
+
+  // Combined state
+  const state: ExtendedAudioState = {
+    ...audioState,
+    document,
+  };
   const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);
 
   // Create the audio actions object
   const actions = createAudioActions(dispatch);
 
-  async function loadAllAudio() {
+  async function loadDocumentAudio() {
     try {
       dispatch({ type: "SET_LOADING", payload: true });
-      console.log("loading all audio versions and segments");
 
-      // First, get all documents with versions for the user
+      // Get document with versions and audio data in one query
       const { data: documents, error: docsError } = await supabase
         .from("documents")
         .select(
           `
-          id,
-          document_versions!inner(
-            id,
+          *,
+          versions:document_versions!inner(
+            *,
             audio_versions(
               *,
               segments:audio_segments(*)
@@ -76,19 +95,32 @@ export function AudioProvider({
           )
         `
         )
-        .eq("user_id", currentUserId.current);
+        .eq("user_id", currentUserId.current)
+        .eq("id", documentId);
 
       if (docsError) {
         dispatch({ type: "SET_ERROR", payload: docsError.message });
         return;
       }
 
-      // Extract all audio versions with segments
-      const allAudioVersions: AudioVersionWithSegments[] = [];
-      const allAudioSegments: Record<string, AudioSegment[]> = {};
+      if (documents && documents.length > 0) {
+        const documentData = documents[0] as any;
 
-      documents?.forEach((doc: any) => {
-        doc.document_versions.forEach((version: any) => {
+        // Handle thumbnail URL if present
+        if (documentData.thumbnail_path) {
+          documentData.thumbnail_path = await getThumbnailUrl(
+            documentData.thumbnail_path
+          );
+        }
+
+        // Set document data
+        setDocument(documentData as DocumentWithVersions);
+
+        // Extract all audio versions with segments
+        const allAudioVersions: AudioVersionWithSegments[] = [];
+        const allAudioSegments: Record<string, AudioSegment[]> = {};
+
+        documentData.versions.forEach((version: any) => {
           version.audio_versions.forEach((audioVersion: any) => {
             // Cast to proper types
             const typedAudioVersion = audioVersion as AudioVersion;
@@ -109,24 +141,26 @@ export function AudioProvider({
             }
           });
         });
-      });
 
-      console.log("loaded audio versions:", allAudioVersions);
-      console.log("loaded audio segments:", allAudioSegments);
-
-      dispatch({ type: "SET_AUDIO_VERSIONS", payload: allAudioVersions });
-      dispatch({
-        type: "SET_AUDIO_SEGMENTS",
-        payload: { audioVersionId: "ALL", segments: [] },
-      });
-
-      // Set all segments at once
-      Object.entries(allAudioSegments).forEach(([audioVersionId, segments]) => {
+        dispatch({ type: "SET_AUDIO_VERSIONS", payload: allAudioVersions });
         dispatch({
           type: "SET_AUDIO_SEGMENTS",
-          payload: { audioVersionId, segments },
+          payload: { audioVersionId: "ALL", segments: [] },
         });
-      });
+
+        // Set all segments at once
+        Object.entries(allAudioSegments).forEach(
+          ([audioVersionId, segments]) => {
+            dispatch({
+              type: "SET_AUDIO_SEGMENTS",
+              payload: { audioVersionId, segments },
+            });
+          }
+        );
+      } else {
+        dispatch({ type: "SET_ERROR", payload: "Document not found" });
+        setDocument(null);
+      }
 
       hasLoadedDocuments.current = true;
     } catch (error) {
@@ -151,14 +185,13 @@ export function AudioProvider({
           ) {
             currentUserId.current = newUserId;
             hasLoadedDocuments.current = false;
-            if (autoLoad) {
-              await loadAllAudio();
-            }
+            await loadDocumentAudio();
           }
         } else if (event === "SIGNED_OUT") {
           currentUserId.current = null;
           hasLoadedDocuments.current = false;
           dispatch({ type: "CLEAR_AUDIO" });
+          setDocument(null);
         }
       }, 0);
     });
@@ -171,11 +204,10 @@ export function AudioProvider({
 
       if (session?.user) {
         currentUserId.current = session.user.id;
-        if (autoLoad) {
-          await loadAllAudio();
-        }
+        await loadDocumentAudio();
       } else {
         dispatch({ type: "SET_LOADING", payload: false });
+        setDocument(null);
       }
     };
 
@@ -184,7 +216,7 @@ export function AudioProvider({
     return () => {
       subscription.unsubscribe();
     };
-  }, [autoLoad]);
+  }, [documentId]);
 
   // Real-time subscriptions for audio changes
   // useEffect(() => {

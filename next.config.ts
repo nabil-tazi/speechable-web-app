@@ -9,6 +9,17 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "ovhsrztvavugvoggpexz.supabase.co",
+        port: "",
+        pathname: "/storage/v1/object/**",
+      },
+    ],
+  },
+
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",

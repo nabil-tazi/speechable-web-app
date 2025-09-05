@@ -1,7 +1,12 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { useMemo, useState, useTransition, Suspense, useEffect } from "react";
+import React, {
+  useMemo,
+  useState,
+  useTransition,
+  Suspense,
+} from "react";
 import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,7 +14,6 @@ import {
   useGroupedDocuments,
   formatDocumentType,
   getDocumentCount,
-  useDocumentsActions,
 } from "@/app/features/documents/context";
 import { Badge } from "@/components/ui/badge";
 import { DocumentCard } from "@/app/features/documents/components/document-card";
@@ -23,7 +27,6 @@ import {
 // Separate component that uses useSearchParams
 function LibraryContent() {
   const { groupedDocuments, loading } = useGroupedDocuments();
-  const { refreshDocuments } = useDocumentsActions();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -31,10 +34,6 @@ function LibraryContent() {
   const [localActiveTab, setLocalActiveTab] = useState<string>("");
   const [, startTransition] = useTransition();
 
-  // Load documents when component mounts
-  useEffect(() => {
-    refreshDocuments();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get category filter from URL
   const categoryFilter = searchParams.get("category");
@@ -149,12 +148,13 @@ function LibraryContent() {
                       </div>
 
                       {/* Documents Grid */}
-                      <div className="flex flex-wrap gap-4">
-                        {docs.map((doc) => (
+                      <div className="flex flex-wrap gap-8">
+                        {docs.map((doc, index) => (
                           <DocumentCard
                             key={doc.id}
                             doc={doc}
                             onClick={() => handleDocumentClick(doc.id)}
+                            priority={index < 6} // First 6 cards are likely above the fold
                           />
                         ))}
                       </div>
@@ -170,11 +170,12 @@ function LibraryContent() {
                   className="space-y-6"
                 >
                   <div className="flex flex-wrap gap-4">
-                    {(currentDocuments[category] || []).map((doc) => (
+                    {(currentDocuments[category] || []).map((doc, index) => (
                       <DocumentCard
                         key={doc.id}
                         doc={doc}
                         onClick={() => handleDocumentClick(doc.id)}
+                        priority={index < 6} // First 6 cards are likely above the fold
                       />
                     ))}
                   </div>

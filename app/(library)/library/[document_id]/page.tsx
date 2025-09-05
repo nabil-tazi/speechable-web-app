@@ -1,14 +1,9 @@
 "use client";
 
-import { useDocumentsState } from "../../../features/documents/context";
-import React, { useMemo, useState, useEffect, useTransition, use } from "react";
+import React, { useMemo, useState, useTransition, use, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { DocumentWithVersions } from "@/app/features/documents/types";
-import {
-  useAudioState,
-  useAudioActions,
-  AudioProvider,
-} from "@/app/features/audio/context";
+import { useAudioState, AudioProvider } from "@/app/features/audio/context";
+import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,9 +11,9 @@ import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
+import { AudioPlayerControls } from "@/app/features/audio/components/audio-player-controls";
 import { generateWithAi } from "@/app/features/generate-with-ai";
 import Link from "next/link";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,25 +25,23 @@ import {
 import { GlowEffect } from "@/components/ui/glow-effect";
 
 // Document Detail View Component
-function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
-  // const [activeTab, setActiveTab] = useState(0);
+function DocumentDetailView() {
+  // All hooks must be called at the top, before any conditional logic
+  const { audioVersions, loading, error, document } = useAudioState();
   const [localActiveTab, setLocalActiveTab] = useState<string>("");
   const [, startTransition] = useTransition();
-
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
-
-  const { audioVersions } = useAudioState();
-  const { loadAudioVersions, loadAudioSegments } = useAudioActions();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Sort versions by creation date (newest first)
+  // Sort versions by creation date (newest first) - handle null document
   const sortedVersions = useMemo(() => {
+    if (!document?.versions) return [];
     return [...document.versions].sort(
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-  }, [document.versions]);
+  }, [document?.versions]);
 
   // Get the active version ID from URL or default to first version
   const activeVersionId = useMemo(() => {
@@ -59,54 +52,19 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     return sortedVersions[0]?.id || "";
   }, [searchParams, sortedVersions]);
 
-  // Load audio data for all document versions when component mounts
-  useEffect(() => {
-    const loadAudioForDocument = async () => {
-      // Load audio versions for each document version
-      // These will be added to the existing audioVersions array (not replaced)
-      for (const version of document.versions) {
-        await loadAudioVersions(version.id);
-      }
-    };
+  // Audio player hook
+  const audioPlayer = useAudioPlayer({
+    audioVersions: audioVersions || [],
+    documentVersionId: activeVersionId,
+  });
 
-    loadAudioForDocument();
-  }, [document.versions]);
-
-  // Load segments when audio versions are available or when active version changes
-  useEffect(() => {
-    async function loadSegmentsForActiveVersion() {
-      // Find the active version
-      const activeVersion = sortedVersions.find(
-        (v) => v.id === activeVersionId
-      );
-
-      if (!activeVersion) return;
-
-      // Find audio versions for the active document version
-      const activeAudioVersions = audioVersions.filter(
-        (av) => av.document_version_id === activeVersion.id
-      );
-
-      // Load segments for each audio version of the active document version
-      for (const audioVersion of activeAudioVersions) {
-        await loadAudioSegments(audioVersion.id);
-      }
-    }
-
-    if (activeVersionId && audioVersions.length > 0) {
-      // console.log("loading segments for: ");
-      // console.log(activeVersionId);
-      loadSegmentsForActiveVersion();
-    }
-  }, [activeVersionId, audioVersions.length, sortedVersions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update activeTab index when activeVersionId changes
-  // useEffect(() => {
-  //   const index = sortedVersions.findIndex((v) => v.id === activeVersionId);
-  //   if (index !== -1) {
-  //     setActiveTab(index);
-  //   }
-  // }, [activeVersionId, sortedVersions]);
+  // Function to update URL with version parameter
+  const updateVersionInUrl = (versionId: string) => {
+    if (!document) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("version", versionId);
+    router.push(`/library/${document.id}?${params.toString()}`);
+  };
 
   // Auto-update URL with version parameter if not present
   useEffect(() => {
@@ -119,19 +77,40 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
     }
   }, [searchParams, sortedVersions]);
 
-  // Function to update URL with version parameter
-  const updateVersionInUrl = (versionId: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("version", versionId);
-    router.push(`/library/${document.id}?${params.toString()}`);
-  };
+  // Early returns after all hooks are called
+  if (loading) {
+    return <DocumentVersionLoader />;
+  }
+
+  if (error || !document) {
+    return (
+      <div className="w-full flex justify-center p-4">
+        <div className="max-w-7xl w-full">
+          <div className="text-center py-12">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              Document not found
+            </h2>
+            <p className="text-gray-500 mb-4">
+              The document you're looking for doesn't exist or has been removed.
+            </p>
+            <button
+              onClick={() => router.push("/library")}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              Back to Library
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function handleGenerateVersion(
     processingLevel: 0 | 1 | 2 | 3,
     voiceArray: string[],
     _language: string
   ) {
-    if (document.raw_text)
+    if (document && document.raw_text)
       generateWithAi({
         documentId: document.id,
         existingDocumentVersions: document.versions,
@@ -169,7 +148,7 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
   const backUrl = category ? `/library?category=${category}` : "/library";
 
   return (
-    <div className="h-full">
+    <div className="h-full flex flex-col">
       <Dialog
         open={isCreateVersionModalOpen}
         onOpenChange={setCreateVersionModalOpen}
@@ -182,7 +161,7 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
           // }}
           value={activeTab}
           onValueChange={handleTabChange}
-          className="relative gap-0 h-full flex flex-col"
+          className="relative gap-0 flex-1 flex flex-col overflow-hidden"
         >
           <>
             <header className="flex items-center gap-2 border-b">
@@ -203,52 +182,23 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
                       </BreadcrumbItem>
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
-                        <BreadcrumbPage className="truncate max-w-48">
+                        <BreadcrumbPage className="truncate max-w-96">
                           {document.title}
                         </BreadcrumbPage>
                       </BreadcrumbItem>
-                      {sortedVersions.length === 1 && (
+                      {/* <BreadcrumbSeparator /> */}
+
+                      {/* {sortedVersions.length === 1 && (
                         <>
-                          <BreadcrumbSeparator />
                           <BreadcrumbItem>
-                            <BreadcrumbPage className="truncate max-w-48">
-                              {sortedVersions[0].version_name}
-                            </BreadcrumbPage>
-                          </BreadcrumbItem>
+                        <BreadcrumbPage className="truncate max-w-48">
+                          {sortedVersions[0].version_name}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
                         </>
-                      )}
+                      )} */}
                     </BreadcrumbList>
                   </Breadcrumb>
-
-                  {sortedVersions.length > 0 && (
-                    <>
-                      <div className="flex items-center justify-between">
-                        {/* Tab Headers */}
-                        {/* Only display the tabs list when there are more than 1 */}
-                        {sortedVersions.length > 1 ? (
-                          <>
-                            <Separator
-                              orientation="vertical"
-                              className="mx-2 data-[orientation=vertical]:h-4"
-                            />
-                            <TabsList className="border-b border-gray-200">
-                              {sortedVersions.map((version) => (
-                                <TabsTrigger
-                                  value={version.id}
-                                  key={version.id}
-                                  // className="data-[state=active]:bg-blue-500 data-[state=active]:text-white"
-                                >
-                                  {version.version_name}
-                                </TabsTrigger>
-                              ))}
-                            </TabsList>
-                          </>
-                        ) : (
-                          <div></div>
-                        )}
-                      </div>
-                    </>
-                  )}
                 </div>
                 <DialogTrigger asChild>
                   <div className="relative">
@@ -267,7 +217,33 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
                 </DialogTrigger>
               </div>
             </header>
-            <div className="relative w-full flex-1 min-h-0">
+            <div className="relative w-full flex-1 overflow-hidden flex flex-col">
+              {sortedVersions.length > 0 && (
+                <>
+                  <div className="flex items-center justify-center border-b-1 border-gray-200 p-2">
+                    {/* Tab Headers */}
+                    {/* Only display the tabs list when there are more than 1 */}
+                    {sortedVersions.length > 1 ? (
+                      <>
+                        <TabsList className="border-b border-gray-200">
+                          {sortedVersions.map((version) => (
+                            <TabsTrigger
+                              value={version.id}
+                              key={version.id}
+                              // className="data-[state=active]:bg-blue-500 data-[state=active]:text-white"
+                            >
+                              {version.version_name}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                      </>
+                    ) : (
+                      <div></div>
+                    )}
+                  </div>
+                </>
+              )}
+
               {/* Version Tabs */}
               {sortedVersions.length > 0 && (
                 <>
@@ -276,12 +252,15 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
                     <TabsContent
                       value={v.id}
                       key={v.id}
-                      className="h-full min-h-0"
+                      className="flex-1 overflow-hidden flex flex-col"
                     >
                       <DocumentVersionContent
                         document={document}
                         documentVersion={v}
                         audioVersions={audioVersions}
+                        audioPlayer={
+                          activeVersionId === v.id ? audioPlayer : null
+                        }
                       />
                     </TabsContent>
                     // </div>
@@ -308,6 +287,39 @@ function DocumentDetailView({ document }: { document: DocumentWithVersions }) {
           </>
         </Tabs>
       </Dialog>
+
+      {/* Footer - Audio Player Controls */}
+      <div className="border-t border-gray-200 bg-white">
+        {audioVersions.length > 0 &&
+          document &&
+          activeVersionId &&
+          (audioPlayer.isLoading ? (
+            <div className="bg-white">
+              <div className="w-full h-14.25 flex items-center">
+                <div className="flex items-center gap-2 px-4">
+                  {/* Skip backward skeleton */}
+                  <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                  {/* Play button skeleton */}
+                  <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+                  {/* Skip forward skeleton */}
+                  <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                  {/* Speed selector skeleton */}
+                  <div className="h-6 w-12 bg-gray-200 rounded animate-pulse ml-1" />
+                </div>
+                {/* Waveform skeleton */}
+                <div className="relative w-full px-4">
+                  <div className="w-full h-10 bg-gray-200 rounded animate-pulse" />
+                </div>
+                {/* Time display skeleton */}
+                <div className="px-4 flex gap-2">
+                  <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <AudioPlayerControls audioPlayer={audioPlayer} />
+          ))}
+      </div>
     </div>
   );
 }
@@ -318,49 +330,12 @@ export default function DocumentDetailPage({
 }: {
   params: Promise<{ document_id: string }>;
 }) {
-  const { documents, loading } = useDocumentsState();
-  const router = useRouter();
-
   // Unwrap the params Promise
   const resolvedParams = use(params);
 
-  // Find the document by ID
-  const document = useMemo(() => {
-    return documents.find((doc) => doc.id === resolvedParams.document_id);
-  }, [documents, resolvedParams.document_id]);
-
-  // Show loading state
-  if (loading) {
-    return <DocumentVersionLoader />;
-  }
-
-  // Handle document not found
-  if (!loading && !document) {
-    return (
-      <div className="w-full flex justify-center p-4">
-        <div className="max-w-7xl w-full">
-          <div className="text-center py-12">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Document not found
-            </h2>
-            <p className="text-gray-500 mb-4">
-              The document you're looking for doesn't exist or has been removed.
-            </p>
-            <button
-              onClick={() => router.push("/library")}
-              className="text-blue-600 hover:text-blue-800"
-            >
-              Back to Library
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <AudioProvider autoLoad={false}>
-      <DocumentDetailView document={document!} />
+    <AudioProvider documentId={resolvedParams.document_id}>
+      <DocumentDetailView />
     </AudioProvider>
   );
 }
