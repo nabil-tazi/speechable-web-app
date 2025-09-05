@@ -152,7 +152,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
   }, [concatenatedBuffer, currentTime]);
 
   // Convert AudioBuffer to WAV Blob
-  const audioBufferToBlob = async (buffer: AudioBuffer): Promise<Blob> => {
+  const audioBufferToBlob = useCallback(async (buffer: AudioBuffer): Promise<Blob> => {
     const numberOfChannels = buffer.numberOfChannels;
     const length = buffer.length;
     const sampleRate = buffer.sampleRate;
@@ -197,7 +197,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
     }
 
     return new Blob([arrayBuffer], { type: 'audio/wav' });
-  };
+  }, []);
 
   // Load and concatenate audio
   useEffect(() => {
@@ -521,6 +521,9 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
     totalDuration,
     gain,
     playbackSpeed,
+    concatenatedUrl,
+    concatenatedBuffer,
+    audioBufferToBlob,
     
     // Segments
     allSegments,
