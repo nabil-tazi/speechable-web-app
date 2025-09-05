@@ -87,11 +87,10 @@ const DocumentsActionsContext = createContext<DocumentsActions | undefined>(
 // Provider Props
 interface DocumentsProviderProps {
   children: ReactNode;
-  autoLoad?: boolean; // If false, won't automatically load documents on mount
 }
 
 // Provider Component
-export function DocumentsProvider({ children, autoLoad = true }: DocumentsProviderProps) {
+export function DocumentsProvider({ children }: DocumentsProviderProps) {
   const [state, dispatch] = useReducer(documentsReducer, emptyState);
   const hasLoadedDocuments = useRef(false);
   const currentUserId = useRef<string | null>(null);
@@ -192,9 +191,7 @@ export function DocumentsProvider({ children, autoLoad = true }: DocumentsProvid
           ) {
             currentUserId.current = newUserId;
             hasLoadedDocuments.current = false;
-            if (autoLoad) {
-              await loadDocuments();
-            }
+            await loadDocuments();
           }
         } else if (event === "SIGNED_OUT") {
           currentUserId.current = null;
@@ -212,9 +209,7 @@ export function DocumentsProvider({ children, autoLoad = true }: DocumentsProvid
 
       if (session?.user) {
         currentUserId.current = session.user.id;
-        if (autoLoad) {
-          await loadDocuments();
-        }
+        await loadDocuments();
       } else {
         dispatch({ type: "SET_LOADING", payload: false });
       }
@@ -225,7 +220,7 @@ export function DocumentsProvider({ children, autoLoad = true }: DocumentsProvid
     return () => {
       subscription.unsubscribe();
     };
-  }, [autoLoad]);
+  }, []);
 
   // Listen for real-time changes (optional)
   useEffect(() => {

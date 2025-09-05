@@ -159,7 +159,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             {/* <SidebarMenuButton size="lg" asChild> */}
             <div className="flex gap-0 items-center">
               {/* <a href="/" className="flex gap-0 items-center"> */}
-              <Image src="/logo.svg" alt="Speechable" className="w-10" />
+              <Image src="/logo.svg" alt="Speechable" width={40} height={40} className="w-10" />
               <span className="text-xl font-medium">Speechable</span>
               {/* </a> */}
             </div>

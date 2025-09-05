@@ -1,10 +1,7 @@
 "use client";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { DocumentsProvider } from "../features/documents/context";
 
 export default function RootLayout({
@@ -13,11 +10,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <DocumentsProvider autoLoad={false}>
+    <DocumentsProvider>
       <div className="h-screen flex flex-col">
         <SidebarProvider className="flex-1 p-4">
           <AppSidebar />
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset className="overflow-hidden">{children}</SidebarInset>
         </SidebarProvider>
       </div>
     </DocumentsProvider>

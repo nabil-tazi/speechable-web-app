@@ -1,26 +1,11 @@
 import React, { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { UndoDot, RedoDot } from "lucide-react";
+import { SpeedSelector } from "../../documents/components/speed-selector";
+import type { AudioPlayerHook } from "../hooks/use-audio-player";
 
 interface AudioPlayerControlsProps {
-  isLoading: boolean;
-  waveformReady: boolean;
-  isPlaying: boolean;
-  isReady: boolean;
-  currentTime: number;
-  totalDuration: number;
-  progress: number;
-  isDragging: boolean;
-  gain: number;
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  onTogglePlayback: () => void;
-  onSkipBackward: () => void;
-  onSkipForward: () => void;
-  onProgressClick: (e: React.MouseEvent) => void;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onMouseMove: (e: React.MouseEvent) => void;
-  onMouseUp: () => void;
-  onDrawSegmentSeparators?: () => void;
+  audioPlayer: AudioPlayerHook;
 }
 
 const PlayIcon = () => (
@@ -35,34 +20,27 @@ const PauseIcon = () => (
   </svg>
 );
 
-export function AudioPlayerControls({
-  isLoading,
-  waveformReady,
-  isPlaying,
-  isReady,
-  currentTime,
-  totalDuration,
-  progress,
-  isDragging,
-  containerRef,
-  gain,
-  onTogglePlayback,
-  onSkipBackward,
-  onSkipForward,
-  onProgressClick,
-  onMouseDown,
-  onMouseMove,
-  onMouseUp,
-  onDrawSegmentSeparators,
-}: AudioPlayerControlsProps) {
+export function AudioPlayerControls({ audioPlayer }: AudioPlayerControlsProps) {
+  const {
+    isLoading,
+    waveformReady,
+    isPlaying,
+    isReady,
+    currentTime,
+    totalDuration,
+    progress,
+    containerRef,
+    gain,
+    playbackSpeed,
+    togglePlayback,
+    skipBackward,
+    skipForward,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    setPlaybackSpeed,
+  } = audioPlayer;
   const progressContainerRef = useRef<HTMLDivElement>(null);
-
-  // Call drawSegmentSeparators when waveform is ready
-  React.useEffect(() => {
-    if (waveformReady && onDrawSegmentSeparators) {
-      onDrawSegmentSeparators();
-    }
-  }, [waveformReady, onDrawSegmentSeparators]);
 
   const formatTime = (seconds: number) => {
     if (!isFinite(seconds)) return "0:00";
@@ -88,7 +66,7 @@ export function AudioPlayerControls({
             <Button
               variant="ghost"
               className="h-6 w-6 p-0"
-              onClick={onSkipBackward}
+              onClick={skipBackward}
             >
               <UndoDot className="w-4 h-4" />
             </Button>
@@ -96,7 +74,9 @@ export function AudioPlayerControls({
               variant="secondary"
               size="icon"
               className="relative p-0 bg-gray-200 hover:bg-gray-300 rounded-full"
-              onClick={onTogglePlayback}
+              onClick={() => {
+                if (isReady && !isLoading) togglePlayback();
+              }}
               // style={{
               //   transform: `scale(${scale})`,
               //   transition: "transform 0.05s linear", // smooth but responsive
@@ -117,10 +97,16 @@ export function AudioPlayerControls({
             <Button
               variant="ghost"
               className="h-6 w-6 p-0"
-              onClick={onSkipForward}
+              onClick={skipForward}
             >
               <RedoDot className="w-4 h-4" />
             </Button>
+            <SpeedSelector
+              currentSpeed={playbackSpeed}
+              onSpeedChange={setPlaybackSpeed}
+              disabled={!isReady}
+              isLoading={false}
+            />
           </div>
           <div className="relative w-full h-full">
             {/* WaveForm */}
@@ -137,15 +123,13 @@ export function AudioPlayerControls({
                   <div
                     ref={progressContainerRef}
                     className="absolute inset-0 cursor-pointer pointer-events-auto z-10"
-                    onMouseDown={onMouseDown}
-                    onMouseMove={onMouseMove}
-                    onMouseUp={onMouseUp}
-                    onMouseLeave={onMouseUp}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
                   >
                     <div
-                      className={`absolute top-0 bottom-0 right-0 z-30 border-l border-gray-300 ${
-                        isDragging ? "cursor-grabbing" : "cursor-grab"
-                      }`}
+                      className={`absolute top-0 bottom-0 right-0 z-30 border-l border-gray-300 cursor-pointer`}
                       style={{
                         width: `${Math.max(0, Math.min(100, 100 - progress))}%`,
                         backgroundColor: "rgba(255,255,255,0.7)",

@@ -178,6 +178,54 @@ export async function getUserDocumentsWithVersionsAction(): Promise<{
   }
 }
 
+// Server Action: Get a single document with versions by ID
+export async function getDocumentByIdAction(documentId: string): Promise<{
+  data: DocumentWithVersions | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select(`
+        *,
+        versions:document_versions(*)
+      `)
+      .eq("id", documentId)
+      .eq("user_id", user.id)
+      .single();
+
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    // Handle thumbnail URL if present
+    if (data && data.thumbnail_path) {
+      const { data: signedUrl } = await supabase.storage
+        .from("document-thumbnails")
+        .createSignedUrl(data.thumbnail_path, 60 * 60); // 1 hour expiry
+
+      if (signedUrl) {
+        data.thumbnail_path = signedUrl.signedUrl;
+      }
+    }
+
+    return { data: data as DocumentWithVersions, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to get document" };
+  }
+}
+
 // Server Action: Update a document
 export async function updateDocumentAction(
   documentId: string,
