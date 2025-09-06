@@ -129,14 +129,14 @@ export function DocumentCard({
       onClick={onClick}
     >
       <Card className="relative w-50 h-32 p-0 overflow-hidden bg-gray-50 group-hover:bg-gray-100 border-none">
-        <Badge
+        {/* <Badge
           variant="outline"
           className="absolute text-xs bg-white top-2 left-2 z-1"
         >
           <GalleryHorizontalEnd className="w-3 h-3 mr-1" />
           {doc.versions.length} version
           {doc.versions.length > 1 ? "s" : ""}
-        </Badge>
+        </Badge> */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
           <div className="flex h-full pt-4">
             {doc?.thumbnail_path && (

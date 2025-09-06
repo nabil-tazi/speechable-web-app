@@ -43,7 +43,7 @@ export function SectionSelector({
           <List />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
+      <DropdownMenuContent align="start" className="w-80">
         <div className="p-4">
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-semibold">Select Sections</h3>
