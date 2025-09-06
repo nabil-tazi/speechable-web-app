@@ -4,7 +4,7 @@ import React, { useMemo, useState, use, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAudioState, AudioProvider } from "@/app/features/audio/context";
 import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
-import { Plus, FileText } from "lucide-react";
+import { Plus, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
@@ -12,7 +12,6 @@ import { DocumentVersionLoader } from "@/app/features/documents/components/docum
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
 import { AudioPlayerControls } from "@/app/features/audio/components/audio-player-controls";
 import { generateWithAi } from "@/app/features/generate-with-ai";
-import { GlowEffect } from "@/components/ui/glow-effect";
 import { useHeader } from "../../components/header-context";
 
 // Document Detail View Component
@@ -192,7 +191,7 @@ function DocumentDetailView() {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <FileText className="w-12 h-12 text-gray-400" />
+                      <Type className="w-12 h-12 text-gray-400" />
                     </div>
                   )}
                 </div>

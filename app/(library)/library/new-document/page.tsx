@@ -227,8 +227,8 @@ export default function NewDocumentPage() {
 
   // Process text input
   const processText = async () => {
-    if (!user || !textInput.trim()) {
-      setError("Please enter some text content");
+    if (!user || !textInput.trim() || !titleInput.trim()) {
+      setError("Please enter both title and text content");
       return;
     }
 
@@ -237,11 +237,11 @@ export default function NewDocumentPage() {
 
     try {
       const doc = await createDocumentFromData({
-        title: titleInput.trim() || "Text Document",
+        title: titleInput.trim(),
         text: textInput.trim(),
         file_type: "text",
         mime_type: "text/plain",
-        filename: `${titleInput.trim() || "text-document"}.txt`,
+        filename: `${titleInput.trim()}.txt`,
         metadata: {
           extractedAt: new Date().toISOString(),
           processingMethod: "direct-input",
@@ -636,34 +636,56 @@ export default function NewDocumentPage() {
 
               <div className="max-w-2xl mx-auto space-y-4">
                 <div>
-                  <Label htmlFor="title-input" className="text-sm font-medium">
-                    Title (Optional)
-                  </Label>
+                  <div className="flex justify-between items-center mb-1">
+                    <Label htmlFor="title-input" className="text-sm font-medium">
+                      Title
+                    </Label>
+                    <span className="text-xs text-gray-500">
+                      {titleInput.length}/200 characters
+                    </span>
+                  </div>
                   <Input
                     id="title-input"
                     placeholder="Document title"
                     value={titleInput}
-                    onChange={(e) => setTitleInput(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value.length <= 200) {
+                        setTitleInput(value);
+                      }
+                    }}
                     className="mt-1"
+                    maxLength={200}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="text-input" className="text-sm font-medium">
-                    Content
-                  </Label>
+                  <div className="flex justify-between items-center mb-1">
+                    <Label htmlFor="text-input" className="text-sm font-medium">
+                      Content
+                    </Label>
+                    <span className="text-xs text-gray-500">
+                      {textInput.length.toLocaleString()}/35,000 characters
+                    </span>
+                  </div>
                   <Textarea
                     id="text-input"
                     placeholder="Paste or type your text content here..."
                     value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value.length <= 35000) {
+                        setTextInput(value);
+                      }
+                    }}
                     className="mt-1 min-h-[200px]"
+                    maxLength={35000}
                   />
                 </div>
 
                 <Button
                   onClick={handleCreate}
-                  disabled={isProcessing || !textInput.trim()}
+                  disabled={isProcessing || !textInput.trim() || !titleInput.trim()}
                   className="w-full"
                 >
                   {isProcessing ? (
