@@ -9,9 +9,9 @@ import type {
 } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
 import type { AudioPlayerHook } from "../../audio/hooks/use-audio-player";
-import { Clock, Download } from "lucide-react";
+import { Clock, Download, ChevronLeft, ChevronRight, List } from "lucide-react";
 import { formatDuration } from "../../audio/utils";
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
 import { SectionSelector } from "./section-selector";
 
@@ -36,16 +36,30 @@ const SkipForwardIcon = ({ className = "w-2 h-2" }: { className?: string }) => (
   </svg>
 );
 
+interface DocumentVersionProps {
+  id: string;
+  version_name: string;
+  created_at: string;
+}
+
 export function DocumentVersionContent({
   document,
   documentVersion,
   audioVersions,
   audioPlayer,
+  documentVersions,
+  activeVersionId,
+  onVersionChange,
+  onCreateNewVersion,
 }: {
   document: Document;
   documentVersion: DocumentVersion;
   audioVersions: AudioVersionWithSegments[];
   audioPlayer?: AudioPlayerHook | null;
+  documentVersions?: DocumentVersionProps[];
+  activeVersionId?: string;
+  onVersionChange?: (versionId: string) => void;
+  onCreateNewVersion?: () => void;
 }) {
   // Find audio versions for this document version
   const versionAudioVersions = useMemo(
@@ -68,10 +82,17 @@ export function DocumentVersionContent({
   const seekToTime = audioPlayer?.seekToTime || (() => {});
   const togglePlayback = audioPlayer?.togglePlayback || (() => {});
   const isPlaying = audioPlayer?.isPlaying || false;
-  const concatenatedUrl = audioPlayer?.concatenatedUrl || null;
   const concatenatedBuffer = audioPlayer?.concatenatedBuffer || null;
   const audioBufferToBlob = audioPlayer?.audioBufferToBlob || null;
   // const setPlaybackSpeed = audioPlayer?.setPlaybackSpeed || (() => {});
+
+  // Collapse state for tracks panel
+  const [isTracksCollapsed, setIsTracksCollapsed] = useState(true);
+
+  // Toggle tracks panel
+  const toggleTracksPanel = useCallback(() => {
+    setIsTracksCollapsed((prev) => !prev);
+  }, []);
 
   function getSegmentProgress(segmentId: string) {
     const segment = segmentTimeline.find((s) => s.segmentId === segmentId);
@@ -283,30 +304,42 @@ export function DocumentVersionContent({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Two columns taking most of the space */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0 relative">
         {/* Left column - Tracks list */}
-        <div className="w-90 min-w-90 h-full border-r border-gray-200 overflow-y-auto overflow-x-hidden">
+        <div
+          className={`h-full border-r border-gray-200 overflow-y-auto transition-all duration-300 ease-in-out relative ${
+            isTracksCollapsed ? "w-16 min-w-16" : "w-90 min-w-90"
+          }`}
+          style={{ overflow: "visible" }}
+        >
+          {/* Toggle button on border */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleTracksPanel}
+            className="absolute top-1/2 -translate-y-1/2 -right-3 z-50 h-6 w-6 p-0 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md"
+            title={isTracksCollapsed ? "Expand tracks" : "Collapse tracks"}
+          >
+            {isTracksCollapsed ? (
+              <ChevronRight className="w-3 h-3" />
+            ) : (
+              <ChevronLeft className="w-3 h-3" />
+            )}
+          </Button>
           <div className="flex flex-col gap-4">
             <div>
               <div className="p-4">
-                <div className="flex justify-between">
-                  <div className="flex items-center gap-1">
-                    <Label className="font-semibold mr-2">Tracks</Label>
-                    <Badge variant="secondary">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {formatDuration(totalDuration)}
-                    </Badge>
-                    {/* {currentVersionVoices[0] && (
-                      <Badge variant="secondary">
-                        <MicVocal className="w-3 h-3 mr-1" />
-                        {currentVersionVoices[0]}
-                        {currentVersionVoices.length > 1 && (
-                          <> +{currentVersionVoices.length - 1}</>
-                        )}
-                      </Badge>
-                    )} */}
-                  </div>
-                  <div className="flex items-center gap-2">
+                {isTracksCollapsed ? (
+                  <div className="flex flex-col items-center gap-4">
+                    {/* <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleTracksPanel}
+                      className="h-6 w-6 p-0"
+                      title="Expand tracks"
+                    >
+                      <List className="w-4 h-4" />
+                    </Button> */}
                     <SectionSelector
                       allSegments={allSegments}
                       sectionToggles={sectionToggles}
@@ -318,78 +351,108 @@ export function DocumentVersionContent({
                         variant="ghost"
                         onClick={handleDownload}
                         className="h-6 w-6 p-0"
-                        title="Download WAV"
+                        title="Download MP3"
                       >
                         <Download className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
-                </div>
-              </div>
-              <div className="border-t border-gray-200">
-                {allSegments.map((segment) => (
-                  <div
-                    key={segment.id}
-                    className="group relative flex justify-between border-b border-gray-200 p-4"
-                  >
-                    {/* section progress */}
-                    <div
-                      className="absolute bottom-0 top-0 left-0 h-full bg-gray-100"
-                      style={{
-                        width: `${getSegmentProgress(segment.id) * 100}%`,
-                      }}
-                    />
-                    <div className="flex items-center gap-3 z-1">
-                      <Label
-                        htmlFor={segment.id}
-                        className={`font-medium cursor-pointer leading-6 ${
-                          !sectionToggles[segment.id]
-                            ? "text-gray-400 line-through"
-                            : ""
-                        }`}
-                      >
-                        {segment.section_title ||
-                          `Section ${segment.segment_number}`}
-                      </Label>
-                      {sectionToggles[segment.id] && (
+                ) : (
+                  <div className="flex justify-between">
+                    <div className="flex items-center gap-1">
+                      <Label className="font-semibold mr-2">Tracks</Label>
+                      <Badge variant="secondary">
+                        <Clock className="w-3 h-3 mr-1" />
+                        {formatDuration(totalDuration)}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <SectionSelector
+                        allSegments={allSegments}
+                        sectionToggles={sectionToggles}
+                        onSectionToggle={handleSectionToggle}
+                        onToggleAll={handleToggleAll}
+                      />
+                      {concatenatedBuffer && audioBufferToBlob && (
                         <Button
-                          variant="secondary"
-                          size="icon"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded flex items-center justify-center shadow-none cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Find the segment in timeline and seek to its start time
-                            const segmentInfo = segmentTimeline.find(
-                              (s) => s.segmentId === segment.id
-                            );
-                            if (segmentInfo) {
-                              seekToTime(segmentInfo.startTime);
-                              // if (!isPlaying) togglePlayback();
-                            }
-                          }}
-                          title={`Skip to ${
-                            segment.section_title ||
-                            `Section ${segment.segment_number}`
-                          }`}
+                          variant="ghost"
+                          onClick={handleDownload}
+                          className="h-6 w-6 p-0"
+                          title="Download MP3"
                         >
-                          <SkipForwardIcon className="!w-3 !h-3" />
+                          <Download className="w-4 h-4" />
                         </Button>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 z-1">
+                  </div>
+                )}
+              </div>
+              {!isTracksCollapsed && (
+                <div className="border-t border-gray-200">
+                  {allSegments.map((segment) => (
+                    <div
+                      key={segment.id}
+                      className="group relative flex justify-between border-b border-gray-200 p-4"
+                    >
+                      {/* section progress */}
                       <div
-                        className={`text-sm  ${
-                          !sectionToggles[segment.id]
-                            ? "text-gray-400 line-through"
-                            : ""
-                        }`}
-                      >
-                        {formatDuration(segment.audio_duration || 0)}
+                        className="absolute bottom-0 top-0 left-0 h-full bg-gray-100"
+                        style={{
+                          width: `${getSegmentProgress(segment.id) * 100}%`,
+                        }}
+                      />
+                      <div className="flex items-center gap-3 z-1">
+                        <Label
+                          htmlFor={segment.id}
+                          className={`font-medium cursor-pointer leading-6 ${
+                            !sectionToggles[segment.id]
+                              ? "text-gray-400 line-through"
+                              : ""
+                          }`}
+                        >
+                          {segment.section_title ||
+                            `Section ${segment.segment_number}`}
+                        </Label>
+                        {sectionToggles[segment.id] && (
+                          <Button
+                            variant="secondary"
+                            size="icon"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded flex items-center justify-center shadow-none cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Find the segment in timeline and seek to its start time
+                              const segmentInfo = segmentTimeline.find(
+                                (s) => s.segmentId === segment.id
+                              );
+                              if (segmentInfo) {
+                                seekToTime(segmentInfo.startTime);
+                                // if (!isPlaying) togglePlayback();
+                              }
+                            }}
+                            title={`Skip to ${
+                              segment.section_title ||
+                              `Section ${segment.segment_number}`
+                            }`}
+                          >
+                            <SkipForwardIcon className="!w-3 !h-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 z-1">
+                        <div
+                          className={`text-sm  ${
+                            !sectionToggles[segment.id]
+                              ? "text-gray-400 line-through"
+                              : ""
+                          }`}
+                        >
+                          {formatDuration(segment.audio_duration || 0)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
             {/* {audioPlayer &&
               !audioPlayer.isLoading &&
@@ -405,7 +468,7 @@ export function DocumentVersionContent({
           </div>
         </div>
         {/* Right column - Word highlight display */}
-        <div className="flex-1 bg-white overflow-hidden min-h-0">
+        <div className="flex-1 bg-white overflow-y-auto overflow-x-hidden min-h-0 px-12">
           {versionAudioVersions.length > 0 && enabledSegmentIds.length > 0 ? (
             <WordHighlightDisplay
               documentTitle={document.title}
@@ -416,6 +479,10 @@ export function DocumentVersionContent({
               segmentTimeline={segmentTimeline}
               currentTime={currentTime}
               onWordClick={handleWordClick}
+              documentVersions={documentVersions}
+              activeVersionId={activeVersionId}
+              onVersionChange={onVersionChange}
+              onCreateNewVersion={onCreateNewVersion}
             />
           ) : (
             <div className="text-center py-8">

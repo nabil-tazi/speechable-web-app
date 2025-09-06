@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { AudioSegment, AudioVersionWithSegments } from '../types';
-import { getAudioUrl } from '@/app/utils/storage';
-import WaveSurfer from 'wavesurfer.js';
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import type { AudioSegment, AudioVersionWithSegments } from "../types";
+import { getAudioUrl } from "@/app/utils/storage";
+import WaveSurfer from "wavesurfer.js";
 
 interface SectionToggleState {
   [segmentId: string]: boolean;
@@ -12,7 +12,10 @@ export interface UseAudioPlayerProps {
   documentVersionId: string;
 }
 
-export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPlayerProps) {
+export function useAudioPlayer({
+  audioVersions,
+  documentVersionId,
+}: UseAudioPlayerProps) {
   // Find audio versions for this document version
   const versionAudioVersions = useMemo(
     () =>
@@ -43,7 +46,8 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
   const [isDragging, setIsDragging] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [browserDuration, setBrowserDuration] = useState(0);
-  const [concatenatedBuffer, setConcatenatedBuffer] = useState<AudioBuffer | null>(null);
+  const [concatenatedBuffer, setConcatenatedBuffer] =
+    useState<AudioBuffer | null>(null);
   const [concatenatedUrl, setConcatenatedUrl] = useState<string | null>(null);
   const [gain, setGain] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -101,7 +105,8 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
     return enabledSegments.map((segment) => {
       const startTime = cumulativeTime;
       const duration = Math.max(
-        segment?.word_timestamps?.[segment?.word_timestamps.length - 1].end || 0,
+        segment?.word_timestamps?.[segment?.word_timestamps.length - 1].end ||
+          0,
         segment?.audio_duration || 0
       );
       const endTime = cumulativeTime + duration;
@@ -152,53 +157,51 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
   }, [concatenatedBuffer, currentTime]);
 
   // Convert AudioBuffer to WAV Blob
-  const audioBufferToBlob = useCallback(async (buffer: AudioBuffer): Promise<Blob> => {
-    const numberOfChannels = buffer.numberOfChannels;
-    const length = buffer.length;
-    const sampleRate = buffer.sampleRate;
+  const audioBufferToBlob = useCallback(
+    async (buffer: AudioBuffer): Promise<Blob> => {
+      const numberOfChannels = buffer.numberOfChannels;
+      const length = buffer.length;
+      const sampleRate = buffer.sampleRate;
 
-    const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-    const view = new DataView(arrayBuffer);
-
-    const writeString = (offset: number, string: string) => {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
+      const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+      const view = new DataView(arrayBuffer);
+      const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      writeString(0, "RIFF");
+      view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+      writeString(8, "WAVE");
+      writeString(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, numberOfChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+      view.setUint16(32, numberOfChannels * 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, "data");
+      view.setUint32(40, length * numberOfChannels * 2, true);
+      let offset = 44;
+      for (let i = 0; i < length; i++) {
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+          const sample = Math.max(
+            -1,
+            Math.min(1, buffer.getChannelData(channel)[i])
+          );
+          view.setInt16(
+            offset,
+            sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+            true
+          );
+          offset += 2;
+        }
       }
-    };
-
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-    view.setUint16(32, numberOfChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, 'data');
-    view.setUint32(40, length * numberOfChannels * 2, true);
-
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-      for (let channel = 0; channel < numberOfChannels; channel++) {
-        const sample = Math.max(
-          -1,
-          Math.min(1, buffer.getChannelData(channel)[i])
-        );
-        view.setInt16(
-          offset,
-          sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-          true
-        );
-        offset += 2;
-      }
-    }
-
-    return new Blob([arrayBuffer], { type: 'audio/wav' });
-  }, []);
-
+      return new Blob([arrayBuffer], { type: "audio/wav" });
+    },
+    []
+  );
   // Load and concatenate audio
   useEffect(() => {
     let mounted = true;
@@ -217,7 +220,8 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
       }
 
       try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const ctx = new (window.AudioContext ||
+          (window as any).webkitAudioContext)();
 
         const segmentsToUse = allSegments
           .filter((segment) => enabledSegmentIds.includes(segment.id))
@@ -244,7 +248,11 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
 
         const numberOfChannels = audioBuffers[0].numberOfChannels;
         const sampleRate = audioBuffers[0].sampleRate;
-        const concatenated = ctx.createBuffer(numberOfChannels, totalLength, sampleRate);
+        const concatenated = ctx.createBuffer(
+          numberOfChannels,
+          totalLength,
+          sampleRate
+        );
 
         let offset = 0;
         for (let channel = 0; channel < numberOfChannels; channel++) {
@@ -269,7 +277,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
           setConcatenatedUrl(url);
         }
       } catch (error) {
-        console.error('Error concatenating audio:', error);
+        console.error("Error concatenating audio:", error);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -285,7 +293,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
         URL.revokeObjectURL(concatenatedUrl);
       }
     };
-  }, [enabledSegmentIds.join(','), allSegments]);
+  }, [enabledSegmentIds.join(","), allSegments]);
 
   // Initialize WaveSurfer with concatenated audio
   useEffect(() => {
@@ -295,23 +303,23 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
       try {
         wavesurferRef.current.destroy();
       } catch (error) {
-        console.warn('Error destroying previous wavesurfer instance:', error);
+        console.warn("Error destroying previous wavesurfer instance:", error);
       }
     }
 
     try {
       const wavesurfer = WaveSurfer.create({
         container: containerRef.current,
-        waveColor: 'rgba(75, 85, 99, 0.9)',
-        progressColor: 'rgba(148, 163, 184, 0.6)',
-        cursorColor: 'transparent',
+        waveColor: "rgba(75, 85, 99, 0.9)",
+        progressColor: "rgba(148, 163, 184, 0.6)",
+        cursorColor: "transparent",
         barWidth: 1,
         barGap: 1,
         barRadius: 2,
         height: 40,
         normalize: true,
         interact: false,
-        backend: 'MediaElement',
+        backend: "MediaElement",
         mediaControls: false,
         audioRate: 1,
         hideScrollbar: true,
@@ -319,18 +327,18 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
 
       wavesurferRef.current = wavesurfer;
 
-      wavesurfer.on('ready', () => {
+      wavesurfer.on("ready", () => {
         setWaveformReady(true);
         setIsReady(true);
       });
 
-      wavesurfer.on('error', (error: any) => {
-        console.error('WaveSurfer error:', error);
+      wavesurfer.on("error", (error: any) => {
+        console.error("WaveSurfer error:", error);
       });
 
       wavesurfer.load(concatenatedUrl);
     } catch (error) {
-      console.error('Error initializing WaveSurfer:', error);
+      console.error("Error initializing WaveSurfer:", error);
     }
   }, [concatenatedUrl]);
 
@@ -339,7 +347,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
     if (!concatenatedUrl) return;
 
     const audio = new Audio(concatenatedUrl);
-    audio.preload = 'metadata';
+    audio.preload = "metadata";
     audioRef.current = audio;
 
     let animationFrameId: number;
@@ -390,11 +398,11 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
       setProgress(0);
     };
 
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("timeupdate", updateTime);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("ended", handleEnded);
 
     return () => {
       isAnimating = false;
@@ -402,13 +410,13 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
         cancelAnimationFrame(animationFrameId);
       }
 
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("timeupdate", updateTime);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("ended", handleEnded);
       audio.pause();
-      audio.src = '';
+      audio.src = "";
     };
   }, [concatenatedUrl, totalDuration]);
 
@@ -431,7 +439,7 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
           setIsPlaying(true);
         })
         .catch((error) => {
-          console.error('Error playing audio:', error);
+          console.error("Error playing audio:", error);
         });
     }
   }, [isPlaying, isReady]);
@@ -449,7 +457,10 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
         Math.abs(browserDuration - totalDuration) >= 0.1
       ) {
         const mappedTime = (clampedTime / totalDuration) * browserDuration;
-        audioRef.current.currentTime = Math.max(0, Math.min(mappedTime, browserDuration));
+        audioRef.current.currentTime = Math.max(
+          0,
+          Math.min(mappedTime, browserDuration)
+        );
       } else {
         audioRef.current.currentTime = clampedTime;
       }
@@ -481,7 +492,10 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
 
       const rect = container.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+      const percentage = Math.max(
+        0,
+        Math.min(100, (clickX / rect.width) * 100)
+      );
 
       const newTime = (percentage / 100) * effectiveDuration;
       seekToTime(newTime);
@@ -521,20 +535,19 @@ export function useAudioPlayer({ audioVersions, documentVersionId }: UseAudioPla
     totalDuration,
     gain,
     playbackSpeed,
-    concatenatedUrl,
     concatenatedBuffer,
     audioBufferToBlob,
-    
+
     // Segments
     allSegments,
     enabledSegments,
     enabledSegmentIds,
     segmentTimeline,
     sectionToggles,
-    
+
     // Refs
     containerRef,
-    
+
     // Handlers
     togglePlayback,
     skipBackward,

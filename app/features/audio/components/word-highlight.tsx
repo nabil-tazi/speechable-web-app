@@ -1,7 +1,16 @@
 import { Separator } from "@/components/ui/separator";
-import { Mic2, UsersRound } from "lucide-react";
+import { Mic2, UsersRound, Plus } from "lucide-react";
 import React, { useRef, useEffect } from "react";
 import { AudioSegment } from "@/app/features/audio/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { GlowEffect } from "@/components/ui/glow-effect";
 
 interface GroupedWord {
   text: string;
@@ -21,6 +30,12 @@ interface SegmentTimelineItem {
   segment: AudioSegment;
 }
 
+interface DocumentVersion {
+  id: string;
+  version_name: string;
+  created_at: string;
+}
+
 interface WordHighlightDisplayProps {
   author?: string;
   voices: string[];
@@ -30,6 +45,10 @@ interface WordHighlightDisplayProps {
   segmentTimeline: SegmentTimelineItem[];
   currentTime: number;
   onWordClick: (wordStartTime: number) => void;
+  documentVersions?: DocumentVersion[];
+  activeVersionId?: string;
+  onVersionChange?: (versionId: string) => void;
+  onCreateNewVersion?: () => void;
 }
 
 const formatTime = (seconds: number) => {
@@ -48,6 +67,10 @@ export function WordHighlightDisplay({
   segmentTimeline,
   currentTime,
   onWordClick,
+  documentVersions,
+  activeVersionId,
+  onVersionChange,
+  onCreateNewVersion,
 }: WordHighlightDisplayProps) {
   const highlightedWordRef = useRef<HTMLSpanElement>(null);
 
@@ -121,10 +144,55 @@ export function WordHighlightDisplay({
   };
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto min-h-0">
-      <div className="flex flex-col gap-2 flex-shrink-0 px-4 py-4">
-        <h2 className="text-2xl font-semibold">{documentTitle}</h2>
-
+    <div className="flex flex-col h-full max-w-[800px] mx-auto">
+      <div className="flex flex-col gap-2 flex-shrink-0 pb-8 pt-16">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-semibold">{documentTitle}</h2>
+          <div className="flex items-center gap-1">
+            {documentVersions && documentVersions.length > 1 && (
+              <Select value={activeVersionId} onValueChange={onVersionChange}>
+                <SelectTrigger className="text-gray-800">
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {documentVersions.map((version) => (
+                    <SelectItem
+                      key={version.id}
+                      value={version.id}
+                      className="cursor-pointer"
+                    >
+                      {version.version_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {documentVersions && documentVersions.length === 1 && (
+              <span className="text-gray-600">
+                {documentVersions[0].version_name}
+              </span>
+            )}
+            {onCreateNewVersion && (
+              <div className="relative">
+                {/* <GlowEffect
+                  colors={["#FF5733", "#33FF57", "#3357FF", "#F1C40F"]}
+                  mode="breathe"
+                  blur="medium"
+                  duration={3}
+                  scale={0.9}
+                /> */}
+                <Button
+                  variant="outline"
+                  className="relative"
+                  onClick={onCreateNewVersion}
+                >
+                  <Plus />
+                  {/* Create New Version */}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-4">
           {author && (
             <span className="flex items-center gap-2 text-gray-500">
@@ -144,7 +212,7 @@ export function WordHighlightDisplay({
 
       {/* Word timestamps */}
       {groupedWords.length > 0 && (
-        <div className="flex-1 p-4 leading-relaxed">
+        <div className="flex-1 leading-relaxed pb-20">
           {segmentTimeline.map(({ segment, segmentId }) => {
             // Filter words that belong to this segment
             const segmentWords = groupedWords.filter(

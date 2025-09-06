@@ -1,38 +1,28 @@
 "use client";
 
-import React, { useMemo, useState, useTransition, use, useEffect } from "react";
+import React, { useMemo, useState, use, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAudioState, AudioProvider } from "@/app/features/audio/context";
 import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
 import { AudioPlayerControls } from "@/app/features/audio/components/audio-player-controls";
 import { generateWithAi } from "@/app/features/generate-with-ai";
-import Link from "next/link";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { GlowEffect } from "@/components/ui/glow-effect";
+import { useHeader } from "../../components/header-context";
 
 // Document Detail View Component
 function DocumentDetailView() {
   // All hooks must be called at the top, before any conditional logic
   const { audioVersions, loading, error, document } = useAudioState();
-  const [localActiveTab, setLocalActiveTab] = useState<string>("");
-  const [, startTransition] = useTransition();
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { setContent } = useHeader();
 
   // Sort versions by creation date (newest first) - handle null document
   const sortedVersions = useMemo(() => {
@@ -59,12 +49,15 @@ function DocumentDetailView() {
   });
 
   // Function to update URL with version parameter
-  const updateVersionInUrl = (versionId: string) => {
-    if (!document) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("version", versionId);
-    router.push(`/library/${document.id}?${params.toString()}`);
-  };
+  const updateVersionInUrl = useCallback(
+    (versionId: string) => {
+      if (!document) return;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("version", versionId);
+      router.push(`/library/${document.id}?${params.toString()}`);
+    },
+    [document, searchParams, router]
+  );
 
   // Auto-update URL with version parameter if not present
   useEffect(() => {
@@ -75,7 +68,44 @@ function DocumentDetailView() {
     if (!versionFromUrl && firstVersionId && sortedVersions.length > 0) {
       updateVersionInUrl(firstVersionId);
     }
-  }, [searchParams, sortedVersions]);
+  }, [searchParams, sortedVersions, updateVersionInUrl]);
+
+  // Handle version change from header
+  const handleVersionChange = useCallback(
+    (versionId: string) => {
+      updateVersionInUrl(versionId);
+    },
+    [updateVersionInUrl]
+  );
+
+  // Update header content when document changes
+  useEffect(() => {
+    if (document) {
+      const category = searchParams.get("category");
+      const backUrl = category ? `/library?category=${category}` : "/library";
+
+      setContent({
+        documentTitle: document.title,
+        backUrl,
+        documentVersions: sortedVersions,
+        // activeVersionId: activeVersionId,
+        //         onVersionChange: handleVersionChange,
+        // actions: undefined,
+      });
+    }
+
+    // Cleanup on unmount
+    return () => {
+      setContent({});
+    };
+  }, [
+    document,
+    searchParams,
+    setContent,
+    sortedVersions,
+    activeVersionId,
+    handleVersionChange,
+  ]);
 
   // Early returns after all hooks are called
   if (loading) {
@@ -125,171 +155,52 @@ function DocumentDetailView() {
     setCreateVersionModalOpen(false);
   }
 
-  // function handleTabChange(versionId: string, index: number) {
-  //   // setActiveTab(index);
-  //   updateVersionInUrl(versionId);
-  // }
-
-  function handleTabChange(value: string) {
-    // Update local state immediately for instant UI feedback
-    setLocalActiveTab(value);
-
-    // Update URL in a transition to avoid blocking the UI
-    startTransition(() => {
-      updateVersionInUrl(value);
-      // Reset local state once URL is updated
-      setLocalActiveTab("");
-    });
-  }
-
-  const activeTab = localActiveTab || activeVersionId;
-
-  const category = searchParams.get("category");
-  const backUrl = category ? `/library?category=${category}` : "/library";
+  // Get the active version from sorted versions
+  const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex-1 flex flex-col overflow-hidden">
       <Dialog
         open={isCreateVersionModalOpen}
         onOpenChange={setCreateVersionModalOpen}
       >
-        <Tabs
-          // value={activeVersionId}
-          // onValueChange={(versionId) => {
-          //   const index = sortedVersions.findIndex((v) => v.id === versionId);
-          //   handleTabChange(versionId, index);
-          // }}
-          value={activeTab}
-          onValueChange={handleTabChange}
-          className="relative gap-0 flex-1 flex flex-col overflow-hidden"
-        >
-          <>
-            <header className="flex items-center gap-2 border-b">
-              <div className="flex w-full items-center px-6 py-4 justify-between">
-                {/* <h1 className="text-base font-medium">Library</h1> */}
-                <div className="flex w-full items-center gap-3">
-                  <Breadcrumb>
-                    <BreadcrumbList>
-                      <BreadcrumbItem>
-                        <BreadcrumbLink asChild>
-                          <Link
-                            href={backUrl}
-                            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-                          >
-                            Library
-                          </Link>
-                        </BreadcrumbLink>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        <BreadcrumbPage className="truncate max-w-96">
-                          {document.title}
-                        </BreadcrumbPage>
-                      </BreadcrumbItem>
-                      {/* <BreadcrumbSeparator /> */}
-
-                      {/* {sortedVersions.length === 1 && (
-                        <>
-                          <BreadcrumbItem>
-                        <BreadcrumbPage className="truncate max-w-48">
-                          {sortedVersions[0].version_name}
-                        </BreadcrumbPage>
-                      </BreadcrumbItem>
-                        </>
-                      )} */}
-                    </BreadcrumbList>
-                  </Breadcrumb>
-                </div>
-                <DialogTrigger asChild>
-                  <div className="relative">
-                    <GlowEffect
-                      colors={["#FF5733", "#33FF57", "#3357FF", "#F1C40F"]}
-                      mode="breathe"
-                      blur="medium"
-                      duration={3}
-                      scale={0.9}
-                    />
-                    <Button variant="outline" className="relative">
-                      <Plus />
-                      Create New Version
-                    </Button>
-                  </div>
-                </DialogTrigger>
-              </div>
-            </header>
-            <div className="relative w-full flex-1 overflow-hidden flex flex-col">
-              {sortedVersions.length > 0 && (
-                <>
-                  <div className="flex items-center justify-center border-b-1 border-gray-200 p-2">
-                    {/* Tab Headers */}
-                    {/* Only display the tabs list when there are more than 1 */}
-                    {sortedVersions.length > 1 ? (
-                      <>
-                        <TabsList className="border-b border-gray-200">
-                          {sortedVersions.map((version) => (
-                            <TabsTrigger
-                              value={version.id}
-                              key={version.id}
-                              // className="data-[state=active]:bg-blue-500 data-[state=active]:text-white"
-                            >
-                              {version.version_name}
-                            </TabsTrigger>
-                          ))}
-                        </TabsList>
-                      </>
-                    ) : (
-                      <div></div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* Version Tabs */}
-              {sortedVersions.length > 0 && (
-                <>
-                  {sortedVersions.map((v) => (
-                    // <div className="p-6" key={v.id}>
-                    <TabsContent
-                      value={v.id}
-                      key={v.id}
-                      className="flex-1 overflow-hidden flex flex-col"
-                    >
-                      <DocumentVersionContent
-                        document={document}
-                        documentVersion={v}
-                        audioVersions={audioVersions}
-                        audioPlayer={
-                          activeVersionId === v.id ? audioPlayer : null
-                        }
-                      />
-                    </TabsContent>
-                    // </div>
-                  ))}
-                  {<TabsContent value={""}></TabsContent>}
-                </>
-              )}
-
-              {/* No versions state */}
-              {sortedVersions.length === 0 && (
-                <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-                  <p className="text-gray-500">
-                    No versions available for this document.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <CreateVersionDialog
+        <div className="relative gap-0 flex-1 flex flex-col overflow-hidden">
+          {/* Active Version Content */}
+          {activeVersion ? (
+            <DocumentVersionContent
               document={document}
-              handleGenerateVersion={handleGenerateVersion}
-              onClose={handleCloseCreateVersionModal}
+              documentVersion={activeVersion}
+              audioVersions={audioVersions}
+              audioPlayer={audioPlayer}
+              documentVersions={sortedVersions}
+              activeVersionId={activeVersionId}
+              onVersionChange={handleVersionChange}
+              onCreateNewVersion={() => setCreateVersionModalOpen(true)}
             />
-          </>
-        </Tabs>
+          ) : (
+            /* No versions state */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
+                <p className="text-gray-500">
+                  No versions available for this document.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <CreateVersionDialog
+            document={document}
+            handleGenerateVersion={handleGenerateVersion}
+            onClose={handleCloseCreateVersionModal}
+          />
+
+          {/* Hidden dialog trigger - controlled by header button */}
+          <DialogTrigger className="hidden" />
+        </div>
       </Dialog>
 
       {/* Footer - Audio Player Controls */}
-      <div className="border-t border-gray-200 bg-white">
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 max-w-[800px] w-[80%] border-1 rounded-sm border-gray-200 bg-white overflow-hidden shadow-sm">
         {audioVersions.length > 0 &&
           document &&
           activeVersionId &&

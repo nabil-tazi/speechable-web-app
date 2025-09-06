@@ -1,12 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import React, {
-  useMemo,
-  useState,
-  useTransition,
-  Suspense,
-} from "react";
+import React, { useMemo, useState, useTransition, Suspense } from "react";
 import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,11 +13,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { DocumentCard } from "@/app/features/documents/components/document-card";
 import { Separator } from "@/components/ui/separator";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-} from "@/components/ui/breadcrumb";
 
 // Separate component that uses useSearchParams
 function LibraryContent() {
@@ -33,7 +23,6 @@ function LibraryContent() {
   // Add state for tracking the active tab locally
   const [localActiveTab, setLocalActiveTab] = useState<string>("");
   const [, startTransition] = useTransition();
-
 
   // Get category filter from URL
   const categoryFilter = searchParams.get("category");
@@ -98,33 +87,6 @@ function LibraryContent() {
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
-      <header className="flex items-center gap-2 border-b">
-        <div className="flex w-full items-center gap-3 px-6 py-4">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>Library</BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <Separator
-            orientation="vertical"
-            className="mx-2 data-[orientation=vertical]:h-4"
-          />
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            {availableCategories.map((category) => (
-              <TabsTrigger key={category} value={category}>
-                {formatDocumentType(category)}{" "}
-                <Badge
-                  variant="secondary"
-                  className="rounded-full bg-gray-300 text-xs"
-                >
-                  {groupedDocuments[category].length}
-                </Badge>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-      </header>
       <div className="w-full flex justify-center p-16 pt-8">
         <div className="max-w-7xl w-full space-y-6">
           {hasDocuments && (
