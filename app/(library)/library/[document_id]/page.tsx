@@ -4,7 +4,7 @@ import React, { useMemo, useState, use, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAudioState, AudioProvider } from "@/app/features/audio/context";
 import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
-import { Plus } from "lucide-react";
+import { Plus, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
@@ -178,12 +178,46 @@ function DocumentDetailView() {
               onCreateNewVersion={() => setCreateVersionModalOpen(true)}
             />
           ) : (
-            /* No versions state */
-            <div className="flex-1 flex items-center justify-center">
-              <div className="bg-white rounded-lg shadow-sm border p-12 text-center">
-                <p className="text-gray-500">
-                  No versions available for this document.
-                </p>
+            /* No versions state - Minimal screen */
+            <div className="flex-1 p-8 pt-[10%]">
+              <div className="max-w-md w-full mx-auto text-center space-y-6">
+                {/* Document Thumbnail */}
+                <div className="mx-auto w-32 h-40 bg-gray-100 rounded-lg border overflow-hidden shadow-sm">
+                  {document.thumbnail_path ? (
+                    <div
+                      className="w-full h-full bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url("${document.thumbnail_path}")`,
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <FileText className="w-12 h-12 text-gray-400" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Document Title */}
+                <div>
+                  <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+                    {document.title}
+                  </h1>
+                  {document.author && (
+                    <p className="text-gray-500">by {document.author}</p>
+                  )}
+                </div>
+
+                {/* Call to Action */}
+                <div className="space-y-3">
+                  <Button
+                    onClick={() => setCreateVersionModalOpen(true)}
+                    size="lg"
+                    className="w-full"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create First Audio Version
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -200,37 +234,39 @@ function DocumentDetailView() {
       </Dialog>
 
       {/* Footer - Audio Player Controls */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 max-w-[800px] w-[80%] border-1 rounded-sm border-gray-200 bg-white overflow-hidden shadow-sm">
-        {audioVersions.length > 0 &&
-          document &&
-          activeVersionId &&
-          (audioPlayer.isLoading ? (
-            <div className="bg-white">
-              <div className="w-full h-14.25 flex items-center">
-                <div className="flex items-center gap-2 px-4">
-                  {/* Skip backward skeleton */}
-                  <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
-                  {/* Play button skeleton */}
-                  <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
-                  {/* Skip forward skeleton */}
-                  <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
-                  {/* Speed selector skeleton */}
-                  <div className="h-6 w-12 bg-gray-200 rounded animate-pulse ml-1" />
-                </div>
-                {/* Waveform skeleton */}
-                <div className="relative w-full px-4">
-                  <div className="w-full h-10 bg-gray-200 rounded animate-pulse" />
-                </div>
-                {/* Time display skeleton */}
-                <div className="px-4 flex gap-2">
-                  <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+      {activeVersion && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 max-w-[800px] w-[80%] border-1 rounded-sm border-gray-200 bg-white overflow-hidden shadow-sm">
+          {audioVersions.length > 0 &&
+            document &&
+            activeVersionId &&
+            (audioPlayer.isLoading ? (
+              <div className="bg-white">
+                <div className="w-full h-14.25 flex items-center">
+                  <div className="flex items-center gap-2 px-4">
+                    {/* Skip backward skeleton */}
+                    <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                    {/* Play button skeleton */}
+                    <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+                    {/* Skip forward skeleton */}
+                    <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                    {/* Speed selector skeleton */}
+                    <div className="h-6 w-12 bg-gray-200 rounded animate-pulse ml-1" />
+                  </div>
+                  {/* Waveform skeleton */}
+                  <div className="relative w-full px-4">
+                    <div className="w-full h-10 bg-gray-200 rounded animate-pulse" />
+                  </div>
+                  {/* Time display skeleton */}
+                  <div className="px-4 flex gap-2">
+                    <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <AudioPlayerControls audioPlayer={audioPlayer} />
-          ))}
-      </div>
+            ) : (
+              <AudioPlayerControls audioPlayer={audioPlayer} />
+            ))}
+        </div>
+      )}
     </div>
   );
 }

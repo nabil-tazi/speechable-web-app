@@ -138,7 +138,7 @@ export function DocumentCard({
           {doc.versions.length > 1 ? "s" : ""}
         </Badge> */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <div className="flex h-full pt-4">
+          <div className="flex h-full pt-8 group-hover:pt-4 transition-all duration-200">
             {doc?.thumbnail_path && (
               <div
                 className="w-32 h-full rounded-tl-sm rounded-tr-sm shadow-[0px_2px_4px_0px_rgba(0,0,0,0.08)] bg-cover bg-no-repeat opacity-70 mx-auto"

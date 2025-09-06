@@ -22,12 +22,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Upload } from "lucide-react";
+import { Plus } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 export function LibraryHeader() {
   const { user } = useUser();
   const { userProfile } = useUserProfile();
   const { content } = useHeader();
+  const pathname = usePathname();
+
+  // Determine breadcrumb text and link based on current path
+  const isNewDocumentPage = pathname === "/library/new-document" || pathname === "/new-document" || pathname === "/new" || pathname === "/create";
+  const isLibraryMainPage = pathname === "/library";
+  
+  // For new document pages, we'll handle the breadcrumb structure differently
+  const showLibraryAsLink = isNewDocumentPage;
 
   return (
     <header className="flex items-center gap-2 border-b px-6 py-4">
@@ -49,7 +58,7 @@ export function LibraryHeader() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              {content.documentTitle ? (
+              {content.documentTitle || showLibraryAsLink ? (
                 <BreadcrumbLink asChild>
                   <Link
                     href={content.backUrl || "/library"}
@@ -62,6 +71,17 @@ export function LibraryHeader() {
                 <>Library</>
               )}
             </BreadcrumbItem>
+
+            {isNewDocumentPage && (
+              <>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>
+                    New Document
+                  </BreadcrumbPage>
+                </BreadcrumbItem>
+              </>
+            )}
 
             {content.documentTitle && (
               <>
@@ -121,9 +141,9 @@ export function LibraryHeader() {
       <div className="flex items-center gap-4 shrink-0">
         {content.actions}
         <Button variant="outline" asChild>
-          <Link href="/create">
-            <Upload className="w-4 h-4" />
-            Upload
+          <Link href="/library/new-document">
+            <Plus className="w-4 h-4" />
+            New Document
           </Link>
         </Button>
         <UserMenu user={user} userProfile={userProfile} />

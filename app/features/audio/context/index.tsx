@@ -86,7 +86,7 @@ export function AudioProvider({ children, documentId }: AudioProviderProps) {
         .select(
           `
           *,
-          versions:document_versions!inner(
+          versions:document_versions(
             *,
             audio_versions(
               *,
