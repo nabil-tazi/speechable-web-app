@@ -67,7 +67,7 @@ export default function PDFDocumentOverview({
           <div className="flex-shrink-0 group">
             <div className="relative">
               {fileInfo?.thumbnailUrl ? (
-                <Image
+                <img
                   src={fileInfo.thumbnailUrl}
                   alt="PDF thumbnail"
                   className="w-40 h-60 object-cover rounded-xl border-1 border-gray-200 "
