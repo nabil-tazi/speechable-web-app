@@ -149,7 +149,7 @@ export function WordHighlightDisplay({
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-semibold">{documentTitle}</h2>
           <div className="flex items-center gap-1">
-            {documentVersions && documentVersions.length > 1 && (
+            {documentVersions && documentVersions.length > 0 && (
               <Select value={activeVersionId} onValueChange={onVersionChange}>
                 <SelectTrigger className="text-gray-800">
                   <SelectValue placeholder="Select version" />
@@ -167,11 +167,11 @@ export function WordHighlightDisplay({
                 </SelectContent>
               </Select>
             )}
-            {documentVersions && documentVersions.length === 1 && (
+            {/* {documentVersions && documentVersions.length === 1 && (
               <span className="text-gray-600">
                 {documentVersions[0].version_name}
               </span>
-            )}
+            )} */}
             {onCreateNewVersion && (
               <div className="relative">
                 {/* <GlowEffect
