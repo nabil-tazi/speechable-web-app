@@ -1,11 +1,13 @@
-import React, { useRef } from "react";
+import React, { useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { UndoDot, RedoDot } from "lucide-react";
+import { UndoDot, RedoDot, Download } from "lucide-react";
 import { SpeedSelector } from "../../documents/components/speed-selector";
 import type { AudioPlayerHook } from "../hooks/use-audio-player";
 
 interface AudioPlayerControlsProps {
   audioPlayer: AudioPlayerHook;
+  onDownload?: () => void;
+  downloadTitle?: string;
 }
 
 const PlayIcon = () => (
@@ -20,7 +22,7 @@ const PauseIcon = () => (
   </svg>
 );
 
-export function AudioPlayerControls({ audioPlayer }: AudioPlayerControlsProps) {
+export function AudioPlayerControls({ audioPlayer, onDownload, downloadTitle = "Download MP3" }: AudioPlayerControlsProps) {
   const {
     isLoading,
     waveformReady,
@@ -140,10 +142,22 @@ export function AudioPlayerControls({ audioPlayer }: AudioPlayerControlsProps) {
               </div>
             )}
           </div>
-          <div className="px-4 flex gap-2 text-sm font-medium text-gray-800">
-            <span>{formatTime(currentTime)}</span>
-            <span>/</span>
-            <span>{formatTime(totalDuration)}</span>
+          <div className="px-4 flex items-center gap-3">
+            <div className="flex gap-2 text-sm font-medium text-gray-800">
+              <span>{formatTime(currentTime)}</span>
+              <span>/</span>
+              <span>{formatTime(totalDuration)}</span>
+            </div>
+            {onDownload && (
+              <Button
+                variant="ghost"
+                onClick={onDownload}
+                className="h-6 w-6 p-0"
+                title={downloadTitle}
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
