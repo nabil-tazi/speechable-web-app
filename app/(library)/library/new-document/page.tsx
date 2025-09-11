@@ -382,7 +382,7 @@ export default function NewDocumentPage() {
     setOcrProgress(null);
 
     try {
-      // Process images with tesseract.js
+      // Process images with PaddleOCR
       const result = await processImagesWithOCR(selectedImages, (progress) => {
         setOcrProgress(progress);
       });
@@ -403,7 +403,7 @@ export default function NewDocumentPage() {
         filename: `${titleInput.trim()}.txt`,
         metadata: {
           extractedAt: new Date().toISOString(),
-          processingMethod: "ocr-tesseract",
+          processingMethod: "ocr-paddleocr",
           imageCount: selectedImages.length,
           imageNames: selectedImages.map((img) => img.name),
           averageConfidence: result.totalConfidence,

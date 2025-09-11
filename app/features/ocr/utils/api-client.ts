@@ -39,21 +39,17 @@ function validateImageFile(file: File): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// Compress image before upload if needed
-async function compressImage(file: File, maxSize: number = 1024 * 1024): Promise<File> {
-  if (file.size <= maxSize) {
-    return file;
-  }
-
+// Compress image before upload - balanced for OCR quality vs size
+async function compressImage(file: File, maxSize: number = 2 * 1024 * 1024): Promise<File> { // 2MB target - much more reasonable for OCR
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const img = new Image();
 
     img.onload = () => {
-      // Calculate new dimensions to reduce file size
+      // Keep larger dimensions for better OCR accuracy
       let { width, height } = img;
-      const maxDimension = 1920;
+      const maxDimension = 2048; // Increased back to reasonable size for OCR
       
       if (Math.max(width, height) > maxDimension) {
         const ratio = maxDimension / Math.max(width, height);
@@ -64,159 +60,72 @@ async function compressImage(file: File, maxSize: number = 1024 * 1024): Promise
       canvas.width = width;
       canvas.height = height;
       
-      // Draw and compress
+      // Draw image
       ctx?.drawImage(img, 0, 0, width, height);
       
+      // Try compression with OCR-friendly settings
+      const tryCompress = (quality: number) => {
+        canvas.toBlob((blob) => {
+          if (blob && (blob.size <= maxSize || quality <= 0.5)) {
+            // Accept result if under size limit OR we've tried reasonable quality levels
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: file.lastModified
+            });
+            resolve(compressedFile);
+          } else if (quality > 0.5) {
+            // Try slightly lower quality but don't go too low
+            tryCompress(quality - 0.1);
+          } else {
+            // If still too big at quality 0.5, only slightly reduce dimensions
+            const newWidth = Math.round(width * 0.9); // Only 10% reduction, not 20%
+            const newHeight = Math.round(height * 0.9);
+            
+            // Don't let it get too small for OCR
+            if (newWidth > 800 && newHeight > 600) {
+              width = newWidth;
+              height = newHeight;
+              canvas.width = width;
+              canvas.height = height;
+              ctx?.drawImage(img, 0, 0, width, height);
+              tryCompress(0.8); // Start with higher quality again
+            } else {
+              // Accept current result rather than making it unreadable
+              const compressedFile = new File([blob!], file.name, {
+                type: 'image/jpeg',
+                lastModified: file.lastModified
+              });
+              resolve(compressedFile);
+            }
+          }
+        }, 'image/jpeg', quality);
+      };
+
+      // Start with high quality for OCR
+      tryCompress(0.9);
+    };
+
+    img.onerror = () => {
+      // If image loading fails, try to return a very compressed version
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
       canvas.toBlob((blob) => {
         if (blob) {
-          const compressedFile = new File([blob], file.name, {
+          const fallbackFile = new File([blob], file.name, {
             type: 'image/jpeg',
             lastModified: file.lastModified
           });
-          resolve(compressedFile);
+          resolve(fallbackFile);
         } else {
-          resolve(file); // Fallback to original
+          resolve(file);
         }
-      }, 'image/jpeg', 0.8);
+      }, 'image/jpeg', 0.5);
     };
-
-    img.onerror = () => resolve(file);
+    
     img.src = URL.createObjectURL(file);
   });
 }
 
-// Process multiple images using PaddleOCR API
-export async function processImagesWithOCR(
-  files: File[],
-  onProgress?: (progress: OCRProgress) => void
-): Promise<OCRResult> {
-  if (files.length === 0) {
-    throw new Error('No images provided for OCR processing');
-  }
-
-  // Validate all files first
-  for (let i = 0; i < files.length; i++) {
-    const validation = validateImageFile(files[i]);
-    if (!validation.valid) {
-      throw new Error(`Invalid file ${files[i].name}: ${validation.error}`);
-    }
-  }
-
-  try {
-    // Report initial progress
-    if (onProgress) {
-      onProgress({
-        imageIndex: 0,
-        totalImages: files.length,
-        currentImageName: 'Preparing images...',
-        progress: 0,
-        stage: 'loading'
-      });
-    }
-
-    // Compress images if needed
-    const compressedFiles = await Promise.all(
-      files.map(async (file, index) => {
-        if (onProgress) {
-          onProgress({
-            imageIndex: index,
-            totalImages: files.length,
-            currentImageName: `Compressing ${file.name}`,
-            progress: Math.round((index / files.length) * 30), // 0-30% for compression
-            stage: 'loading'
-          });
-        }
-        return await compressImage(file);
-      })
-    );
-
-    // Create FormData for API request
-    const formData = new FormData();
-    compressedFiles.forEach((file, index) => {
-      formData.append('images', file);
-    });
-
-    // Report upload progress
-    if (onProgress) {
-      onProgress({
-        imageIndex: 0,
-        totalImages: files.length,
-        currentImageName: 'Uploading to server...',
-        progress: 40,
-        stage: 'loading'
-      });
-    }
-
-    // Make API request with progress tracking
-    const response = await fetch('/api/ocr', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Server error: ${response.status} ${response.statusText}`);
-    }
-
-    // Report processing progress
-    if (onProgress) {
-      onProgress({
-        imageIndex: 0,
-        totalImages: files.length,
-        currentImageName: 'Processing with PaddleOCR...',
-        progress: 70,
-        stage: 'recognizing'
-      });
-    }
-
-    const apiResponse: APIResponse = await response.json();
-
-    if (!apiResponse.success) {
-      throw new Error(apiResponse.error || 'OCR processing failed');
-    }
-
-    // Convert API response to our format
-    const processedImages: ProcessedImage[] = apiResponse.images.map((img, index) => {
-      // Report progress for each completed image
-      if (onProgress) {
-        onProgress({
-          imageIndex: index,
-          totalImages: files.length,
-          currentImageName: img.filename,
-          progress: 80 + Math.round((index / files.length) * 20), // 80-100%
-          stage: 'completed'
-        });
-      }
-
-      return {
-        file: files[index],
-        text: img.text || '',
-        confidence: img.confidence || 0
-      };
-    });
-
-    // Final completion
-    if (onProgress) {
-      onProgress({
-        imageIndex: files.length - 1,
-        totalImages: files.length,
-        currentImageName: 'Processing complete!',
-        progress: 100,
-        stage: 'completed'
-      });
-    }
-
-    return {
-      images: processedImages,
-      combinedText: apiResponse.combined_text || '',
-      totalConfidence: apiResponse.total_confidence || 0
-    };
-
-  } catch (error) {
-    console.error('OCR API error:', error);
-    throw new Error(
-      error instanceof Error 
-        ? error.message 
-        : 'Failed to process images with OCR API'
-    );
-  }
-}
+// Re-export the original client-side Tesseract.js implementation
+export { processImagesWithOCR } from './image-processing';
