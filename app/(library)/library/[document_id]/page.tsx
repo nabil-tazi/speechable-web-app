@@ -10,7 +10,6 @@ import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
-import { AudioPlayerControls } from "@/app/features/audio/components/audio-player-controls";
 import { generateWithAi } from "@/app/features/generate-with-ai";
 import { useHeader } from "../../components/header-context";
 
@@ -47,6 +46,9 @@ function DocumentDetailView() {
     documentVersionId: activeVersionId,
   });
 
+  // Get the active version from sorted versions
+  const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
+
   // Function to update URL with version parameter
   const updateVersionInUrl = useCallback(
     (versionId: string) => {
@@ -76,6 +78,7 @@ function DocumentDetailView() {
     },
     [updateVersionInUrl]
   );
+
 
   // Update header content when document changes
   useEffect(() => {
@@ -154,9 +157,6 @@ function DocumentDetailView() {
     setCreateVersionModalOpen(false);
   }
 
-  // Get the active version from sorted versions
-  const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <Dialog
@@ -232,40 +232,7 @@ function DocumentDetailView() {
         </div>
       </Dialog>
 
-      {/* Footer - Audio Player Controls */}
-      {activeVersion && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 max-w-[800px] w-[80%] border-1 rounded-sm border-gray-200 bg-white overflow-hidden shadow-sm">
-          {audioVersions.length > 0 &&
-            document &&
-            activeVersionId &&
-            (audioPlayer.isLoading ? (
-              <div className="bg-white">
-                <div className="w-full h-14.25 flex items-center">
-                  <div className="flex items-center gap-2 px-4">
-                    {/* Skip backward skeleton */}
-                    <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
-                    {/* Play button skeleton */}
-                    <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
-                    {/* Skip forward skeleton */}
-                    <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
-                    {/* Speed selector skeleton */}
-                    <div className="h-6 w-12 bg-gray-200 rounded animate-pulse ml-1" />
-                  </div>
-                  {/* Waveform skeleton */}
-                  <div className="relative w-full px-4">
-                    <div className="w-full h-10 bg-gray-200 rounded animate-pulse" />
-                  </div>
-                  {/* Time display skeleton */}
-                  <div className="px-4 flex gap-2">
-                    <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <AudioPlayerControls audioPlayer={audioPlayer} />
-            ))}
-        </div>
-      )}
+      {/* Footer - Audio Player Controls - Only show when sticky header is not present */}
     </div>
   );
 }

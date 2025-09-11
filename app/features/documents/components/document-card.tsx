@@ -340,7 +340,7 @@ export function DocumentCard({
           className="text-sm text-gray-900 font-medium leading-tight truncate max-w-45"
           title={doc.filename}
         >
-          {doc.filename}
+          {doc.title || doc.filename}
         </h3>
         <div className="flex items-center gap-1">
           <div className="text-xs text-gray-500">

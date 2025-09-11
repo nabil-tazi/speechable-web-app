@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/app/lib/supabase/client";
 import { createDocumentAction } from "@/app/features/documents/actions";
 import { processPDFFile } from "@/app/features/pdf/utils/pdf-processing";
+import { processImagesWithOCR } from "@/app/features/ocr/utils/api-client";
+import type { OCRProgress } from "@/app/features/ocr/types";
 import { Button } from "@/components/ui/button";
 import {
   Upload,
@@ -64,6 +66,8 @@ export default function NewDocumentPage() {
   const [textInput, setTextInput] = useState("");
   const [titleInput, setTitleInput] = useState("");
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [ocrProgress, setOcrProgress] = useState<OCRProgress | null>(null);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Get user on mount
   useEffect(() => {
@@ -107,10 +111,27 @@ export default function NewDocumentPage() {
   // Image upload handlers
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp'];
+    const imageFiles = files.filter((file) => allowedTypes.includes(file.type));
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxImages = 10; // Maximum number of images
 
+    // Check file types
     if (imageFiles.length !== files.length) {
-      setError("Please select only image files");
+      setError("Please select only supported image files (JPEG, PNG, GIF, BMP, WebP)");
+      return;
+    }
+
+    // Check file sizes
+    const oversizedFiles = imageFiles.filter(file => file.size > maxSize);
+    if (oversizedFiles.length > 0) {
+      setError(`Image(s) too large: ${oversizedFiles.map(f => f.name).join(', ')}. Maximum size is 10MB per image.`);
+      return;
+    }
+
+    // Check total number of images
+    if (selectedImages.length + imageFiles.length > maxImages) {
+      setError(`Too many images. Maximum is ${maxImages} images total.`);
       return;
     }
 
@@ -121,10 +142,27 @@ export default function NewDocumentPage() {
   const handleImageDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp'];
+    const imageFiles = files.filter((file) => allowedTypes.includes(file.type));
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxImages = 10; // Maximum number of images
 
+    // Check file types
     if (imageFiles.length !== files.length) {
-      setError("Please upload only image files");
+      setError("Please drop only supported image files (JPEG, PNG, GIF, BMP, WebP)");
+      return;
+    }
+
+    // Check file sizes
+    const oversizedFiles = imageFiles.filter(file => file.size > maxSize);
+    if (oversizedFiles.length > 0) {
+      setError(`Image(s) too large: ${oversizedFiles.map(f => f.name).join(', ')}. Maximum size is 10MB per image.`);
+      return;
+    }
+
+    // Check total number of images
+    if (selectedImages.length + imageFiles.length > maxImages) {
+      setError(`Too many images. Maximum is ${maxImages} images total.`);
       return;
     }
 
@@ -134,6 +172,34 @@ export default function NewDocumentPage() {
 
   const removeImage = (index: number) => {
     setSelectedImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Drag and drop sorting functions
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    const newImages = [...selectedImages];
+    const draggedImage = newImages[draggedIndex];
+    newImages.splice(draggedIndex, 1);
+    newImages.splice(index, 0, draggedImage);
+    
+    setSelectedImages(newImages);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
+  // Generate image preview URL
+  const getImagePreviewUrl = (file: File): string => {
+    return URL.createObjectURL(file);
   };
 
   // Process PDF document
@@ -258,43 +324,92 @@ export default function NewDocumentPage() {
     }
   };
 
+  // Generate thumbnail from first image
+  const generateImageThumbnail = async (file: File): Promise<string | null> => {
+    try {
+      return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        img.onload = () => {
+          // Set thumbnail dimensions (maintaining aspect ratio)
+          const maxWidth = 400;
+          const maxHeight = 600;
+          let { width, height } = img;
+          
+          if (width > height) {
+            if (width > maxWidth) {
+              height = height * (maxWidth / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = width * (maxHeight / height);
+              height = maxHeight;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          // Draw scaled image
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Convert to data URL
+          const dataUrl = canvas.toDataURL('image/png', 0.8);
+          resolve(dataUrl);
+        };
+        
+        img.onerror = () => resolve(null);
+        img.src = URL.createObjectURL(file);
+      });
+    } catch (error) {
+      console.warn('Failed to generate thumbnail:', error);
+      return null;
+    }
+  };
+
   // Process images with OCR
   const processImages = async () => {
-    if (!user || selectedImages.length === 0) {
-      setError("Please select at least one image");
+    if (!user || selectedImages.length === 0 || !titleInput.trim()) {
+      setError("Please enter a title and select at least one image");
       return;
     }
 
     setIsProcessing(true);
     setError(null);
+    setOcrProgress(null);
 
     try {
-      // TODO: Implement OCR processing for images
-      // This would involve calling an OCR service API
-      const ocrPromises = selectedImages.map(async (image) => {
-        // Mock OCR processing - replace with actual OCR service
-        return new Promise<string>((resolve) => {
-          setTimeout(() => {
-            resolve(`OCR text extracted from ${image.name}`);
-          }, 1000);
-        });
+      // Process images with tesseract.js
+      const result = await processImagesWithOCR(selectedImages, (progress) => {
+        setOcrProgress(progress);
       });
 
-      const ocrResults = await Promise.all(ocrPromises);
-      const combinedText = ocrResults.join("\n\n");
+      // Check if we got meaningful text
+      if (!result.combinedText.trim()) {
+        throw new Error("No text could be extracted from the images. Please ensure the images contain clear, readable text.");
+      }
+
+      // Generate thumbnail from first image
+      const thumbnailDataUrl = await generateImageThumbnail(selectedImages[0]);
 
       const doc = await createDocumentFromData({
-        title: titleInput.trim() || "OCR Document",
-        text: combinedText,
+        title: titleInput.trim(),
+        text: result.combinedText,
         file_type: "images",
         mime_type: "image/mixed",
-        filename: `${titleInput.trim() || "ocr-document"}.txt`,
+        filename: `${titleInput.trim()}.txt`,
         metadata: {
           extractedAt: new Date().toISOString(),
-          processingMethod: "ocr",
+          processingMethod: "ocr-tesseract",
           imageCount: selectedImages.length,
           imageNames: selectedImages.map((img) => img.name),
+          averageConfidence: result.totalConfidence,
+          characterCount: result.combinedText.length,
         },
+        thumbnailDataUrl,
       });
 
       router.push(`/library/${doc.id}`);
@@ -303,6 +418,7 @@ export default function NewDocumentPage() {
       setError(err instanceof Error ? err.message : "Failed to process images");
     } finally {
       setIsProcessing(false);
+      setOcrProgress(null);
     }
   };
 
@@ -712,22 +828,36 @@ export default function NewDocumentPage() {
                 <p className="text-gray-600">
                   Upload images to extract text using OCR technology
                 </p>
+                <p className="text-sm text-gray-500">
+                  Maximum 10 images, 10MB each. Supports JPEG, PNG, GIF, BMP, WebP
+                </p>
               </div>
 
               <div className="max-w-2xl mx-auto space-y-4">
                 <div>
-                  <Label
-                    htmlFor="title-input-images"
-                    className="text-sm font-medium"
-                  >
-                    Title (Optional)
-                  </Label>
+                  <div className="flex justify-between items-center mb-1">
+                    <Label
+                      htmlFor="title-input-images"
+                      className="text-sm font-medium"
+                    >
+                      Title
+                    </Label>
+                    <span className="text-xs text-gray-500">
+                      {titleInput.length}/200 characters
+                    </span>
+                  </div>
                   <Input
                     id="title-input-images"
                     placeholder="Document title"
                     value={titleInput}
-                    onChange={(e) => setTitleInput(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value.length <= 200) {
+                        setTitleInput(value);
+                      }
+                    }}
                     className="mt-1"
+                    maxLength={200}
                   />
                 </div>
 
@@ -769,42 +899,147 @@ export default function NewDocumentPage() {
                 </div>
 
                 {selectedImages.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">
-                      Selected Images
-                    </Label>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">
+                        Selected Images ({selectedImages.length})
+                      </Label>
+                      <span className="text-xs text-gray-500">
+                        Drag to reorder • First image will be the thumbnail
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-96 overflow-y-auto p-2">
                       {selectedImages.map((image, index) => (
                         <div
                           key={index}
-                          className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragOver={(e) => handleDragOver(e, index)}
+                          onDragEnd={handleDragEnd}
+                          className={`relative group cursor-move border-2 rounded-lg overflow-hidden transition-all ${
+                            draggedIndex === index 
+                              ? 'opacity-50 border-blue-400' 
+                              : 'border-gray-200 hover:border-gray-300'
+                          } ${index === 0 ? 'ring-2 ring-blue-200' : ''}`}
                         >
-                          <span className="text-sm text-gray-700 truncate">
-                            {image.name}
-                          </span>
+                          {/* Image Preview */}
+                          <div className="aspect-[4/3] bg-gray-100">
+                            <img
+                              src={getImagePreviewUrl(image)}
+                              alt={`Preview ${index + 1}`}
+                              className="w-full h-full object-cover"
+                              onLoad={(e) => {
+                                // Clean up object URL after loading
+                                const img = e.target as HTMLImageElement;
+                                setTimeout(() => {
+                                  if (img.src.startsWith('blob:')) {
+                                    URL.revokeObjectURL(img.src);
+                                  }
+                                }, 100);
+                              }}
+                            />
+                          </div>
+                          
+                          {/* Image Info Overlay */}
+                          <div className="absolute inset-x-0 bottom-0 bg-black bg-opacity-70 text-white p-2">
+                            <div className="flex items-center justify-between">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-medium truncate">
+                                  {image.name}
+                                </div>
+                                <div className="text-xs opacity-75">
+                                  {Math.round(image.size / 1024)}KB
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-1 ml-2">
+                                {index === 0 && (
+                                  <span className="text-xs bg-blue-600 px-1 py-0.5 rounded">
+                                    Thumb
+                                  </span>
+                                )}
+                                <span className="text-xs opacity-75">
+                                  #{index + 1}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Remove Button */}
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             size="sm"
                             onClick={() => removeImage(index)}
-                            className="h-6 w-6 p-0"
+                            className="absolute top-1 right-1 h-6 w-6 p-0 bg-red-500 hover:bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                           >
                             ×
                           </Button>
+                          
+                          {/* Drag Handle */}
+                          <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="h-6 w-6 bg-black bg-opacity-50 rounded flex items-center justify-center">
+                              <div className="w-3 h-3 grid grid-cols-2 gap-0.5">
+                                <div className="w-1 h-1 bg-white rounded-full"></div>
+                                <div className="w-1 h-1 bg-white rounded-full"></div>
+                                <div className="w-1 h-1 bg-white rounded-full"></div>
+                                <div className="w-1 h-1 bg-white rounded-full"></div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ))}
+                    </div>
+                    
+                    {selectedImages.length >= 10 && (
+                      <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                        Maximum of 10 images reached. Remove images to add more.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* OCR Progress Bar */}
+                {isProcessing && ocrProgress && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>
+                        {ocrProgress.stage === 'loading' && 'Loading image...'}
+                        {ocrProgress.stage === 'recognizing' && 'Extracting text...'}
+                        {ocrProgress.stage === 'completed' && 'Completed!'}
+                        {ocrProgress.stage === 'error' && 'Error processing image'}
+                      </span>
+                      <span>{ocrProgress.imageIndex + 1} of {ocrProgress.totalImages}</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: `${ocrProgress.progress}%`
+                        }}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 text-center">
+                      {ocrProgress.currentImageName}
                     </div>
                   </div>
                 )}
 
                 <Button
                   onClick={handleCreate}
-                  disabled={isProcessing || selectedImages.length === 0}
+                  disabled={isProcessing || selectedImages.length === 0 || !titleInput.trim()}
                   className="w-full"
                 >
                   {isProcessing ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Processing Images...
+                      {ocrProgress ? (
+                        <>
+                          Processing {ocrProgress.currentImageName} ({ocrProgress.imageIndex + 1}/{ocrProgress.totalImages})
+                          {ocrProgress.progress > 0 && ` - ${ocrProgress.progress}%`}
+                        </>
+                      ) : (
+                        "Processing Images..."
+                      )}
                     </>
                   ) : (
                     <>

@@ -143,6 +143,72 @@ export function WordHighlightDisplay({
     return "normal";
   };
 
+  if (groupedWords.length > 0)
+    return (
+      <div className="flex-1 leading-relaxed pb-20">
+        {segmentTimeline.map(({ segment, segmentId }) => {
+          // Filter words that belong to this segment
+          const segmentWords = groupedWords.filter(
+            (word) => word.segmentId === segmentId
+          );
+
+          if (segmentWords.length === 0) return null;
+
+          return (
+            <div key={segmentId} className="mb-6">
+              {/* Words for this segment - titles and speech are now rendered from word_timestamps */}
+              <div className="space-y-1">
+                {segmentWords.map((wordGroup, wordIndex) => {
+                  // Find the global index of this word in the original groupedWords array
+                  const globalIndex = groupedWords.findIndex(
+                    (w) => w === wordGroup
+                  );
+
+                  const isCurrentWord = globalIndex === currentWordIndex;
+                  const nextWord = segmentWords[wordIndex + 1];
+                  const spacingType = shouldAddSpacing(wordGroup, nextWord);
+
+                  return (
+                    <React.Fragment key={`${segmentId}-${wordIndex}`}>
+                      <span
+                        ref={isCurrentWord ? highlightedWordRef : null}
+                        className={getWordStyling(
+                          wordGroup,
+                          globalIndex,
+                          isCurrentWord
+                        )}
+                        onClick={() => onWordClick(wordGroup.start)}
+                        title={`${
+                          wordGroup.isTitle ? "Title: " : ""
+                        }Jump to ${formatTime(wordGroup.start)} - ${
+                          wordGroup.segmentTitle
+                        }`}
+                      >
+                        {wordGroup.text}
+                      </span>
+
+                      {/* Handle spacing and line breaks */}
+                      {spacingType === "title-end" && <br />}
+                      {spacingType === "before-title" && (
+                        <>
+                          <br />
+                          <br />
+                        </>
+                      )}
+                      {/* {spacingType === "normal" &&
+                          wordIndex < segmentWords.length - 1 &&
+                          " "} */}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  // else return <></>;
+
   return (
     <div className="flex flex-col h-full max-w-[800px] mx-auto">
       <div className="flex flex-col gap-2 flex-shrink-0 pb-8 pt-16">
@@ -207,6 +273,13 @@ export function WordHighlightDisplay({
               {voices.join(", ")}
             </h3>
           </span>
+        </div>
+      </div>
+      <div className="border-t border-b border-gray-200 p-4 mb-8 flex justify-between">
+        <div>Sections toggle</div>
+        <div className="flex items-center gap-2">
+          <div>Download button</div>
+          <div>Settings</div>
         </div>
       </div>
 

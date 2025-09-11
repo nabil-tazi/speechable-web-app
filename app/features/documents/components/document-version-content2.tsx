@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Toggle } from "@/components/ui/toggle";
 import type {
   AudioSegment,
   AudioVersionWithSegments,
@@ -9,11 +10,31 @@ import type {
 } from "../../audio/types";
 import type { Document, DocumentVersion } from "../types";
 import type { AudioPlayerHook } from "../../audio/hooks/use-audio-player";
-import { Clock, Download, ChevronLeft, ChevronRight, List } from "lucide-react";
+import {
+  Clock,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  Plus,
+  UsersRound,
+  Mic2,
+  UndoDot,
+  RedoDot,
+} from "lucide-react";
 import { formatDuration } from "../../audio/utils";
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
 import { SectionSelector } from "./section-selector";
+import { SpeedSelector } from "./speed-selector";
+import { AudioPlayerControls } from "../../audio/components/audio-player-controls";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface GroupedWord {
   text: string;
@@ -33,6 +54,18 @@ interface UnifiedWordTimestamp extends WordTimestamp {
 const SkipForwardIcon = ({ className = "w-2 h-2" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
     <path d="M16 12.667L5.777 19.482A.5.5 0 0 1 5 19.066V4.934a.5.5 0 0 1 .777-.416L16 11.333V5a1 1 0 1 1 2 0v14a1 1 0 1 1-2 0v-6.333Z" />
+  </svg>
+);
+
+const PlayIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z" />
+  </svg>
+);
+
+const PauseIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
   </svg>
 );
 
@@ -84,7 +117,10 @@ export function DocumentVersionContent({
   const isPlaying = audioPlayer?.isPlaying || false;
   const concatenatedBuffer = audioPlayer?.concatenatedBuffer || null;
   const audioBufferToBlob = audioPlayer?.audioBufferToBlob || null;
-  // const setPlaybackSpeed = audioPlayer?.setPlaybackSpeed || (() => {});
+  const skipBackward = audioPlayer?.skipBackward || (() => {});
+  const skipForward = audioPlayer?.skipForward || (() => {});
+  const playbackSpeed = audioPlayer?.playbackSpeed || 1;
+  const setPlaybackSpeed = audioPlayer?.setPlaybackSpeed || (() => {});
 
   // Collapse state for tracks panel
   const [isTracksCollapsed, setIsTracksCollapsed] = useState(true);
@@ -308,56 +344,27 @@ export function DocumentVersionContent({
         {/* Left column - Tracks list */}
         <div
           className={`h-full border-r border-gray-200 overflow-y-auto transition-all duration-300 ease-in-out relative ${
-            isTracksCollapsed ? "w-16 min-w-16" : "w-90 min-w-90"
+            isTracksCollapsed
+              ? "w-0 min-w-0 border-r-0 overflow-hidden"
+              : "w-90 min-w-90"
           }`}
-          style={{ overflow: "visible" }}
         >
-          {/* Toggle button on border */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleTracksPanel}
-            className="absolute top-1/2 -translate-y-1/2 -right-3 z-50 h-6 w-6 p-0 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md"
-            title={isTracksCollapsed ? "Expand tracks" : "Collapse tracks"}
-          >
-            {isTracksCollapsed ? (
-              <ChevronRight className="w-3 h-3" />
-            ) : (
+          {/* Toggle button on border - only show when panel is visible */}
+          {/* {!isTracksCollapsed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleTracksPanel}
+              className="absolute top-1/2 -translate-y-1/2 -right-3 z-50 h-6 w-6 p-0 bg-white border border-gray-200 rounded-full shadow-sm hover:shadow-md"
+              title="Collapse tracks"
+            >
               <ChevronLeft className="w-3 h-3" />
-            )}
-          </Button>
-          <div className="flex flex-col gap-4">
-            <div>
-              <div className="p-4">
-                {isTracksCollapsed ? (
-                  <div className="flex flex-col items-center gap-4">
-                    {/* <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={toggleTracksPanel}
-                      className="h-6 w-6 p-0"
-                      title="Expand tracks"
-                    >
-                      <List className="w-4 h-4" />
-                    </Button> */}
-                    <SectionSelector
-                      allSegments={allSegments}
-                      sectionToggles={sectionToggles}
-                      onSectionToggle={handleSectionToggle}
-                      onToggleAll={handleToggleAll}
-                    />
-                    {concatenatedBuffer && audioBufferToBlob && (
-                      <Button
-                        variant="ghost"
-                        onClick={handleDownload}
-                        className="h-6 w-6 p-0"
-                        title="Download MP3"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                ) : (
+            </Button>
+          )} */}
+          <div className="min-w-[360px]">
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="p-4">
                   <div className="flex justify-between">
                     <div className="flex items-center gap-1">
                       <Label className="font-semibold mr-2">Tracks</Label>
@@ -373,21 +380,9 @@ export function DocumentVersionContent({
                         onSectionToggle={handleSectionToggle}
                         onToggleAll={handleToggleAll}
                       />
-                      {concatenatedBuffer && audioBufferToBlob && (
-                        <Button
-                          variant="ghost"
-                          onClick={handleDownload}
-                          className="h-6 w-6 p-0"
-                          title="Download MP3"
-                        >
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      )}
                     </div>
                   </div>
-                )}
-              </div>
-              {!isTracksCollapsed && (
+                </div>
                 <div className="border-t border-gray-200">
                   {allSegments.map((segment) => (
                     <div
@@ -452,9 +447,10 @@ export function DocumentVersionContent({
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
-            {/* {audioPlayer &&
+          </div>
+          {/* {audioPlayer &&
               !audioPlayer.isLoading &&
               allSegments.length > 0 &&
               enabledSegmentIds.length === 0 && (
@@ -465,25 +461,119 @@ export function DocumentVersionContent({
                   </p>
                 </div>
               )} */}
-          </div>
         </div>
         {/* Right column - Word highlight display */}
-        <div className="flex-1 bg-white overflow-y-auto overflow-x-hidden min-h-0 px-12">
+        <div
+          className="flex-1 bg-white overflow-y-auto overflow-x-hidden min-h-0 px-12"
+        >
+
           {versionAudioVersions.length > 0 && enabledSegmentIds.length > 0 ? (
-            <WordHighlightDisplay
-              documentTitle={document.title}
-              author={document.author}
-              voices={currentVersionVoices}
-              versionName={documentVersion.version_name}
-              groupedWords={groupedWords}
-              segmentTimeline={segmentTimeline}
-              currentTime={currentTime}
-              onWordClick={handleWordClick}
-              documentVersions={documentVersions}
-              activeVersionId={activeVersionId}
-              onVersionChange={onVersionChange}
-              onCreateNewVersion={onCreateNewVersion}
-            />
+            <div className="max-w-[800px] mx-auto">
+              <div className="flex flex-col gap-2 flex-shrink-0 pb-8 pt-16">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <Toggle
+                      pressed={!isTracksCollapsed}
+                      onPressedChange={(pressed) =>
+                        setIsTracksCollapsed(!pressed)
+                      }
+                      aria-label="Toggle tracks panel"
+                    >
+                      <List className="h-4 w-4" />
+                    </Toggle>
+                    <h2 className="text-2xl font-semibold">
+                      {document.title}
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {documentVersions && documentVersions.length > 0 && (
+                      <Select
+                        value={activeVersionId}
+                        onValueChange={onVersionChange}
+                      >
+                        <SelectTrigger className="text-gray-800">
+                          <SelectValue placeholder="Select version" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {documentVersions.map((version) => (
+                            <SelectItem
+                              key={version.id}
+                              value={version.id}
+                              className="cursor-pointer"
+                            >
+                              {version.version_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {onCreateNewVersion && (
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          className="relative"
+                          onClick={onCreateNewVersion}
+                        >
+                          <Plus />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              {audioPlayer && (
+                <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-8">
+                  {audioPlayer.isLoading ? (
+                    <div className="bg-white">
+                      <div className="w-full h-14.25 flex items-center">
+                        <div className="flex items-center gap-2 px-4">
+                          {/* Skip backward skeleton */}
+                          <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                          {/* Play button skeleton */}
+                          <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+                          {/* Skip forward skeleton */}
+                          <div className="h-6 w-6 bg-gray-200 rounded animate-pulse" />
+                          {/* Speed selector skeleton */}
+                          <div className="h-6 w-12 bg-gray-200 rounded animate-pulse ml-1" />
+                        </div>
+                        {/* Waveform skeleton */}
+                        <div className="relative w-full px-4">
+                          <div className="w-full h-10 bg-gray-200 rounded animate-pulse" />
+                        </div>
+                        {/* Time display skeleton */}
+                        <div className="px-4 flex gap-2">
+                          <div className="h-4 w-12 bg-gray-200 rounded animate-pulse" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full">
+                      <AudioPlayerControls
+                        audioPlayer={audioPlayer}
+                        onDownload={concatenatedBuffer && audioBufferToBlob ? handleDownload : undefined}
+                        downloadTitle={`Download ${document.title} - ${documentVersion.version_name}.wav`}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <WordHighlightDisplay
+                documentTitle={document.title}
+                author={document.author}
+                voices={currentVersionVoices}
+                versionName={documentVersion.version_name}
+                groupedWords={groupedWords}
+                segmentTimeline={segmentTimeline}
+                currentTime={currentTime}
+                onWordClick={handleWordClick}
+                documentVersions={documentVersions}
+                activeVersionId={activeVersionId}
+                onVersionChange={onVersionChange}
+                onCreateNewVersion={onCreateNewVersion}
+              />
+            </div>
           ) : (
             <div className="text-center py-8">
               <p className="text-gray-500">

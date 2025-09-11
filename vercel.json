@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/ocr.py": {
+      "runtime": "python3.9",
+      "maxDuration": 30
+    }
+  },
+  "build": {
+    "env": {
+      "PYTHONPATH": "$PYTHONPATH:/var/task"
+    }
+  }
+}

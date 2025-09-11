@@ -4,10 +4,10 @@ import type { ParsedPDF } from "@/app/features/pdf/types";
 // Group 1 captures the preceding character (if any) so we can keep it in the output
 function replaceLatinAbbr(text: string): string {
   const replacements: [RegExp, string, string][] = [
-    [/(^|[\s\(\[\{"'“”‘’,;:])e\.g\./gi, "for example:", "For example:"],
-    [/(^|[\s\(\[\{"'“”‘’,;:])i\.e\./gi, "in other words:", "In other words:"],
-    [/(^|[\s\(\[\{"'“”‘’,;:])et al\./gi, "and others", "And others"],
-    [/(^|[\s\(\[\{"'“”‘’,;:])ca\./gi, "approximately", "Approximately"],
+    [/(^|[\s\(\[\{"'""'',;:])e\.\s*g\./gi, "for example:", "For example:"],
+    [/(^|[\s\(\[\{"'""'',;:])i\.\s*e\./gi, "in other words:", "In other words:"],
+    [/(^|[\s\(\[\{"'""'',;:])et al\./gi, "and others", "And others"],
+    [/(^|[\s\(\[\{"'""'',;:])ca\./gi, "approximately", "Approximately"],
   ];
 
   return replacements.reduce((acc, [regex, midSentence, sentenceStart]) => {

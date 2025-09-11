@@ -254,8 +254,8 @@ async function generateAudioForSection(
         voiceMap: readerVoiceMap,
         response_format: "mp3",
         word_timestamps: true,
-        maxCharsPerSection: 3000,
-        maxCharsPerSpeech: 100,
+        maxCharsPerSection: 4000,
+        maxCharsPerSpeech: 2000,
         includeTitles: true,
       }),
     });
