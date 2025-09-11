@@ -1,4 +1,4 @@
-import { createWorker } from 'tesseract.js';
+import { createWorker, PSM } from 'tesseract.js';
 import type { OCRProgress, OCRResult, ProcessedImage } from '../types';
 
 // Text cleaning function adapted from PDF processing
@@ -83,7 +83,7 @@ async function processImageWithOCR(
     // Configure for better accuracy
     await worker.setParameters({
       tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?;:()-\'\"',
-      tessedit_pageseg_mode: '1', // Automatic page segmentation with OSD
+      tessedit_pageseg_mode: PSM.AUTO_OSD, // Automatic page segmentation with OSD
     });
 
     // Perform OCR (without logger to avoid serialization issues)
