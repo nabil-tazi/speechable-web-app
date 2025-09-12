@@ -6,6 +6,7 @@ import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  DocumentsProvider,
   useGroupedDocuments,
   formatDocumentType,
   getDocumentCount,
@@ -157,8 +158,10 @@ function LibraryContent() {
 // Main Library Page Component with Suspense wrapper
 export default function LibraryPage() {
   return (
-    <Suspense fallback={<LibraryLoader />}>
-      <LibraryContent />
-    </Suspense>
+    <DocumentsProvider>
+      <Suspense fallback={<LibraryLoader />}>
+        <LibraryContent />
+      </Suspense>
+    </DocumentsProvider>
   );
 }
