@@ -1,5 +1,8 @@
 import { WordTimestamp } from "@/app/features/audio/types";
-import { ProcessedSection, ProcessedText } from "@/app/features/documents/types";
+import {
+  ProcessedSection,
+  ProcessedText,
+} from "@/app/features/documents/types";
 import { NextRequest, NextResponse } from "next/server";
 import { mergeWordTimestamps } from "./helper";
 
