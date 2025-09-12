@@ -161,8 +161,26 @@ export async function getUserDocumentsWithVersionsAction(): Promise<{
       .from("documents")
       .select(
         `
-        *,
-        versions:document_versions(*)
+        id,
+        user_id,
+        title,
+        author,
+        filename,
+        thumbnail_path,
+        document_type,
+        language,
+        file_type,
+        page_count,
+        file_size,
+        upload_date,
+        updated_at,
+        mime_type,
+        versions:document_versions(
+          id,
+          document_id,
+          version_name,
+          created_at
+        )
       `
       )
       .eq("user_id", user.id)
