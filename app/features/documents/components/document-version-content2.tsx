@@ -116,7 +116,9 @@ export function DocumentVersionContent({
   const togglePlayback = audioPlayer?.togglePlayback || (() => {});
   const isPlaying = audioPlayer?.isPlaying || false;
   const concatenatedBuffer = audioPlayer?.concatenatedBuffer || null;
+  const concatenatedMP3Buffer = audioPlayer?.concatenatedMP3Buffer || null;
   const audioBufferToBlob = audioPlayer?.audioBufferToBlob || null;
+  const mp3BufferToBlob = audioPlayer?.mp3BufferToBlob || null;
   const skipBackward = audioPlayer?.skipBackward || (() => {});
   const skipForward = audioPlayer?.skipForward || (() => {});
   const playbackSpeed = audioPlayer?.playbackSpeed || 1;
@@ -308,29 +310,57 @@ export function DocumentVersionContent({
 
   // Handle download
   const handleDownload = useCallback(async () => {
-    if (!concatenatedBuffer || !audioBufferToBlob) return;
+    // Prefer MP3 download if available, fallback to WAV
+    if (concatenatedMP3Buffer && mp3BufferToBlob) {
+      try {
+        // Use original MP3 data for smaller file size
+        const mp3Blob = mp3BufferToBlob(concatenatedMP3Buffer);
 
-    try {
-      // Convert AudioBuffer to WAV Blob
-      const wavBlob = await audioBufferToBlob(concatenatedBuffer);
+        // Create download URL
+        const downloadUrl = URL.createObjectURL(mp3Blob);
 
-      // Create download URL
-      const downloadUrl = URL.createObjectURL(wavBlob);
+        // Create and trigger download
+        const link = window.document.createElement("a");
+        link.href = downloadUrl;
+        link.download = `${document.title} - ${documentVersion.version_name}.mp3`;
+        window.document.body.appendChild(link);
+        link.click();
+        window.document.body.removeChild(link);
 
-      // Create and trigger download
-      const link = window.document.createElement("a");
-      link.href = downloadUrl;
-      link.download = `${document.title} - ${documentVersion.version_name}.wav`;
-      window.document.body.appendChild(link);
-      link.click();
-      window.document.body.removeChild(link);
+        // Clean up
+        URL.revokeObjectURL(downloadUrl);
+        return;
+      } catch (error) {
+        console.error("Error downloading MP3 audio:", error);
+      }
+    }
 
-      // Clean up
-      URL.revokeObjectURL(downloadUrl);
-    } catch (error) {
-      console.error("Error downloading audio:", error);
+    // Fallback to WAV download
+    if (concatenatedBuffer && audioBufferToBlob) {
+      try {
+        // Convert AudioBuffer to WAV Blob
+        const wavBlob = await audioBufferToBlob(concatenatedBuffer);
+
+        // Create download URL
+        const downloadUrl = URL.createObjectURL(wavBlob);
+
+        // Create and trigger download
+        const link = window.document.createElement("a");
+        link.href = downloadUrl;
+        link.download = `${document.title} - ${documentVersion.version_name}.wav`;
+        window.document.body.appendChild(link);
+        link.click();
+        window.document.body.removeChild(link);
+
+        // Clean up
+        URL.revokeObjectURL(downloadUrl);
+      } catch (error) {
+        console.error("Error downloading WAV audio:", error);
+      }
     }
   }, [
+    concatenatedMP3Buffer,
+    mp3BufferToBlob,
     concatenatedBuffer,
     audioBufferToBlob,
     document.title,
@@ -551,8 +581,8 @@ export function DocumentVersionContent({
                     <div className="w-full">
                       <AudioPlayerControls
                         audioPlayer={audioPlayer}
-                        onDownload={concatenatedBuffer && audioBufferToBlob ? handleDownload : undefined}
-                        downloadTitle={`Download ${document.title} - ${documentVersion.version_name}.wav`}
+                        onDownload={(concatenatedMP3Buffer && mp3BufferToBlob) || (concatenatedBuffer && audioBufferToBlob) ? handleDownload : undefined}
+                        downloadTitle={`Download ${document.title} - ${documentVersion.version_name}${concatenatedMP3Buffer ? '.mp3' : '.wav'}`}
                       />
                     </div>
                   )}

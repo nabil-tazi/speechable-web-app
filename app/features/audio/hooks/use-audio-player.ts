@@ -49,6 +49,8 @@ export function useAudioPlayer({
   const [concatenatedBuffer, setConcatenatedBuffer] =
     useState<AudioBuffer | null>(null);
   const [concatenatedUrl, setConcatenatedUrl] = useState<string | null>(null);
+  const [concatenatedMP3Buffer, setConcatenatedMP3Buffer] =
+    useState<ArrayBuffer | null>(null);
   const [gain, setGain] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
 
@@ -202,6 +204,15 @@ export function useAudioPlayer({
     },
     []
   );
+  
+  // Convert MP3 ArrayBuffer to Blob
+  const mp3BufferToBlob = useCallback(
+    (buffer: ArrayBuffer): Blob => {
+      return new Blob([buffer], { type: "audio/mpeg" });
+    },
+    []
+  );
+  
   // Load and concatenate audio
   useEffect(() => {
     let mounted = true;
@@ -210,6 +221,7 @@ export function useAudioPlayer({
       if (enabledSegmentIds.length === 0) {
         if (mounted) {
           setConcatenatedUrl(null);
+          setConcatenatedMP3Buffer(null);
           setIsLoading(false);
         }
         return;
@@ -228,6 +240,7 @@ export function useAudioPlayer({
           .sort((a, b) => a.segment_number - b.segment_number);
 
         const audioBuffers: AudioBuffer[] = [];
+        const mp3Buffers: ArrayBuffer[] = [];
         let totalLength = 0;
 
         for (const segment of segmentsToUse) {
@@ -237,10 +250,14 @@ export function useAudioPlayer({
           if (!audioUrl) continue;
 
           const response = await fetch(audioUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+          const originalArrayBuffer = await response.arrayBuffer();
+          
+          // Create a copy for decoding (decodeAudioData consumes the buffer)
+          const bufferForDecoding = originalArrayBuffer.slice();
+          const audioBuffer = await ctx.decodeAudioData(bufferForDecoding);
 
           audioBuffers.push(audioBuffer);
+          mp3Buffers.push(originalArrayBuffer); // Store original MP3 data
           totalLength += audioBuffer.length;
         }
 
@@ -268,6 +285,24 @@ export function useAudioPlayer({
 
         if (mounted) {
           setConcatenatedBuffer(concatenated);
+        }
+
+        // Concatenate MP3 buffers for download
+        if (mp3Buffers.length > 0) {
+          const totalMP3Size = mp3Buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+          const concatenatedMP3 = new ArrayBuffer(totalMP3Size);
+          const concatenatedMP3View = new Uint8Array(concatenatedMP3);
+          
+          let offset = 0;
+          for (const buffer of mp3Buffers) {
+            const view = new Uint8Array(buffer);
+            concatenatedMP3View.set(view, offset);
+            offset += buffer.byteLength;
+          }
+          
+          if (mounted) {
+            setConcatenatedMP3Buffer(concatenatedMP3);
+          }
         }
 
         const blob = await audioBufferToBlob(concatenated);
@@ -536,7 +571,9 @@ export function useAudioPlayer({
     gain,
     playbackSpeed,
     concatenatedBuffer,
+    concatenatedMP3Buffer,
     audioBufferToBlob,
+    mp3BufferToBlob,
 
     // Segments
     allSegments,
