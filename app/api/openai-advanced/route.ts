@@ -14,20 +14,20 @@ import {
   ProcessedText,
 } from "@/app/features/documents/types";
 
+// Simple provider selection
+const useOpenRouter = process.env.USE_OPENROUTER === "true";
+const MODEL_NAME = useOpenRouter ? "nvidia/nemotron-nano-9b-v2:free" : "gpt-5-nano";
+
 // OpenAI client (for GPT-5-nano with structured outputs)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_SECRET_KEY,
+  apiKey: process.env.OPENAI_SECRET_KEY || "dummy-key-for-netlify",
 });
 
 // OpenRouter client (for Nemotron and other models)
 const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
+  apiKey: process.env.OPENROUTER_API_KEY || "dummy-key-for-netlify",
 });
-
-// Simple provider selection
-const useOpenRouter = process.env.USE_OPENROUTER === "true";
-const MODEL_NAME = useOpenRouter ? "nvidia/nemotron-nano-9b-v2:free" : "gpt-5-nano";
 
 // Types
 
