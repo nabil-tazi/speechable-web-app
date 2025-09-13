@@ -7,10 +7,26 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { SectionTTSInput } from "@/app/features/audio/types";
-import { SpeechObject, SectionContent, ProcessedSection, ProcessedText } from "@/app/features/documents/types";
+import {
+  SpeechObject,
+  SectionContent,
+  ProcessedSection,
+  ProcessedText,
+} from "@/app/features/documents/types";
 
+// Simple provider selection
+const useOpenRouter = process.env.USE_OPENROUTER === "true";
+const MODEL_NAME = useOpenRouter ? "nvidia/nemotron-nano-9b-v2:free" : "gpt-5-nano";
+
+// OpenAI client (for GPT-5-nano with structured outputs)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_SECRET_KEY,
+  apiKey: process.env.OPENAI_SECRET_KEY || "dummy-key-for-netlify",
+});
+
+// OpenRouter client (for Nemotron and other models)
+const openrouter = new OpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY || "dummy-key-for-netlify",
 });
 
 // Types
@@ -57,6 +73,170 @@ const DialogueSchema = z.object({
     )
     .min(1, "Dialogue must contain at least one speech object"),
 });
+
+// JSON Schema equivalents for OpenRouter
+const DialogueJsonSchema = {
+  type: "object",
+  properties: {
+    dialogue: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: {
+            type: "string",
+            minLength: 1,
+            description: "Dialogue content only, no markup",
+          },
+          reader_id: {
+            type: "string",
+            enum: ["questioner", "expert"],
+            description: "Speaker identifier",
+          },
+        },
+        required: ["text", "reader_id"],
+        additionalProperties: false,
+      },
+      minItems: 1,
+      description: "Array of dialogue exchanges",
+    },
+  },
+  required: ["dialogue"],
+  additionalProperties: false,
+};
+
+const SectionIdentificationJsonSchema = {
+  type: "object",
+  properties: {
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            minLength: 1,
+            description: "Section title",
+          },
+          startMarker: {
+            type: "string",
+            minLength: 1,
+            description: "First 5 words after title",
+          },
+          order: {
+            type: "integer",
+            minimum: 1,
+            description: "Sequential order starting from 1",
+          },
+        },
+        required: ["title", "startMarker", "order"],
+        additionalProperties: false,
+      },
+      minItems: 1,
+      description: "Identified document sections",
+    },
+  },
+  required: ["sections"],
+  additionalProperties: false,
+};
+
+// Unified completion functions that work with both providers
+async function createStructuredCompletion<T>(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  schema: any,
+  zodSchema: z.ZodType<T>,
+  schemaName: string
+): Promise<T> {
+  if (useOpenRouter) {
+    console.log("OPEN ROUTER");
+    // Use manual JSON schema approach for Nemotron
+    const enhancedMessages = [...messages];
+    enhancedMessages[0] = {
+      ...enhancedMessages[0],
+      content: enhancedMessages[0].content + `\n\nRespond with valid JSON that matches this exact schema:\n${JSON.stringify(schema, null, 2)}\n\nOutput ONLY the JSON, no other text.`
+    };
+    
+    const completion = await openrouter.chat.completions.create({
+      model: MODEL_NAME,
+      messages: enhancedMessages,
+      max_tokens: 32000,
+    });
+
+    const jsonContent = completion.choices[0]?.message?.content;
+    if (!jsonContent) {
+      throw new Error("No response from OpenRouter: " + JSON.stringify(completion.choices[0]));
+    }
+
+    try {
+      const parsed = JSON.parse(jsonContent);
+      // Validate with Zod as backup
+      return zodSchema.parse(parsed);
+    } catch (error) {
+      // Try to extract JSON from response if it's wrapped in other text
+      const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return zodSchema.parse(parsed);
+      }
+      throw error;
+    }
+  } else {
+    console.log("OPEN AI");
+    // Use OpenAI with responses.parse
+    const response = await openai.responses.parse({
+      model: MODEL_NAME,
+      input: messages,
+      reasoning: {
+        effort: "minimal",
+      },
+      max_output_tokens: 32000,
+      text: {
+        format: zodTextFormat(zodSchema, schemaName),
+      },
+    });
+
+    const validatedResult = response.output_parsed;
+    if (!validatedResult) {
+      throw new Error("Failed to parse structured output from OpenAI");
+    }
+
+    return validatedResult;
+  }
+}
+
+async function createTextCompletion(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>
+): Promise<string> {
+  if (useOpenRouter) {
+    console.log("OPEN ROUTER");
+    // Use OpenRouter standard completion
+    const completion = await openrouter.chat.completions.create({
+      model: MODEL_NAME,
+      messages,
+      max_tokens: 32000,
+    });
+
+    const textContent = completion.choices[0].message.content;
+    if (!textContent) {
+      throw new Error("No response from OpenRouter");
+    }
+
+    return textContent.trim();
+  } else {
+    console.log("OPEN AI");
+    // Use OpenAI responses.create
+    const response = await openai.responses.create({
+      model: MODEL_NAME,
+      input: messages,
+      reasoning: {
+        effort: "minimal",
+      },
+      max_output_tokens: 32000,
+    });
+
+    return response.output_text.trim();
+  }
+}
 
 // Section identification prompt
 const SECTION_IDENTIFICATION_PROMPT = `Find top-level section titles in this document.
@@ -117,40 +297,28 @@ export async function POST(req: NextRequest) {
 async function identifySections(
   input: string
 ): Promise<SectionIdentificationResult> {
-  const response = await openai.responses.parse({
-    model: "gpt-5-nano",
-    input: [
-      {
-        role: "system",
-        content:
-          "You are a precise document analyzer that returns only valid JSON responses.",
-      },
-      {
-        role: "user",
-        content: `${SECTION_IDENTIFICATION_PROMPT}\n\nTEXT TO ANALYZE:\n${input}`,
-      },
-    ],
-    reasoning: {
-      effort: "minimal",
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are a precise document analyzer that returns only valid JSON responses.",
     },
-    max_output_tokens: 100000,
-    text: {
-      format: zodTextFormat(
-        SectionIdentificationSchema,
-        "section_identification"
-      ),
+    {
+      role: "user" as const,
+      content: `${SECTION_IDENTIFICATION_PROMPT}\n\nTEXT TO ANALYZE:\n${input}`,
     },
-  });
+  ];
+
+  const response = await createStructuredCompletion(
+    messages,
+    SectionIdentificationJsonSchema,
+    SectionIdentificationSchema,
+    "section_identification"
+  );
 
   console.log(response);
 
-  const validatedResult = response.output_parsed;
-
-  if (!validatedResult) {
-    throw new Error("Failed to parse section identification from OpenAI");
-  }
-
-  return validatedResult;
+  return response;
 }
 
 function extractSectionContent(
@@ -267,27 +435,19 @@ async function processSectionSingle(
   // const data = await response.json();
   // const cleanedText = data.choices[0].message.content.trim();
 
-  const response = await openai.responses.create({
-    model: "gpt-5-nano",
-    input: [
-      {
-        role: "system",
-        content:
-          "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
-      },
-      {
-        role: "user",
-        content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
-      },
-    ],
-    reasoning: {
-      effort: "minimal",
+  const messages = [
+    {
+      role: "system" as const,
+      content:
+        "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
     },
-    // temperature,
-    max_output_tokens: 32000,
-  });
+    {
+      role: "user" as const,
+      content: `${contextualizedPrompt}\n\nTEXT TO PROCESS:\n${sectionContent}`,
+    },
+  ];
 
-  const cleanedText = response.output_text.trim();
+  const cleanedText = await createTextCompletion(messages);
 
   // Build the JSON structure ourselves
 
@@ -356,27 +516,19 @@ CHUNK ${i + 1} of ${
 
     // const data = await response.json();
 
-    const response = await openai.responses.create({
-      model: "gpt-5-nano",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
-        },
-        {
-          role: "user",
-          content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
-        },
-      ],
-      reasoning: {
-        effort: "minimal",
+    const messages = [
+      {
+        role: "system" as const,
+        content:
+          "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
       },
-      // temperature,
-      max_output_tokens: 32000,
-    });
+      {
+        role: "user" as const,
+        content: `${chunkPrompt}\n\nTEXT TO PROCESS:\n${chunk}`,
+      },
+    ];
 
-    const cleanedChunk = response.output_text.trim();
+    const cleanedChunk = await createTextCompletion(messages);
 
     cleanedChunks.push(cleanedChunk);
   }
@@ -528,65 +680,41 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
 
   if (level === 3) {
     // ✅ Structured JSON output
-    const response = await openai.responses.parse({
-      model: "gpt-5-nano",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a conversational content transformer. Create engaging dialogues between exactly 2 speakers with strict alternation.",
-        },
-        {
-          role: "user",
-          content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
-        },
-      ],
-      reasoning: {
-        effort: "minimal",
+    const messages = [
+      {
+        role: "system" as const,
+        content:
+          "You are a conversational content transformer. Create engaging dialogues between exactly 2 speakers with strict alternation.",
       },
-      // temperature: temperature,
-      max_output_tokens: 32000,
-      text: {
-        format: zodTextFormat(DialogueSchema, "dialogue_response"),
+      {
+        role: "user" as const,
+        content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
       },
-    });
+    ];
 
-    const validatedResult = response.output_parsed;
-
-    if (!validatedResult) {
-      throw new Error("Failed to parse structured output from OpenAI");
-    }
-
-    const speechArray = response.output_parsed;
-    if (!speechArray) {
-      throw new Error("Failed to parse response into SpeechObject[]");
-    }
-    processedResult = createProcessedTextFromSpeechArray(speechArray.dialogue);
+    const speechArray = await createStructuredCompletion(
+      messages,
+      DialogueJsonSchema,
+      DialogueSchema,
+      "dialogue_response"
+    );
 
     processedResult = createProcessedTextFromSpeechArray(speechArray.dialogue);
   } else {
     // ✅ Plain text output
-    const response = await openai.responses.create({
-      model: "gpt-5-nano",
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
-        },
-        {
-          role: "user",
-          content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
-        },
-      ],
-      reasoning: {
-        effort: "minimal",
+    const messages = [
+      {
+        role: "system" as const,
+        content:
+          "You are a precise text processing assistant. Return only cleaned text content, no JSON or formatting.",
       },
-      // temperature,
-      max_output_tokens: 32000,
-    });
+      {
+        role: "user" as const,
+        content: `${prompt}\n\nTEXT TO PROCESS:\n${input}`,
+      },
+    ];
 
-    const result = response.output_text.trim();
+    const result = await createTextCompletion(messages);
 
     processedResult = createProcessedTextFromSpeechArray([
       { text: result, reader_id: "default" },
