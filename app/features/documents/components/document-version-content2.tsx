@@ -540,7 +540,7 @@ export function DocumentVersionContent({
                       </Select>
                     )}
                     <Link
-                      href={`/library/${document.id}/text${activeVersionId ? `?version=${activeVersionId}` : ''}`}
+                      href={`/library/${document.id}${activeVersionId ? `?version=${activeVersionId}` : ''}`}
                     >
                       <Button
                         variant="outline"

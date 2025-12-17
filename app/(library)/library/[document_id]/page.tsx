@@ -1,28 +1,38 @@
 "use client";
 
-import React, { useMemo, useState, use, useEffect, useCallback } from "react";
+import React, { useMemo, use, useEffect, useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAudioState, AudioProvider } from "@/app/features/audio/context";
-import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
-import { Plus, Type } from "lucide-react";
+import { useHeader } from "../../components/header-context";
+import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
+import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
+import { generateWithAi } from "@/app/features/generate-with-ai";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
-import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
-import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
-import { generateWithAi } from "@/app/features/generate-with-ai";
-import { useHeader } from "../../components/header-context";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus } from "lucide-react";
+import {
+  TTSProvider,
+  TTSPlayer,
+  SentenceDisplay,
+  parseSegmentsFromProcessedText,
+} from "@/app/features/tts";
 
-// Document Detail View Component
-function DocumentDetailView() {
-  // All hooks must be called at the top, before any conditional logic
-  const { audioVersions, loading, error, document } = useAudioState();
+// Document Text View Component
+function DocumentTextView() {
+  const { loading, error, document } = useAudioState();
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setContent } = useHeader();
 
-  // Sort versions by creation date (newest first) - handle null document
+  // Sort versions by creation date (newest first)
   const sortedVersions = useMemo(() => {
     if (!document?.versions) return [];
     return [...document.versions].sort(
@@ -40,14 +50,14 @@ function DocumentDetailView() {
     return sortedVersions[0]?.id || "";
   }, [searchParams, sortedVersions]);
 
-  // Audio player hook
-  const audioPlayer = useAudioPlayer({
-    audioVersions: audioVersions || [],
-    documentVersionId: activeVersionId,
-  });
-
   // Get the active version from sorted versions
   const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
+
+  // Parse segments from processed_text using the new utility
+  const segments = useMemo(() => {
+    if (!activeVersion) return [];
+    return parseSegmentsFromProcessedText(activeVersion.processed_text);
+  }, [activeVersion]);
 
   // Function to update URL with version parameter
   const updateVersionInUrl = useCallback(
@@ -79,7 +89,6 @@ function DocumentDetailView() {
     [updateVersionInUrl]
   );
 
-
   // Update header content when document changes
   useEffect(() => {
     if (document) {
@@ -90,9 +99,8 @@ function DocumentDetailView() {
         documentTitle: document.title,
         backUrl,
         documentVersions: sortedVersions,
-        // activeVersionId: activeVersionId,
-        //         onVersionChange: handleVersionChange,
-        // actions: undefined,
+        activeVersionId: activeVersionId,
+        onVersionChange: handleVersionChange,
       });
     }
 
@@ -137,6 +145,29 @@ function DocumentDetailView() {
     );
   }
 
+  if (!activeVersion) {
+    return (
+      <div className="w-full flex justify-center p-4">
+        <div className="max-w-7xl w-full">
+          <div className="text-center py-12">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              No versions available
+            </h2>
+            <p className="text-gray-500 mb-4">
+              This document doesn't have any versions yet.
+            </p>
+            <button
+              onClick={() => router.push(`/library/${document.id}`)}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              Back to Document
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function handleGenerateVersion(
     processingLevel: 0 | 1 | 2 | 3,
     voiceArray: string[],
@@ -158,87 +189,82 @@ function DocumentDetailView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <Dialog
-        open={isCreateVersionModalOpen}
-        onOpenChange={setCreateVersionModalOpen}
-      >
-        <div className="relative gap-0 flex-1 flex flex-col overflow-hidden">
-          {/* Active Version Content */}
-          {activeVersion ? (
-            <DocumentVersionContent
-              document={document}
-              documentVersion={activeVersion}
-              audioVersions={audioVersions}
-              audioPlayer={audioPlayer}
-              documentVersions={sortedVersions}
-              activeVersionId={activeVersionId}
-              onVersionChange={handleVersionChange}
-              onCreateNewVersion={() => setCreateVersionModalOpen(true)}
-            />
-          ) : (
-            /* No versions state - Minimal screen */
-            <div className="flex-1 p-8 pt-[10%]">
-              <div className="max-w-md w-full mx-auto text-center space-y-6">
-                {/* Document Thumbnail */}
-                <div className="mx-auto w-32 h-40 bg-gray-100 rounded-lg border overflow-hidden shadow-sm">
-                  {document.thumbnail_path ? (
-                    <div
-                      className="w-full h-full bg-cover bg-center"
-                      style={{
-                        backgroundImage: `url("${document.thumbnail_path}")`,
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Type className="w-12 h-12 text-gray-400" />
-                    </div>
+    <Dialog
+      open={isCreateVersionModalOpen}
+      onOpenChange={setCreateVersionModalOpen}
+    >
+      <TTSProvider segments={segments}>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            {/* Header */}
+            <div className="max-w-4xl mx-auto px-8 pt-8">
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-semibold text-gray-900">
+                  {document.title}
+                </h1>
+                <div className="flex items-center gap-1">
+                  {sortedVersions.length > 0 && (
+                    <Select
+                      value={activeVersionId}
+                      onValueChange={handleVersionChange}
+                    >
+                      <SelectTrigger className="text-gray-800">
+                        <SelectValue placeholder="Select version" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sortedVersions.map((version) => (
+                          <SelectItem
+                            key={version.id}
+                            value={version.id}
+                            className="cursor-pointer"
+                          >
+                            {version.version_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
-                </div>
-
-                {/* Document Title */}
-                <div>
-                  <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-                    {document.title}
-                  </h1>
-                  {document.author && (
-                    <p className="text-gray-500">by {document.author}</p>
-                  )}
-                </div>
-
-                {/* Call to Action */}
-                <div className="space-y-3">
                   <Button
+                    variant="outline"
+                    className="relative"
                     onClick={() => setCreateVersionModalOpen(true)}
-                    size="lg"
-                    className="w-full"
+                    title="Create new version"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create First Audio Version
+                    <Plus className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
             </div>
-          )}
 
-          <CreateVersionDialog
-            document={document}
-            handleGenerateVersion={handleGenerateVersion}
-            onClose={handleCloseCreateVersionModal}
-          />
+            {/* TTS Player - Sticky */}
+            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-8">
+              <div className="max-w-4xl mx-auto px-8">
+                <TTSPlayer />
+              </div>
+            </div>
 
-          {/* Hidden dialog trigger - controlled by header button */}
-          <DialogTrigger className="hidden" />
+            {/* Sentence Display with Highlighting */}
+            <div className="max-w-4xl mx-auto px-8 pb-8">
+              <div className="prose prose-lg max-w-none">
+                <SentenceDisplay />
+              </div>
+            </div>
+          </div>
         </div>
-      </Dialog>
+      </TTSProvider>
 
-      {/* Footer - Audio Player Controls - Only show when sticky header is not present */}
-    </div>
+      <CreateVersionDialog
+        document={document}
+        handleGenerateVersion={handleGenerateVersion}
+        onClose={handleCloseCreateVersionModal}
+      />
+      <DialogTrigger className="hidden" />
+    </Dialog>
   );
 }
 
-// Main Document Detail Page Component
-export default function DocumentDetailPage({
+// Main Document Text Page Component
+export default function DocumentTextPage({
   params,
 }: {
   params: Promise<{ document_id: string }>;
@@ -248,7 +274,7 @@ export default function DocumentDetailPage({
 
   return (
     <AudioProvider documentId={resolvedParams.document_id}>
-      <DocumentDetailView />
+      <DocumentTextView />
     </AudioProvider>
   );
 }
