@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -22,11 +22,28 @@ export function SpeedSelector({
   isLoading = false,
 }: SpeedSelectorProps) {
   const [open, setOpen] = useState(false);
+  // Local state for pending speed (before applying)
+  const [pendingSpeed, setPendingSpeed] = useState(currentSpeed);
+
+  // Reset pending speed when dropdown opens or currentSpeed changes externally
+  useEffect(() => {
+    if (open) {
+      setPendingSpeed(currentSpeed);
+    }
+  }, [open, currentSpeed]);
 
   const handleSliderChange = (value: number[]) => {
-    const speed = value[0];
-    onSpeedChange(speed);
+    setPendingSpeed(value[0]);
   };
+
+  const handleApply = () => {
+    if (pendingSpeed !== currentSpeed) {
+      onSpeedChange(pendingSpeed);
+    }
+    setOpen(false);
+  };
+
+  const hasChanges = pendingSpeed !== currentSpeed;
 
   const sliderStyles = `
   .speed-slider [role="slider"] {
@@ -65,11 +82,11 @@ export function SpeedSelector({
               <span className="flex items-center gap-2 text-sm font-medium">
                 <Gauge size="16" /> <span>Speed</span>
               </span>
-              <span className="text-sm text-gray-900">{currentSpeed}×</span>
+              <span className="text-sm text-gray-900">{pendingSpeed}×</span>
             </div>
 
             <Slider
-              value={[currentSpeed]}
+              value={[pendingSpeed]}
               onValueChange={handleSliderChange}
               min={0.5}
               max={2}
@@ -81,6 +98,20 @@ export function SpeedSelector({
               <span>0.5×</span>
               <span>1.3×</span>
               <span>2×</span>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setOpen(false)}
+                variant="outline"
+                size="sm"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleApply} size="sm" className="flex-1">
+                Apply
+              </Button>
             </div>
           </div>
         </DropdownMenuContent>

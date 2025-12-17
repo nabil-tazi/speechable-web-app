@@ -21,7 +21,9 @@ import {
   Mic2,
   UndoDot,
   RedoDot,
+  FileText,
 } from "lucide-react";
+import Link from "next/link";
 import { formatDuration } from "../../audio/utils";
 import { useMemo, useCallback, useState, useEffect, useRef } from "react";
 import { WordHighlightDisplay } from "../../audio/components/word-highlight";
@@ -537,6 +539,17 @@ export function DocumentVersionContent({
                         </SelectContent>
                       </Select>
                     )}
+                    <Link
+                      href={`/library/${document.id}/text${activeVersionId ? `?version=${activeVersionId}` : ''}`}
+                    >
+                      <Button
+                        variant="outline"
+                        className="relative"
+                        title="View processed text"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                    </Link>
                     {onCreateNewVersion && (
                       <div className="relative">
                         <Button

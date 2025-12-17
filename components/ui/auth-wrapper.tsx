@@ -11,7 +11,13 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       <div className="flex w-full max-w-sm flex-col gap-6">
         <a href="#" className="flex items-center gap-2 self-center font-medium">
           <div className="flex gap-0 items-center">
-            <Image src="/logo.svg" className="w-10" alt="logo" />
+            <Image
+              src="/logo.svg"
+              className="w-10"
+              alt="logo"
+              width={10}
+              height={10}
+            />
             <span className="text-xl">Speechable</span>
           </div>
         </a>
