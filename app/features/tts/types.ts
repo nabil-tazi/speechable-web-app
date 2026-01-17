@@ -10,6 +10,11 @@ export interface Segment {
   text: string;
   reader_id: string;
   segmentIndex: number;
+  // Section information
+  sectionTitle?: string;      // Title of the section this segment belongs to
+  sectionLevel?: number;      // Section level (1-4, where 1 is top-level)
+  isFirstInSection?: boolean; // True if this is first segment in a section (legacy)
+  isTitle?: boolean;          // True if this segment is a heading/title block
 }
 
 /**
@@ -24,6 +29,11 @@ export interface Sentence {
   sentenceIndex: number; // Index within the segment
   globalIndex: number; // Global index across all sentences in the document
   reader_id: string;
+  // Section information (inherited from segment)
+  sectionTitle?: string;
+  sectionLevel?: number;
+  isFirstInSection?: boolean; // True only for first sentence of first segment in a section
+  isTitle?: boolean; // True if this sentence is a section title (not content)
 }
 
 /**
@@ -85,7 +95,21 @@ export interface GenerateRequest {
 export type WorkerIncomingMessage =
   | { type: "initialize" }
   | { type: "generate"; request: GenerateRequest }
-  | { type: "cancelAll" };
+  | { type: "cancelAll" }
+  | { type: "capabilityCheck" };
+
+/**
+ * Result of local TTS capability check.
+ */
+export interface CapabilityCheckResult {
+  available: boolean;
+  modelCached: boolean;
+  hasWebGPU: boolean;
+  testGenerationSuccess: boolean;
+  testGenerationTimeMs?: number;
+  testAudioDurationMs?: number;
+  error?: string;
+}
 
 export type WorkerOutgoingMessage =
   | { type: "ready" }
@@ -99,7 +123,8 @@ export type WorkerOutgoingMessage =
       status?: string;
     }
   | { type: "generated"; sentenceId: string; audio: Blob; duration: number; speed: number; voice: string }
-  | { type: "error"; sentenceId: string; error: string; canRetry: boolean };
+  | { type: "error"; sentenceId: string; error: string; canRetry: boolean }
+  | { type: "capabilityResult"; result: CapabilityCheckResult };
 
 // =============================================
 // Queue Types

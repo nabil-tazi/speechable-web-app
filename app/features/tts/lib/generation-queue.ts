@@ -64,23 +64,28 @@ export class GenerationQueue {
   /**
    * Build the generation queue starting from a given index.
    *
-   * Strategy:
-   * 1. Find first ungenerated sentence from startIndex forward
-   * 2. Add all ungenerated sentences sequentially until end
-   * 3. Then add ungenerated sentences backwards from startIndex
+   * Strategy (lazy loading with lookahead):
+   * 1. Add the current sentence if ungenerated
+   * 2. Add up to `lookahead` more ungenerated sentences ahead
+   *
+   * This enables on-demand generation where we only stay 1 sentence ahead,
+   * extending the queue when each sentence starts playing.
+   *
+   * @param lookahead - How many sentences to generate ahead (default: 1)
    */
   buildQueue(
     sentences: Sentence[],
     startIndex: number,
-    voiceConfig: VoiceConfig
+    voiceConfig: VoiceConfig,
+    lookahead: number = 1
   ): void {
     this.queue = [];
 
-    const addToQueue = (sentence: Sentence) => {
-      if (this.generatedSet.has(sentence.globalIndex)) return;
+    const addToQueue = (sentence: Sentence): boolean => {
+      if (this.generatedSet.has(sentence.globalIndex)) return false;
       // Skip if already in queue
       if (this.queue.some((item) => item.globalIndex === sentence.globalIndex))
-        return;
+        return false;
 
       const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_sky";
       this.queue.push({
@@ -91,17 +96,62 @@ export class GenerationQueue {
         voice,
         speed: voiceConfig.speed,
       });
+      return true;
     };
 
-    // Forward pass: from startIndex to end
-    for (let i = startIndex; i < sentences.length; i++) {
-      addToQueue(sentences[i]);
+    // Add current sentence if needed
+    if (startIndex < sentences.length) {
+      addToQueue(sentences[startIndex]);
     }
 
-    // Backward pass: from startIndex-1 to 0
-    for (let i = startIndex - 1; i >= 0; i--) {
-      addToQueue(sentences[i]);
+    // Add lookahead sentences (only count ungenerated ones toward lookahead)
+    let lookaheadAdded = 0;
+    for (let i = startIndex + 1; i < sentences.length && lookaheadAdded < lookahead; i++) {
+      if (addToQueue(sentences[i])) {
+        lookaheadAdded++;
+      }
     }
+  }
+
+  /**
+   * Extend the queue with the next ungenerated sentence(s).
+   * Used for lazy loading - adds more sentences without clearing the existing queue.
+   * Call this when a sentence starts playing to maintain the lookahead.
+   *
+   * @param afterIndex - The index of the sentence that just started playing
+   * @param count - How many sentences to add (default: 1)
+   * @returns true if any sentences were added
+   */
+  extendQueue(
+    sentences: Sentence[],
+    afterIndex: number,
+    voiceConfig: VoiceConfig,
+    count: number = 1
+  ): boolean {
+    let added = 0;
+
+    for (let i = afterIndex + 1; i < sentences.length && added < count; i++) {
+      const sentence = sentences[i];
+
+      // Skip if already generated
+      if (this.generatedSet.has(sentence.globalIndex)) continue;
+
+      // Skip if already in queue
+      if (this.queue.some((item) => item.globalIndex === sentence.globalIndex)) continue;
+
+      const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_sky";
+      this.queue.push({
+        sentenceId: sentence.id,
+        globalIndex: sentence.globalIndex,
+        text: sentence.text,
+        reader_id: sentence.reader_id,
+        voice,
+        speed: voiceConfig.speed,
+      });
+      added++;
+    }
+
+    return added > 0;
   }
 
   /**
@@ -149,6 +199,14 @@ export class GenerationQueue {
     // Remove from queue
     this.queue = this.queue.filter((item) => item.globalIndex !== globalIndex);
     return true;
+  }
+
+  /**
+   * Cancel the current processing without removing the item from queue.
+   * Used when we want to delay processing (e.g., item is too far ahead of playback).
+   */
+  cancelProcessing(): void {
+    this.isProcessing = false;
   }
 
   /**

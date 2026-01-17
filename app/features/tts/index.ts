@@ -11,7 +11,8 @@ export { useGain } from "./hooks/use-gain";
 // Components
 export { TTSPlayer } from "./components/tts-player";
 export { SentenceDisplay } from "./components/sentence-display";
-export { VoiceLabel } from "./components/voice-label";
+export { DownloadButton } from "./components/download-button";
+export { EcoBadge } from "./components/eco-badge";
 
 // Types
 export type {
@@ -23,9 +24,12 @@ export type {
   ModelStatus,
 } from "./types";
 
+export type { VoiceQuality } from "./context/tts-reducer";
+
 // Utilities
 export {
   createSentencesFromSegments,
   parseSegmentsFromProcessedText,
+  parseSegmentsFromBlocks,
   splitIntoSentences,
 } from "./lib/sentence-splitter";

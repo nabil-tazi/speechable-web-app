@@ -16,7 +16,9 @@ import {
 
 // Simple provider selection
 const useOpenRouter = process.env.USE_OPENROUTER === "true";
-const MODEL_NAME = useOpenRouter ? "nvidia/nemotron-nano-9b-v2:free" : "gpt-5-nano";
+const MODEL_NAME = useOpenRouter
+  ? "nvidia/nemotron-3-nano-30b-a3b:free"
+  : "gpt-5-nano";
 
 // OpenAI client (for GPT-5-nano with structured outputs)
 const openai = new OpenAI({
@@ -153,9 +155,15 @@ async function createStructuredCompletion<T>(
     const enhancedMessages = [...messages];
     enhancedMessages[0] = {
       ...enhancedMessages[0],
-      content: enhancedMessages[0].content + `\n\nRespond with valid JSON that matches this exact schema:\n${JSON.stringify(schema, null, 2)}\n\nOutput ONLY the JSON, no other text.`
+      content:
+        enhancedMessages[0].content +
+        `\n\nRespond with valid JSON that matches this exact schema:\n${JSON.stringify(
+          schema,
+          null,
+          2
+        )}\n\nOutput ONLY the JSON, no other text.`,
     };
-    
+
     const completion = await openrouter.chat.completions.create({
       model: MODEL_NAME,
       messages: enhancedMessages,
@@ -164,7 +172,9 @@ async function createStructuredCompletion<T>(
 
     const jsonContent = completion.choices[0]?.message?.content;
     if (!jsonContent) {
-      throw new Error("No response from OpenRouter: " + JSON.stringify(completion.choices[0]));
+      throw new Error(
+        "No response from OpenRouter: " + JSON.stringify(completion.choices[0])
+      );
     }
 
     try {
@@ -550,7 +560,7 @@ function createSectionFromText(
       speech: [
         {
           text: cleanedText,
-          reader_id: "default",
+          reader_id: "Narrator",
         },
       ],
     },
@@ -717,7 +727,7 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
     const result = await createTextCompletion(messages);
 
     processedResult = createProcessedTextFromSpeechArray([
-      { text: result, reader_id: "default" },
+      { text: result, reader_id: "Narrator" },
     ]);
   }
 

@@ -3,6 +3,7 @@ import { Language } from "../audio/voice-types";
 import { createDocumentVersionAction } from "../documents/actions";
 import { createAudioSegmentAction } from "../audio/actions"; // Add this import
 import { isStructuredContent } from "./audio-generation";
+import { convertProcessedTextToBlocks } from "../block-editor";
 import { identifySections } from "../pdf/helpers/identify-sections";
 import { processText } from "../pdf/helpers/process-text";
 import { getAudioDurationAccurate } from "../audio/utils";
@@ -117,11 +118,15 @@ export async function generateWithAi({
     (numberOfExistingVersion ? " " + (numberOfExistingVersion + 1) : "");
 
   // Create document version
+  const processedTextJson = JSON.stringify(processedResult.cleanedText);
+  const blocks = convertProcessedTextToBlocks(processedTextJson);
+
   const { data: documentVersion, error: versionError } =
     await createDocumentVersionAction({
       document_id: documentId,
       version_name: newVersionName,
-      processed_text: JSON.stringify(processedResult.cleanedText),
+      processed_text: processedTextJson,
+      blocks,
       processing_type: processingLevel.toString(),
       processing_metadata: processedResult.metadata,
     });
@@ -250,7 +255,7 @@ async function generateAudioForSection(
       body: JSON.stringify({
         processedText: processedDocument,
         sectionIndex: sectionIndex,
-        voice: readerVoiceMap["default"] || "onyx",
+        voice: readerVoiceMap["Narrator"] || "onyx",
         voiceMap: readerVoiceMap,
         response_format: "mp3",
         word_timestamps: true,
@@ -301,7 +306,7 @@ async function generateAudioForSection(
             text_end_index: firstSegment.textLength,
             audio_duration: Math.round(audioDuration * 100) / 100,
             word_timestamps: firstSegment.word_timestamps || [],
-            voice_name: readerVoiceMap["default"] || "onyx",
+            voice_name: readerVoiceMap["Narrator"] || "onyx",
             voices: voicesArray,
           },
           audioFile

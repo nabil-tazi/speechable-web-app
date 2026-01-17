@@ -1,7 +1,8 @@
 "use server";
 
 import { createClient } from "@/app/lib/supabase/server";
-import type { Document, DocumentVersion, DocumentWithVersions } from "./types";
+import type { Block, Document, DocumentVersion, DocumentWithVersions } from "./types";
+import { convertBlocksToProcessedText, convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
 
 // Server Action: Create a document
 export async function createDocumentAction(documentData: {
@@ -328,5 +329,325 @@ export async function createDocumentVersionAction(
     return { data: data as DocumentVersion, error: null };
   } catch (error) {
     return { data: null, error: "Failed to create document version" };
+  }
+}
+
+// Server Action: Toggle document starred status
+export async function toggleDocumentStarredAction(documentId: string): Promise<{
+  data: { is_starred: boolean } | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Get current starred status
+    const { data: document, error: fetchError } = await supabase
+      .from("documents")
+      .select("is_starred")
+      .eq("id", documentId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (fetchError) {
+      return { data: null, error: fetchError.message };
+    }
+
+    const newStarredStatus = !document.is_starred;
+
+    const { error: updateError } = await supabase
+      .from("documents")
+      .update({ is_starred: newStarredStatus })
+      .eq("id", documentId)
+      .eq("user_id", user.id);
+
+    if (updateError) {
+      return { data: null, error: updateError.message };
+    }
+
+    return { data: { is_starred: newStarredStatus }, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to toggle starred status" };
+  }
+}
+
+// Server Action: Update last_opened timestamp
+export async function updateDocumentLastOpenedAction(documentId: string): Promise<{
+  success: boolean;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { success: false, error: "User not authenticated" };
+    }
+
+    const { error: updateError } = await supabase
+      .from("documents")
+      .update({ last_opened: new Date().toISOString() })
+      .eq("id", documentId)
+      .eq("user_id", user.id);
+
+    if (updateError) {
+      return { success: false, error: updateError.message };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: "Failed to update last opened" };
+  }
+}
+
+// Server Action: Get starred documents (for sidebar)
+export async function getStarredDocumentsAction(): Promise<{
+  data: Pick<Document, "id" | "title">[] | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select("id, title")
+      .eq("user_id", user.id)
+      .eq("is_starred", true)
+      .order("title", { ascending: true });
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to get starred documents" };
+  }
+}
+
+// Server Action: Get recent documents (for sidebar)
+export async function getRecentDocumentsAction(limit: number = 10): Promise<{
+  data: Pick<Document, "id" | "title" | "last_opened">[] | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .select("id, title, last_opened")
+      .eq("user_id", user.id)
+      .not("last_opened", "is", null)
+      .order("last_opened", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to get recent documents" };
+  }
+}
+
+// Server Action: Update document version blocks
+export async function updateDocumentVersionBlocksAction(
+  versionId: string,
+  blocks: Block[]
+): Promise<{ data: DocumentVersion | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Verify ownership through document
+    const { data: version } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        document:documents!inner(user_id)
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = version?.document as any;
+    if (!version || !doc || doc.user_id !== user.id) {
+      return { data: null, error: "Version not found or access denied" };
+    }
+
+    // Also update processed_text for backwards compatibility
+    const processedText = convertBlocksToProcessedText(blocks);
+
+    const { data, error } = await supabase
+      .from("document_versions")
+      .update({
+        blocks: blocks,
+        processed_text: processedText,
+      })
+      .eq("id", versionId)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentVersion, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to update document version blocks" };
+  }
+}
+
+// Server Action: Update document version name
+export async function updateDocumentVersionNameAction(
+  versionId: string,
+  versionName: string
+): Promise<{ data: DocumentVersion | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Verify ownership through document
+    const { data: version } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        document:documents!inner(user_id)
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = version?.document as any;
+    if (!version || !doc || doc.user_id !== user.id) {
+      return { data: null, error: "Version not found or access denied" };
+    }
+
+    const { data, error } = await supabase
+      .from("document_versions")
+      .update({
+        version_name: versionName,
+      })
+      .eq("id", versionId)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentVersion, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to update document version name" };
+  }
+}
+
+// Server Action: Regenerate blocks from document's processed_text
+export async function regenerateBlocksFromProcessedTextAction(
+  versionId: string
+): Promise<{ data: Block[] | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Get the version with its document's processed_text
+    const { data: versionWithDoc } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        processed_text,
+        document:documents!inner(
+          user_id,
+          processed_text
+        )
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = versionWithDoc?.document as any;
+    if (!versionWithDoc || !doc || doc.user_id !== user.id) {
+      return { data: null, error: "Version not found or access denied" };
+    }
+
+    // Use document's processed_text if available, otherwise use version's
+    const processedText = doc.processed_text || versionWithDoc.processed_text;
+
+    if (!processedText) {
+      return { data: null, error: "No processed_text found" };
+    }
+
+    const blocks = convertProcessedTextToBlocks(processedText);
+
+    // Save the regenerated blocks
+    const { error } = await supabase
+      .from("document_versions")
+      .update({ blocks: blocks })
+      .eq("id", versionId);
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: blocks, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to regenerate blocks" };
   }
 }

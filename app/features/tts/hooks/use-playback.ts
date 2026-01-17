@@ -27,7 +27,7 @@ export function usePlayback() {
     pendingDecodeRef,
   } = useTTSContext();
 
-  const { generateFrom, modelStatus } = useGeneration();
+  const { generateFrom, modelStatus, ttsMode } = useGeneration();
 
   // Refs to avoid stale closures in callbacks
   const playbackStatusRef = useRef(state.playback.status);
@@ -213,6 +213,9 @@ export function usePlayback() {
         // Clear pending decode ref since we're now playing
         pendingDecodeRef.current = null;
 
+        // Note: Queue extension now happens on generation complete, not playback start
+        // This ensures continuous generation regardless of playback timing
+
         // Update state to playing
         dispatch({ type: "SET_PLAYING", sentenceIndex });
         return true;
@@ -240,8 +243,9 @@ export function usePlayback() {
     (sentenceIndex: number) => {
       console.log("[usePlayback] playFromSentence called:", sentenceIndex);
 
-      // Handle case where model is not ready
-      if (modelStatus !== "ready") {
+      // For eco mode, require local model to be ready
+      // For cloud modes (standard/expressive), we can proceed without local model
+      if (ttsMode === "eco" && modelStatus !== "ready") {
         dispatch({ type: "SET_PENDING_ACTION", action: { type: "play", sentenceIndex } });
         dispatch({ type: "SET_BUFFERING", sentenceIndex });
         return;
@@ -269,7 +273,7 @@ export function usePlayback() {
         generateFrom(sentenceIndex);
       }
     },
-    [modelStatus, state.sentences, state.audioState, dispatch, stopCurrentAudio, playSentenceAtIndex, generateFrom]
+    [ttsMode, modelStatus, state.sentences, state.audioState, dispatch, stopCurrentAudio, playSentenceAtIndex, generateFrom]
   );
 
   /**
@@ -364,9 +368,28 @@ export function usePlayback() {
       return;
     }
 
+    // Wait for next sentence to be ready too (for seamless playback)
+    // Skip this check if we're at the last sentence
+    const nextSentence = state.sentences[state.playback.currentIndex + 1];
+    if (nextSentence) {
+      const nextAudio = state.audioState.get(nextSentence.id);
+      const nextVoice = state.voiceConfig.voiceMap[nextSentence.reader_id] || "af_sky";
+
+      if (!nextAudio || nextAudio.status !== "ready" || !nextAudio.audioBlob) {
+        console.log("[usePlayback] Waiting for next sentence to be ready for seamless playback");
+        return;
+      }
+
+      // Also validate next sentence's config
+      if (nextAudio.generatedSpeed !== currentSpeed || nextAudio.generatedVoice !== nextVoice) {
+        console.log("[usePlayback] Next sentence config mismatch, waiting for regeneration");
+        return;
+      }
+    }
+
     console.log("[usePlayback] Audio ready while buffering, starting playback for:", state.playback.currentIndex);
     playSentenceAtIndex(state.playback.currentIndex);
-  }, [state.playback.status, state.audioState, state.voiceConfig, currentSentence, state.playback.currentIndex, playSentenceAtIndex]);
+  }, [state.playback.status, state.audioState, state.voiceConfig, currentSentence, state.sentences, state.playback.currentIndex, playSentenceAtIndex]);
 
   // Effect: Handle pending action when model becomes ready
   useEffect(() => {
@@ -382,13 +405,23 @@ export function usePlayback() {
   }, [modelStatus, state.pendingAction, dispatch, playFromSentence]);
 
   // Compute whether we're actually waiting for audio (not just in buffering state)
-  // This is true only when status is "buffering" AND the current sentence's audio isn't ready
+  // This is true when status is "buffering" AND either:
+  // 1. Current sentence's audio isn't ready, OR
+  // 2. Next sentence's audio isn't ready (we wait for 2 sentences for seamless playback)
   const currentAudio = currentSentence
     ? state.audioState.get(currentSentence.id)
     : null;
+  const nextSentence = state.sentences[state.playback.currentIndex + 1];
+  const nextAudio = nextSentence
+    ? state.audioState.get(nextSentence.id)
+    : null;
+
+  const isCurrentReady = currentAudio?.status === "ready";
+  const isNextReady = !nextSentence || nextAudio?.status === "ready";
+
   const isWaitingForAudio =
     state.playback.status === "buffering" &&
-    (!currentAudio || currentAudio.status !== "ready");
+    (!isCurrentReady || !isNextReady);
 
   return {
     status: state.playback.status,

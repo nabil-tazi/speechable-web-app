@@ -57,7 +57,7 @@ export function NavBar() {
                   className={cn(
                     "flex flex-col items-center gap-1 p-2 rounded-md transition-colors",
                     isActive
-                      ? "text-[var(--color-brand-primary-dark)]"
+                      ? "text-[var(--color-brand-primary)]"
                       : "hover:bg-accent hover:text-accent-foreground"
                   )}
                 >

@@ -4,8 +4,21 @@ import OpenAI from "openai";
 
 import { z } from "zod";
 
+// Simple provider selection
+const useOpenRouter = process.env.USE_OPENROUTER === "true";
+const MODEL_NAME = useOpenRouter
+  ? "nvidia/nemotron-3-nano-30b-a3b:free"
+  : "gpt-5-nano";
+
+// OpenAI client
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_SECRET_KEY,
+  apiKey: process.env.OPENAI_SECRET_KEY || "dummy-key-for-netlify",
+});
+
+// OpenRouter client
+const openrouter = new OpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY || "dummy-key-for-netlify",
 });
 
 //original prompt
@@ -85,6 +98,42 @@ const SectionIdentificationSchema = z.object({
     ),
 });
 
+// JSON Schema for OpenRouter (manual schema approach)
+const SectionIdentificationJsonSchema = {
+  type: "object",
+  properties: {
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            minLength: 1,
+            description: "Section title",
+          },
+          startMarker: {
+            type: "string",
+            minLength: 1,
+            description: "First 6-8 words after title",
+          },
+          order: {
+            type: "integer",
+            minimum: 1,
+            description: "Sequential order starting from 1",
+          },
+        },
+        required: ["title", "startMarker", "order"],
+        additionalProperties: false,
+      },
+      minItems: 1,
+      description: "Identified document sections",
+    },
+  },
+  required: ["sections"],
+  additionalProperties: false,
+};
+
 function extractSectionContent(
   fullText: string,
   currentSection: IdentifiedSection,
@@ -160,41 +209,91 @@ function extractSectionContent(
 async function identifySections(
   input: string
 ): Promise<SectionIdentificationResult> {
-  const response = await openai.responses.parse({
-    model: "gpt-5-nano",
-    instructions: SECTION_IDENTIFICATION_PROMPT,
-    input: [
-      {
-        role: "system",
-        content:
-          "You are a precise document section identifier that returns only valid JSON responses.",
+  if (useOpenRouter) {
+    console.log("[identify-sections] Using OpenRouter with model:", MODEL_NAME);
+
+    // Use manual JSON schema approach for OpenRouter
+    const enhancedPrompt = `${SECTION_IDENTIFICATION_PROMPT}\n\nRespond with valid JSON that matches this exact schema:\n${JSON.stringify(
+      SectionIdentificationJsonSchema,
+      null,
+      2
+    )}\n\nOutput ONLY the JSON, no other text.`;
+
+    const completion = await openrouter.chat.completions.create({
+      model: MODEL_NAME,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a precise document section identifier that returns only valid JSON responses.",
+        },
+        {
+          role: "user",
+          content: `${enhancedPrompt}\n\nDOCUMENT TO ANALYZE:\n${input}`,
+        },
+      ],
+      max_tokens: 15000,
+    });
+
+    const jsonContent = completion.choices[0]?.message?.content;
+    if (!jsonContent) {
+      throw new Error(
+        "No response from OpenRouter: " + JSON.stringify(completion.choices[0])
+      );
+    }
+
+    try {
+      const parsed = JSON.parse(jsonContent);
+      // Validate with Zod
+      return SectionIdentificationSchema.parse(parsed);
+    } catch (error) {
+      // Try to extract JSON from response if it's wrapped in other text
+      const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return SectionIdentificationSchema.parse(parsed);
+      }
+      throw error;
+    }
+  } else {
+    console.log("[identify-sections] Using OpenAI with model:", MODEL_NAME);
+
+    const response = await openai.responses.parse({
+      model: MODEL_NAME,
+      instructions: SECTION_IDENTIFICATION_PROMPT,
+      input: [
+        {
+          role: "system",
+          content:
+            "You are a precise document section identifier that returns only valid JSON responses.",
+        },
+        {
+          role: "user",
+          content: `${input}`,
+        },
+      ],
+      reasoning: {
+        effort: "medium",
       },
-      {
-        role: "user",
-        content: `${input}`,
+      max_output_tokens: 15000,
+      text: {
+        format: zodTextFormat(
+          SectionIdentificationSchema,
+          "section_identification"
+        ),
       },
-    ],
-    reasoning: {
-      effort: "medium",
-    },
-    max_output_tokens: 15000,
-    text: {
-      format: zodTextFormat(
-        SectionIdentificationSchema,
-        "section_identification"
-      ),
-    },
-  });
+    });
 
-  console.log(response);
+    console.log(response);
 
-  const validatedResult = response.output_parsed;
+    const validatedResult = response.output_parsed;
 
-  if (!validatedResult) {
-    throw new Error("Failed to parse section identification from OpenAI");
+    if (!validatedResult) {
+      throw new Error("Failed to parse section identification from OpenAI");
+    }
+
+    return validatedResult;
   }
-
-  return validatedResult;
 }
 
 function createStructuredDocument(
