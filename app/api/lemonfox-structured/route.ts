@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
         individualAudioSegments.push(titleAudioBuffer);
         individualWordTimestamps.push(titleTimestamps);
         allTexts.push(titleText);
-        allReaderIds.push(section.content.speech[0]?.reader_id || "default");
+        allReaderIds.push(section.content.speech[0]?.reader_id || "Narrator");
         sectionCharCount += titleText.length;
       }
 

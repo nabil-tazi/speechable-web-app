@@ -100,7 +100,33 @@ export function TTSProvider({
   const pendingDecodeRef = useRef<AbortController | null>(null);
 
   // Initialize sentences from segments
+  // When segments change (e.g., after edit), stop playback and clear queue
   useEffect(() => {
+    // Stop any currently playing audio
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.onended = null;
+        currentSourceRef.current.stop();
+      } catch {
+        // Ignore errors from already-stopped sources
+      }
+      currentSourceRef.current = null;
+    }
+
+    // Cancel any pending decode operations
+    if (pendingDecodeRef.current) {
+      pendingDecodeRef.current.abort();
+      pendingDecodeRef.current = null;
+    }
+
+    // Invalidate all generated audio and clear queue
+    // This also clears the generatedSet so old sentence indexes aren't treated as "already generated"
+    generationQueueRef.current.invalidateAll();
+
+    // Reset playback state
+    dispatch({ type: "STOP" });
+
+    // Create new sentences from updated segments
     const sentences = createSentencesFromSegments(segments);
     sentencesRef.current = sentences;
     dispatch({ type: "SET_SENTENCES", sentences });
@@ -138,6 +164,17 @@ export function TTSProvider({
           dispatch({ type: "MODEL_READY" });
           // Mark model as cached for future loads
           localStorage.setItem("tts-model-cached", "true");
+          // Trigger capability check now that model is ready
+          dispatch({ type: "CAPABILITY_CHECK_START" });
+          workerRef.current?.postMessage({ type: "capabilityCheck" });
+          break;
+
+        case "capabilityResult":
+          console.log("[TTSProvider] Capability check result:", message.result);
+          if (message.result.testGenerationTimeMs) {
+            console.log(`[TTSProvider] Test generation time: ${message.result.testGenerationTimeMs}ms`);
+          }
+          dispatch({ type: "CAPABILITY_CHECK_RESULT", result: message.result });
           break;
 
         case "generated":
@@ -213,6 +250,86 @@ export function TTSProvider({
 
   // Hover state for syncing between player and sentence display
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
+  // Check cloud TTS health on mount (both in parallel)
+  useEffect(() => {
+    // Start both checks immediately
+    dispatch({ type: "CLOUD_HEALTH_CHECK_START", service: "kokoro" });
+    dispatch({ type: "CLOUD_HEALTH_CHECK_START", service: "chatterbox" });
+
+    // Check Kokoro (standard mode)
+    fetch("/api/deepinfra-health/kokoro")
+      .then((res) => res.json())
+      .then((data) => {
+        dispatch({
+          type: "CLOUD_HEALTH_CHECK_RESULT",
+          service: "kokoro",
+          status: data.status === "ok" ? "ok" : "down",
+        });
+      })
+      .catch(() => {
+        dispatch({ type: "CLOUD_HEALTH_CHECK_RESULT", service: "kokoro", status: "down" });
+      });
+
+    // Check Chatterbox (expressive mode)
+    fetch("/api/deepinfra-health/chatterbox")
+      .then((res) => res.json())
+      .then((data) => {
+        dispatch({
+          type: "CLOUD_HEALTH_CHECK_RESULT",
+          service: "chatterbox",
+          status: data.status === "ok" ? "ok" : "down",
+        });
+      })
+      .catch(() => {
+        dispatch({ type: "CLOUD_HEALTH_CHECK_RESULT", service: "chatterbox", status: "down" });
+      });
+  }, []);
+
+  // Compute effective TTS mode based on voiceQuality, ecoDisabled, and availability
+  useEffect(() => {
+    const { kokoro, chatterbox } = state.cloudHealth;
+    const ecoAvailable = state.capabilityStatus === "available";
+    const { voiceQuality, ecoDisabled } = state;
+
+    let newMode: "eco" | "standard" | "expressive" | null = null;
+
+    if (voiceQuality === "expressive") {
+      // Expressive mode: use chatterbox if available
+      if (chatterbox === "ok") {
+        newMode = "expressive";
+      } else if (chatterbox === "checking") {
+        // Still checking, don't set mode yet
+        return;
+      }
+      // If chatterbox is down, fall back to standard behavior
+      else if (!ecoDisabled && ecoAvailable) {
+        newMode = "eco";
+      } else if (kokoro === "ok") {
+        newMode = "standard";
+      } else if (kokoro === "checking") {
+        return;
+      }
+    } else {
+      // Standard quality: use eco if available and not disabled, else cloud
+      if (!ecoDisabled && ecoAvailable) {
+        newMode = "eco";
+      } else if (kokoro === "ok") {
+        newMode = "standard";
+      } else if (kokoro === "checking") {
+        // Still checking, don't set mode yet
+        return;
+      } else if (!ecoDisabled && state.capabilityStatus === "checking") {
+        // Eco still checking, wait
+        return;
+      }
+    }
+
+    // Only update if mode actually changed
+    if (newMode !== state.ttsMode) {
+      dispatch({ type: "SET_TTS_MODE", mode: newMode });
+    }
+  }, [state.cloudHealth, state.capabilityStatus, state.voiceQuality, state.ecoDisabled, state.ttsMode]);
 
   // Context value
   const value = useMemo<TTSContextValue>(

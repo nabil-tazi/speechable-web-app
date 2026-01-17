@@ -6,11 +6,40 @@ import type {
   VoiceConfig,
   ModelStatus,
   PendingAction,
+  CapabilityCheckResult,
 } from "../types";
 
 // =============================================
 // State
 // =============================================
+
+/**
+ * Status of local TTS capability check.
+ */
+export type CapabilityStatus = "unchecked" | "checking" | "available" | "unavailable";
+
+/**
+ * TTS generation mode (computed from voiceQuality + ecoDisabled + capabilityStatus).
+ * - eco: Local GPU generation (free)
+ * - standard: Cloud-based generation (1 credit)
+ * - expressive: Cloud-based with enhanced expressiveness (2 credits)
+ */
+export type TTSMode = "eco" | "standard" | "expressive" | null;
+
+/**
+ * Voice quality preference (user choice).
+ * - standard: Kokoro model (uses eco if available, else cloud)
+ * - expressive: Chatterbox model (cloud only, more natural)
+ */
+export type VoiceQuality = "standard" | "expressive";
+
+/**
+ * Cloud TTS service health status.
+ */
+export interface CloudHealthStatus {
+  kokoro: "unchecked" | "checking" | "ok" | "down";
+  chatterbox: "unchecked" | "checking" | "ok" | "down";
+}
 
 export interface TTSState {
   // Model state
@@ -18,6 +47,26 @@ export interface TTSState {
   modelError?: string;
   modelDownloadProgress?: number; // 0-1, for tracking model download
   isDownloading: boolean; // True when actual file downloads are happening (not cached)
+
+  // Local TTS capability
+  capabilityStatus: CapabilityStatus;
+  capabilityResult?: CapabilityCheckResult;
+
+  // TTS generation mode (computed)
+  ttsMode: TTSMode;
+
+  // Voice quality preference (user choice: standard vs expressive)
+  voiceQuality: VoiceQuality;
+
+  // Eco mode manually disabled by user
+  ecoDisabled: boolean;
+
+  // Cloud TTS service health
+  cloudHealth: CloudHealthStatus;
+
+  // Chatterbox parameters (for expressive mode testing)
+  chatterboxCfg: number;
+  chatterboxExaggeration: number;
 
   // Sentences (immutable after creation)
   sentences: Sentence[];
@@ -39,6 +88,16 @@ export const initialState: TTSState = {
   modelStatus: "uninitialized",
   modelDownloadProgress: 0,
   isDownloading: false,
+  capabilityStatus: "unchecked",
+  ttsMode: null,
+  voiceQuality: "standard",
+  ecoDisabled: false,
+  cloudHealth: {
+    kokoro: "unchecked",
+    chatterbox: "unchecked",
+  },
+  chatterboxCfg: 0.1,
+  chatterboxExaggeration: 1.0,
   sentences: [],
   audioState: new Map(),
   playback: {
@@ -63,6 +122,23 @@ export type TTSAction =
   | { type: "MODEL_ERROR"; error: string }
   | { type: "MODEL_DOWNLOAD_PROGRESS"; progress: number }
   | { type: "SET_IS_DOWNLOADING"; isDownloading: boolean }
+
+  // Capability check
+  | { type: "CAPABILITY_CHECK_START" }
+  | { type: "CAPABILITY_CHECK_RESULT"; result: CapabilityCheckResult }
+
+  // TTS mode and quality
+  | { type: "SET_TTS_MODE"; mode: TTSMode }
+  | { type: "SET_VOICE_QUALITY"; quality: VoiceQuality }
+  | { type: "SET_ECO_DISABLED"; disabled: boolean }
+
+  // Cloud health
+  | { type: "CLOUD_HEALTH_CHECK_START"; service: "kokoro" | "chatterbox" }
+  | { type: "CLOUD_HEALTH_CHECK_RESULT"; service: "kokoro" | "chatterbox"; status: "ok" | "down" }
+
+  // Chatterbox parameters
+  | { type: "SET_CHATTERBOX_CFG"; cfg: number }
+  | { type: "SET_CHATTERBOX_EXAGGERATION"; exaggeration: number }
 
   // Sentence initialization
   | { type: "SET_SENTENCES"; sentences: Sentence[] }
@@ -109,7 +185,7 @@ export function ttsReducer(state: TTSState, action: TTSAction): TTSState {
       return { ...state, modelStatus: "loading" };
 
     case "MODEL_READY":
-      return { ...state, modelStatus: "ready", modelError: undefined };
+      return { ...state, modelStatus: "ready", modelError: undefined, isDownloading: false };
 
     case "MODEL_ERROR":
       return { ...state, modelStatus: "error", modelError: action.error };
@@ -119,6 +195,47 @@ export function ttsReducer(state: TTSState, action: TTSAction): TTSState {
 
     case "SET_IS_DOWNLOADING":
       return { ...state, isDownloading: action.isDownloading };
+
+    // Capability check
+    case "CAPABILITY_CHECK_START":
+      return { ...state, capabilityStatus: "checking" };
+
+    case "CAPABILITY_CHECK_RESULT":
+      return {
+        ...state,
+        capabilityStatus: action.result.available ? "available" : "unavailable",
+        capabilityResult: action.result,
+      };
+
+    // TTS mode and quality
+    case "SET_TTS_MODE":
+      return { ...state, ttsMode: action.mode };
+
+    case "SET_VOICE_QUALITY":
+      return { ...state, voiceQuality: action.quality };
+
+    case "SET_ECO_DISABLED":
+      return { ...state, ecoDisabled: action.disabled };
+
+    // Cloud health
+    case "CLOUD_HEALTH_CHECK_START":
+      return {
+        ...state,
+        cloudHealth: { ...state.cloudHealth, [action.service]: "checking" },
+      };
+
+    case "CLOUD_HEALTH_CHECK_RESULT":
+      return {
+        ...state,
+        cloudHealth: { ...state.cloudHealth, [action.service]: action.status },
+      };
+
+    // Chatterbox parameters
+    case "SET_CHATTERBOX_CFG":
+      return { ...state, chatterboxCfg: action.cfg };
+
+    case "SET_CHATTERBOX_EXAGGERATION":
+      return { ...state, chatterboxExaggeration: action.exaggeration };
 
     // Sentence initialization
     case "SET_SENTENCES": {

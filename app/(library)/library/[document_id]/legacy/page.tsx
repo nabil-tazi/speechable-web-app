@@ -11,7 +11,6 @@ import { CreateVersionDialog } from "@/app/features/documents/components/create-
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
 import { generateWithAi } from "@/app/features/generate-with-ai";
-import { useHeader } from "../../../components/header-context";
 
 // Document Detail View Component
 function DocumentDetailView() {
@@ -20,7 +19,6 @@ function DocumentDetailView() {
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { setContent } = useHeader();
 
   // Sort versions by creation date (newest first) - handle null document
   const sortedVersions = useMemo(() => {
@@ -79,34 +77,6 @@ function DocumentDetailView() {
     [updateVersionInUrl]
   );
 
-  // Update header content when document changes
-  useEffect(() => {
-    if (document) {
-      const category = searchParams.get("category");
-      const backUrl = category ? `/library?category=${category}` : "/library";
-
-      setContent({
-        documentTitle: document.title,
-        backUrl,
-        documentVersions: sortedVersions,
-        // activeVersionId: activeVersionId,
-        //         onVersionChange: handleVersionChange,
-        // actions: undefined,
-      });
-    }
-
-    // Cleanup on unmount
-    return () => {
-      setContent({});
-    };
-  }, [
-    document,
-    searchParams,
-    setContent,
-    sortedVersions,
-    activeVersionId,
-    handleVersionChange,
-  ]);
 
   // Early returns after all hooks are called
   if (loading) {

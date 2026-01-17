@@ -48,6 +48,7 @@ export interface AudioSegmentWithVersion extends AudioSegment {
 
 export interface SectionTTSInput {
   title: string;
+  level?: number;
   content: {
     speech: SpeechObject[];
   };

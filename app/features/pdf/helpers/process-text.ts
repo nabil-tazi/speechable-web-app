@@ -1,18 +1,30 @@
+import type { TextHighlight } from "@/app/features/pdf/types";
+import { removeHighlightedSections, getRemovalStats } from "./remove-highlights";
+
 export async function processText(
   text: string,
   documentTitle: string,
   processingLevel: 0 | 1 | 2 | 3,
+  highlights?: TextHighlight[],
   retryCount = 0
-) {
+): Promise<{ cleanedText: any; metadata: any }> {
   const maxRetries = 2;
   try {
+    // Remove footnotes and legends before sending to API
+    const cleanedText = removeHighlightedSections(text, highlights, ['footnote', 'legend']);
+
+    const stats = getRemovalStats(text, highlights, ['footnote', 'legend']);
+    // if (stats.removedCount > 0) {
+    //   console.log(`[processText] Removed ${stats.removedCount} sections (${stats.removedChars} chars):`, stats.removedByType);
+    // }
+
     const response = await fetch("/api/openai-advanced", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        text: text,
+        text: cleanedText,
         title: documentTitle,
         level: processingLevel,
       }),
@@ -35,6 +47,7 @@ export async function processText(
             text,
             documentTitle,
             processingLevel,
+            highlights,
             retryCount + 1
           );
         } else {
@@ -64,7 +77,7 @@ export async function processText(
 
     const data = await response.json();
 
-    console.log(data.message);
+    // console.log(data.message);
 
     return {
       cleanedText: data.message,

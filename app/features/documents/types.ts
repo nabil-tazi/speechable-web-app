@@ -1,10 +1,34 @@
 import type { AudioVersionWithSegments } from "@/app/features/audio/types";
 
+// Block types for the Notion-like editor
+export type BlockType = "text" | "heading1" | "heading2" | "heading3" | "heading4";
+
+export interface Block {
+  id: string;
+  type: BlockType;
+  content: string;
+  reader_id: string;
+  order: number;
+  audio_stale: boolean;
+  disabled?: boolean; // For headings: disables this section and all content until next same/higher level heading
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlockInput {
+  type: BlockType;
+  content: string;
+  reader_id?: string;
+  order?: number;
+  disabled?: boolean;
+}
+
 export interface Document {
   id: string;
   user_id: string;
   thumbnail_path?: string;
   raw_text?: string;
+  processed_text?: string; // Moved from document_versions for block regeneration
   document_type: string;
   language?: string;
   page_count?: number;
@@ -17,6 +41,8 @@ export interface Document {
   filename: string;
   mime_type: string;
   metadata?: Record<string, any>;
+  is_starred?: boolean;
+  last_opened?: string;
 }
 
 export interface DocumentVersion {
@@ -24,10 +50,12 @@ export interface DocumentVersion {
   document_id: string;
   version_name: string;
   language?: string;
-  processed_text: string;
+  processed_text: string; // Legacy - kept for backwards compatibility
+  blocks?: Block[]; // New block-based content (optional, defaults to [])
   processing_type: string;
   processing_metadata?: Record<string, any>;
   created_at: string;
+  updated_at?: string; // Optional, set by database trigger
 }
 
 export interface UserStorageUsage {
@@ -58,6 +86,7 @@ export interface SectionContent {
 
 export interface ProcessedSection {
   title: string;
+  level?: number;
   content: SectionContent;
 }
 

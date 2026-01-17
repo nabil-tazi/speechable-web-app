@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 
-import { ParsedPDF, PreprocessingLevel, ProcessingMetadata } from "../types";
+import { ParsedPDF, PreprocessingLevel, ProcessingMetadata, TextHighlight } from "../types";
 import ProcessingLevelSelector from "../../speech/components/processing-level-selector";
 import PDFUploadArea from "./upload-area";
 import PDFResultsDisplay from "./pdf-results-display";
 import PDFDocumentOverview from "./pdf-overview";
 import { processPDFFile } from "../utils/pdf-processing";
+import { removeHighlightedSections, getRemovalStats } from "../helpers/remove-highlights";
 
 import {
   createDocumentAction,
@@ -15,6 +16,7 @@ import {
   updateDocumentAction,
   uploadDocumentThumbnailAction,
 } from "../../documents/actions";
+import { convertProcessedTextToBlocks } from "../../block-editor";
 import {
   createAudioSegmentAction,
   createAudioVersionAction,
@@ -197,17 +199,25 @@ export default function PDFUploader({ userId }: Props) {
     }
   }
 
-  async function identifySections(text: string): Promise<any> {
+  async function identifySections(text: string, highlights?: TextHighlight[]): Promise<any> {
     setIsClassifying(true);
     setError(null);
 
     try {
+      // Remove footnotes and legends before sending to API
+      const cleanedText = removeHighlightedSections(text, highlights, ['footnote', 'legend']);
+
+      const stats = getRemovalStats(text, highlights, ['footnote', 'legend']);
+      if (stats.removedCount > 0) {
+        console.log(`[identifySections] Removed ${stats.removedCount} sections (${stats.removedChars} chars):`, stats.removedByType);
+      }
+
       const response = await fetch("/api/identify-sections", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: cleanedText }),
       });
 
       if (!response.ok) {
@@ -236,13 +246,14 @@ export default function PDFUploader({ userId }: Props) {
     }
   }
 
-  async function cleanTextWithOpenAI(text: string, retryCount = 0) {
+  async function cleanTextWithOpenAI(text: string, highlights?: TextHighlight[], retryCount = 0) {
     setIsCleaningText(true);
     setError(null);
 
     if (preprocessingLevel === 0 || preprocessingLevel === 1) {
       try {
-        const sectionIdentificationResult = await identifySections(text);
+        // Pass highlights to identifySections so footnotes/legends are removed
+        const sectionIdentificationResult = await identifySections(text, highlights);
 
         console.log(sectionIdentificationResult);
         console.log("SECTION IDENTIFICATION SUCCESS");
@@ -257,10 +268,12 @@ export default function PDFUploader({ userId }: Props) {
         const sectionPromises = structuredDocumentInput.map(
           async ({ title, content }) => {
             console.log("CALLING PROCESS TEXT for: ", title);
+            // Pass highlights to processText so footnotes/legends are removed
             const { cleanedText } = await processText(
               content,
               title,
-              preprocessingLevel
+              preprocessingLevel,
+              highlights
             );
 
             console.log(cleanedText);
@@ -283,10 +296,12 @@ export default function PDFUploader({ userId }: Props) {
       }
     } else {
       try {
+        // Pass highlights to processText so footnotes/legends are removed
         const result = await processText(
           text,
           "Conversation",
-          preprocessingLevel
+          preprocessingLevel,
+          highlights
         );
         return result;
       } finally {
@@ -672,11 +687,15 @@ export default function PDFUploader({ userId }: Props) {
         setProcessingMetadata(processedContent.metadata);
 
         // Create document version with the structured content
+        const processedTextJson = JSON.stringify(processedContent.cleanedText);
+        const blocks = convertProcessedTextToBlocks(processedTextJson);
+
         const { data: version, error: versionError } =
           await createDocumentVersionAction({
             document_id: currentDocumentId,
             version_name: `Processed - Level ${preprocessingLevel}`,
-            processed_text: JSON.stringify(processedContent.cleanedText), // Store as JSON string in DB
+            processed_text: processedTextJson,
+            blocks,
             processing_type: preprocessingLevel.toString(),
             processing_metadata: processedContent.metadata || undefined,
           });
@@ -716,7 +735,7 @@ export default function PDFUploader({ userId }: Props) {
               speech: [
                 {
                   text: newText,
-                  reader_id: "default",
+                  reader_id: "Narrator",
                 },
               ],
             },
