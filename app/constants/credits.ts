@@ -1,0 +1,1 @@
+export const LLM_CHARACTERS_PER_CREDIT = 10000;

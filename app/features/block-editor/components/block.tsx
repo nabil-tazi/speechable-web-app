@@ -1,0 +1,456 @@
+"use client";
+
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import { Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { BlockType } from "@/app/features/documents/types";
+
+import { useEditor } from "../context/editor-provider";
+import { ReaderSelector } from "./reader-selector";
+import { SentenceRenderer } from "./sentence-renderer";
+import { FloatingMenu } from "./floating-menu";
+import { BlockDropdownMenu } from "./block-dropdown-menu";
+import { PendingReplacementPreview } from "./pending-replacement-preview";
+import { PendingEditDialog } from "./pending-edit-dialog";
+
+import {
+  useScrollContainer,
+  useCursorPosition,
+  useContentEditing,
+  useTextSelection,
+  useAITextActions,
+  useBlockKeyboard,
+} from "../hooks";
+
+import type { BlockComponentProps } from "../types";
+
+export function BlockComponent({
+  block,
+  isSelected,
+  isFocused,
+  isEditMode,
+  isConversation = false,
+  sentences,
+  currentPlayingIndex,
+  isPlaybackOn,
+  onSelect,
+  onFocus,
+  onSentenceClick,
+}: BlockComponentProps) {
+  const { updateBlock, deleteBlock, addBlock, blocks, dispatch } = useEditor();
+
+  // Refs
+  const contentRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const blockContainerRef = useRef<HTMLDivElement>(null);
+  const newTextRef = useRef<HTMLSpanElement>(null);
+  const scrollTargetRef = useRef<HTMLDivElement>(null);
+  const selectionRangeRef = useRef<{ start: number; end: number } | null>(null);
+
+  // Local state
+  const [isEditing, setIsEditing] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showPendingDialog, setShowPendingDialog] = useState(false);
+  const [buttonsPosition, setButtonsPosition] = useState<{ top: number } | null>(null);
+
+  // Scroll container hook
+  const {
+    getScrollContainer,
+    scrollToTarget,
+    isScrolledAway,
+    originalScrollPosRef,
+    keepMenuVisibleRef,
+  } = useScrollContainer({
+    containerRef,
+    isMenuVisible: false, // Will be updated below
+  });
+
+  // Content editing hook
+  const {
+    handleInput,
+    handleBlur: handleContentBlur,
+    lastSyncedContentRef,
+    debounceTimerRef,
+  } = useContentEditing({
+    contentRef,
+    blockId: block.id,
+    blockContent: block.content,
+    updateBlock,
+  });
+
+  // Cursor position hook
+  const { getCursorPosition, isCursorAtEnd, setSelectionRange } = useCursorPosition(contentRef);
+
+  // Text selection hook
+  const { selectionMenu, setSelectionMenu } = useTextSelection({
+    contentRef,
+    isEditMode,
+    keepMenuVisibleRef,
+    onScrollPositionCapture: useCallback(() => {
+      const container = getScrollContainer();
+      originalScrollPosRef.current = container?.scrollTop || 0;
+    }, [getScrollContainer, originalScrollPosRef]),
+  });
+
+  // AI text actions hook
+  const {
+    processingAction,
+    pendingReplacement,
+    noChangesMessage,
+    handleSelectionAction,
+    handleBlockAction,
+    handleAcceptReplacement,
+    handleDiscardReplacement,
+    handleTryAgain,
+    handleInsertBelow,
+  } = useAITextActions({
+    contentRef,
+    containerRef,
+    blockId: block.id,
+    blockContent: block.content,
+    updateBlock,
+    addBlock,
+    lastSyncedContentRef,
+    getScrollContainer,
+    originalScrollPosRef,
+    setSelectionMenu,
+    setIsEditing,
+  });
+
+  // Keyboard handler hook
+  const { handleKeyDown } = useBlockKeyboard({
+    contentRef,
+    block,
+    blocks,
+    updateBlock,
+    deleteBlock,
+    addBlock,
+    dispatch,
+    getCursorPosition,
+    isCursorAtEnd,
+    lastSyncedContentRef,
+    debounceTimerRef,
+    setIsEditing,
+  });
+
+  // Handler for reader change (conversation mode)
+  const handleReaderChange = useCallback(
+    (newReaderId: string) => {
+      updateBlock(block.id, { reader_id: newReaderId });
+    },
+    [updateBlock, block.id]
+  );
+
+  const handleBlur = () => {
+    handleContentBlur(() => setIsEditing(false));
+  };
+
+  // Show dialog when clicking outside while pending replacement exists
+  useEffect(() => {
+    if (!pendingReplacement) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const floatingMenu = document.querySelector('[data-floating-menu="true"]');
+      const alertDialog = document.querySelector('[role="alertdialog"]');
+
+      if (floatingMenu?.contains(target) || alertDialog?.contains(target)) {
+        return;
+      }
+
+      if (blockContainerRef.current?.contains(target)) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      setShowPendingDialog(true);
+    };
+
+    document.addEventListener("mousedown", handleClickOutside, true);
+    return () => document.removeEventListener("mousedown", handleClickOutside, true);
+  }, [pendingReplacement]);
+
+  // Update buttons position when pending replacement changes
+  useEffect(() => {
+    if (pendingReplacement) {
+      const updatePosition = () => {
+        if (newTextRef.current && containerRef.current) {
+          const rect = newTextRef.current.getBoundingClientRect();
+          const containerRect = containerRef.current.getBoundingClientRect();
+          setButtonsPosition({ top: rect.bottom - containerRect.top + 4 });
+        }
+      };
+      requestAnimationFrame(updatePosition);
+    } else {
+      setButtonsPosition(null);
+    }
+  }, [pendingReplacement]);
+
+  // Set content and focus when entering edit mode
+  useEffect(() => {
+    if (isEditing && contentRef.current) {
+      contentRef.current.innerText = block.content;
+      contentRef.current.focus({ preventScroll: true });
+
+      if (selectionRangeRef.current !== null) {
+        setSelectionRange(selectionRangeRef.current.start, selectionRangeRef.current.end);
+        selectionRangeRef.current = null;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
+
+  // Auto-focus when this block becomes focused
+  useEffect(() => {
+    if (isFocused && isEditMode && !isEditing) {
+      let cursorPosition = 0;
+      try {
+        const stored = sessionStorage.getItem("block-focus-position");
+        if (stored) {
+          const { blockId, position } = JSON.parse(stored);
+          if (blockId === block.id) {
+            cursorPosition = position;
+            sessionStorage.removeItem("block-focus-position");
+          }
+        }
+      } catch {
+        // Ignore parsing errors
+      }
+
+      lastSyncedContentRef.current = block.content;
+      selectionRangeRef.current = { start: cursorPosition, end: cursorPosition };
+      setIsEditing(true);
+      onSelect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused]);
+
+  // Sync DOM with block.content when it changes externally
+  useEffect(() => {
+    if (isEditing && contentRef.current) {
+      const domContent = contentRef.current.innerText;
+      if (block.content !== lastSyncedContentRef.current && block.content !== domContent) {
+        const cursorPos = getCursorPosition();
+        contentRef.current.innerText = block.content;
+        setSelectionRange(Math.min(cursorPos, block.content.length));
+      }
+      lastSyncedContentRef.current = block.content;
+    }
+  }, [block.content, isEditing, getCursorPosition, setSelectionRange, lastSyncedContentRef]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [debounceTimerRef]);
+
+  const handleStartEditing = (e: React.MouseEvent) => {
+    lastSyncedContentRef.current = block.content;
+    if (contentRef.current) {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const preStartRange = range.cloneRange();
+        preStartRange.selectNodeContents(contentRef.current);
+        preStartRange.setEnd(range.startContainer, range.startOffset);
+        const startOffset = preStartRange.toString().length;
+        const preEndRange = range.cloneRange();
+        preEndRange.selectNodeContents(contentRef.current);
+        preEndRange.setEnd(range.endContainer, range.endOffset);
+        const endOffset = preEndRange.toString().length;
+        selectionRangeRef.current = { start: startOffset, end: endOffset };
+      }
+    }
+    setIsEditing(true);
+    onSelect();
+    onFocus();
+  };
+
+  const getBlockStyles = () => {
+    switch (block.type) {
+      case "heading1":
+        return "text-2xl font-bold";
+      case "heading2":
+        return "text-xl font-semibold";
+      case "heading3":
+        return "text-lg font-bold";
+      case "heading4":
+        return "text-base font-bold";
+      default:
+        return "text-base";
+    }
+  };
+
+  const getPlaceholder = () => {
+    switch (block.type) {
+      case "heading1":
+        return "Heading 1";
+      case "heading2":
+        return "Heading 2";
+      case "heading3":
+        return "Heading 3";
+      case "heading4":
+        return "Heading 4";
+      default:
+        return "Type something...";
+    }
+  };
+
+  return (
+    <div
+      ref={blockContainerRef}
+      data-block-id={block.id}
+      className={cn(
+        "group relative flex items-start gap-2 py-1 px-2 rounded-lg transition-colors",
+        (isEditing || isMenuOpen) && "bg-gray-50",
+        isEditMode && !isEditing && !isMenuOpen && "hover:bg-gray-50"
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Reader selector */}
+      {isEditMode && isConversation && (
+        <div className="absolute left-2 top-1">
+          <ReaderSelector
+            readerId={block.reader_id}
+            onChange={handleReaderChange}
+            visible={isHovered || isSelected || isEditing || isMenuOpen}
+          />
+        </div>
+      )}
+
+      {/* Block content */}
+      <div ref={containerRef} className="flex-1 min-w-0 relative px-8">
+        {/* No changes notification */}
+        {noChangesMessage && (
+          <div
+            className="z-50 -translate-x-1/2 -translate-y-full fixed"
+            style={{ left: selectionMenu.fixedX, top: selectionMenu.fixedY }}
+          >
+            <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 text-sm text-gray-600 mb-1">
+              <Check className="h-4 w-4 text-green-500" />
+              {noChangesMessage}
+            </div>
+          </div>
+        )}
+
+        {/* Floating menu */}
+        {isEditMode && (selectionMenu.visible || pendingReplacement || processingAction) && (
+          <FloatingMenu
+            selectionMenu={selectionMenu}
+            pendingReplacement={pendingReplacement}
+            processingAction={processingAction}
+            isScrolledAway={isScrolledAway}
+            onSelectionAction={handleSelectionAction}
+            onAcceptReplacement={handleAcceptReplacement}
+            onDiscardReplacement={handleDiscardReplacement}
+            onTryAgain={handleTryAgain}
+            onInsertBelow={handleInsertBelow}
+            onScrollToTarget={scrollToTarget}
+          />
+        )}
+
+        {/* Pending replacement preview */}
+        {pendingReplacement && (
+          <PendingReplacementPreview
+            pendingReplacement={pendingReplacement}
+            blockType={block.type}
+            blockContent={block.content}
+            newTextRef={newTextRef}
+            scrollTargetRef={scrollTargetRef}
+            getBlockStyles={getBlockStyles}
+          />
+        )}
+
+        {/* Normal content display */}
+        {!pendingReplacement && (
+          <div
+            ref={contentRef}
+            contentEditable={isEditing}
+            suppressContentEditableWarning
+            onInput={handleInput}
+            onBlur={handleBlur}
+            onFocus={onFocus}
+            onKeyDown={isEditing ? handleKeyDown : undefined}
+            onClick={(e) => {
+              if (isEditMode && !isEditing && !pendingReplacement) {
+                handleStartEditing(e);
+              }
+            }}
+            className={cn(
+              "leading-relaxed text-justify whitespace-pre-wrap outline-none",
+              block.type === "text" && "indent-8",
+              isEditMode && "cursor-text",
+              getBlockStyles()
+            )}
+          >
+            {isEditing
+              ? null
+              : (() => {
+                  if (!block.content) {
+                    if (isEditMode) {
+                      return <span className="text-gray-400">{getPlaceholder()}</span>;
+                    }
+                    return null;
+                  }
+
+                  if (!isEditMode && sentences.length > 0) {
+                    return (
+                      <SentenceRenderer
+                        blockContent={block.content}
+                        sentences={sentences}
+                        currentPlayingIndex={currentPlayingIndex}
+                        isPlaybackOn={isPlaybackOn}
+                        onSentenceClick={onSentenceClick}
+                      />
+                    );
+                  }
+
+                  return block.content;
+                })()}
+          </div>
+        )}
+      </div>
+
+      {/* Block actions dropdown */}
+      {isEditMode && !pendingReplacement && (
+        <div
+          className={cn(
+            "absolute right-2 top-1 transition-opacity",
+            isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
+        >
+          <BlockDropdownMenu
+            block={block}
+            isMenuOpen={isMenuOpen}
+            processingAction={processingAction}
+            onMenuOpenChange={setIsMenuOpen}
+            onAddBlock={() => addBlock({ type: "text", content: "" }, block.id)}
+            onBlockAction={handleBlockAction}
+            onTypeChange={(type: BlockType) => updateBlock(block.id, { type })}
+            onDelete={() => deleteBlock(block.id)}
+          />
+        </div>
+      )}
+
+      {/* Pending edit dialog */}
+      <PendingEditDialog
+        open={showPendingDialog}
+        onOpenChange={setShowPendingDialog}
+        onDiscard={() => {
+          handleDiscardReplacement();
+          setShowPendingDialog(false);
+        }}
+        onKeep={() => {
+          handleAcceptReplacement();
+          setShowPendingDialog(false);
+        }}
+      />
+    </div>
+  );
+}
