@@ -11,7 +11,7 @@ import type {
   OutlineEntry,
   OutlineMatch,
 } from "../types";
-import { isLegendOrCaption } from "./paragraph-joining";
+import { isLegendOrCaption } from "./reference-detection";
 
 /**
  * Strip invisible/zero-width Unicode characters

@@ -37,6 +37,7 @@ export interface StructuredBlock {
 export type RemovableHighlightType = 'anomaly' | 'legend' | 'footnote' | 'figure_label' | 'reference' | 'header' | 'footer' | 'page_number' | 'author' | 'heading' | 'url' | 'email' | 'toc' | 'bibliography';
 
 // All highlight types including permanent markers
+// NOTE: 'section_start' is deprecated - use 'heading' with enriched properties instead
 export type HighlightType = RemovableHighlightType | 'section_start';
 
 // Array of removable types for filtering
@@ -48,10 +49,10 @@ export interface TextHighlight {
   start: number;  // Character index in rawText
   end: number;    // Character index (exclusive)
   type: HighlightType;
-  // For section_start type only:
-  sectionTitle?: string;   // The section title
-  sectionLevel?: number;   // The section level (1, 2, 3...)
-  verified?: boolean;      // Whether section is verified (matched to PDF outline)
+  // For 'heading' type (enriched with PDF outline metadata when available):
+  sectionTitle?: string;   // The section title (detected text, e.g., "2. Methods")
+  sectionLevel?: number;   // The section level (1, 2, 3...) - from outline or font hierarchy
+  verified?: boolean;      // True if heading matched a PDF outline entry
 }
 
 /**

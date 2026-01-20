@@ -20,6 +20,16 @@ import { CreateVersionDialog } from "@/app/features/documents/components/create-
 import { generateWithAi } from "@/app/features/generate-with-ai";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -30,8 +40,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Plus, ChevronRight, Star, Pencil, Save, X, List, Focus } from "lucide-react";
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Bookmark,
+  Pencil,
+  Save,
+  X,
+  List,
+  Focus,
+  FileText,
+} from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -43,6 +67,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   TTSProvider,
   TTSPlayer,
@@ -60,6 +85,7 @@ import {
 } from "@/app/features/block-editor";
 import type { Block } from "@/app/features/documents/types";
 import { usePlayback, useGeneration } from "@/app/features/tts";
+import { HeaderUserMenu } from "@/components/header-user-menu";
 
 // Version Name Input - must be inside EditorProvider
 function VersionNameInput() {
@@ -222,7 +248,10 @@ function OutlineButton() {
       totalCounts.set(heading.id, totalCharCount);
     }
 
-    return { charCountByHeadingId: counts, totalCharCountByHeadingId: totalCounts };
+    return {
+      charCountByHeadingId: counts,
+      totalCharCountByHeadingId: totalCounts,
+    };
   }, [headings, sortedBlocks, disabledIds]);
 
   // Get heading level number from type
@@ -304,19 +333,23 @@ function OutlineButton() {
     const isHovered = effectiveHoveredId === heading.id;
     const hasChildren = children.length > 0;
     // Check if this heading is disabled via cascade (not directly)
-    const isDisabledViaCascade = disabledIds.has(heading.id) && !heading.disabled;
+    const isDisabledViaCascade =
+      disabledIds.has(heading.id) && !heading.disabled;
     // Show char count from effective hovered heading (the one controlling the hover state)
-    const charCount = effectiveHoveredId ? (charCountByHeadingId.get(effectiveHoveredId) || 0) : 0;
-    const totalCharCount = effectiveHoveredId ? (totalCharCountByHeadingId.get(effectiveHoveredId) || 0) : 0;
-    const isEffectiveHoveredDisabled = effectiveHoveredId ? disabledIds.has(effectiveHoveredId) : false;
+    const charCount = effectiveHoveredId
+      ? charCountByHeadingId.get(effectiveHoveredId) || 0
+      : 0;
+    const totalCharCount = effectiveHoveredId
+      ? totalCharCountByHeadingId.get(effectiveHoveredId) || 0
+      : 0;
+    const isEffectiveHoveredDisabled = effectiveHoveredId
+      ? disabledIds.has(effectiveHoveredId)
+      : false;
 
     return (
       <div
         key={heading.id}
-        className={cn(
-          "rounded transition-colors",
-          isHovered && "bg-accent"
-        )}
+        className={cn("rounded transition-colors", isHovered && "bg-accent")}
       >
         {/* Heading row - hover detection happens here */}
         <TooltipProvider delayDuration={300}>
@@ -340,21 +373,34 @@ function OutlineButton() {
                     isDisabledViaCascade
                       ? "opacity-0 pointer-events-none"
                       : isHovered
-                        ? "opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
+                      ? "opacity-100"
+                      : "opacity-0 group-hover:opacity-100"
                   )}
                 />
                 <span
                   onClick={() => {
                     // Find the block element and scroll to it with offset for header
-                    const blockElement = document.querySelector(`[data-block-id="${heading.id}"]`);
-                    const scrollContainer = document.querySelector('[data-scroll-container="true"]');
+                    const blockElement = document.querySelector(
+                      `[data-block-id="${heading.id}"]`
+                    );
+                    const scrollContainer = document.querySelector(
+                      '[data-scroll-container="true"]'
+                    );
                     if (blockElement && scrollContainer) {
                       const headerOffset = 80; // Account for fixed header
-                      const elementTop = blockElement.getBoundingClientRect().top;
-                      const containerTop = scrollContainer.getBoundingClientRect().top;
-                      const scrollTop = scrollContainer.scrollTop + elementTop - containerTop - headerOffset;
-                      scrollContainer.scrollTo({ top: scrollTop, behavior: "smooth" });
+                      const elementTop =
+                        blockElement.getBoundingClientRect().top;
+                      const containerTop =
+                        scrollContainer.getBoundingClientRect().top;
+                      const scrollTop =
+                        scrollContainer.scrollTop +
+                        elementTop -
+                        containerTop -
+                        headerOffset;
+                      scrollContainer.scrollTo({
+                        top: scrollTop,
+                        behavior: "smooth",
+                      });
                     }
                   }}
                   className={cn(
@@ -363,21 +409,35 @@ function OutlineButton() {
                     heading.type === "heading2" && "font-semibold",
                     heading.type === "heading3" && "font-normal",
                     heading.type === "heading4" && "text-sm font-normal",
-                    disabledIds.has(heading.id) && "line-through text-muted-foreground"
+                    disabledIds.has(heading.id) &&
+                      "line-through text-muted-foreground"
                   )}
                 >
                   {heading.content}
                 </span>
                 <Focus
                   onClick={() => {
-                    const blockElement = document.querySelector(`[data-block-id="${heading.id}"]`);
-                    const scrollContainer = document.querySelector('[data-scroll-container="true"]');
+                    const blockElement = document.querySelector(
+                      `[data-block-id="${heading.id}"]`
+                    );
+                    const scrollContainer = document.querySelector(
+                      '[data-scroll-container="true"]'
+                    );
                     if (blockElement && scrollContainer) {
                       const headerOffset = 80;
-                      const elementTop = blockElement.getBoundingClientRect().top;
-                      const containerTop = scrollContainer.getBoundingClientRect().top;
-                      const scrollTop = scrollContainer.scrollTop + elementTop - containerTop - headerOffset;
-                      scrollContainer.scrollTo({ top: scrollTop, behavior: "smooth" });
+                      const elementTop =
+                        blockElement.getBoundingClientRect().top;
+                      const containerTop =
+                        scrollContainer.getBoundingClientRect().top;
+                      const scrollTop =
+                        scrollContainer.scrollTop +
+                        elementTop -
+                        containerTop -
+                        headerOffset;
+                      scrollContainer.scrollTo({
+                        top: scrollTop,
+                        behavior: "smooth",
+                      });
                     }
                   }}
                   className="h-3.5 w-3.5 flex-shrink-0 opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity cursor-pointer"
@@ -398,9 +458,7 @@ function OutlineButton() {
 
         {/* Children */}
         {hasChildren && (
-          <div>
-            {children.map((child) => renderNode(child, depth + 1))}
-          </div>
+          <div>{children.map((child) => renderNode(child, depth + 1))}</div>
         )}
       </div>
     );
@@ -424,7 +482,7 @@ function OutlineButton() {
       </HoverCardTrigger>
       <HoverCardContent
         side="bottom"
-        align="end"
+        align="start"
         className="w-96 p-2"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -440,15 +498,13 @@ function OutlineButton() {
   );
 }
 
-// Editor Action Buttons - must be inside EditorProvider
-function EditorActionButtons({
-  isEditMode,
+// Edit Mode Buttons - Save/Discard, must be inside EditorProvider
+function EditModeButtons({
   setIsEditMode,
 }: {
-  isEditMode: boolean;
   setIsEditMode: (value: boolean) => void;
 }) {
-  const { save, discardChanges, isDirty } = useEditor();
+  const { save, discardChanges } = useEditor();
 
   const handleSave = async () => {
     await save();
@@ -460,44 +516,410 @@ function EditorActionButtons({
     setIsEditMode(false);
   };
 
-  if (isEditMode) {
-    return (
-      <>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDiscard}
-          className="h-8 text-gray-500 hover:text-gray-700"
-        >
-          <X className="h-4 w-4 mr-1" />
-          Discard
-        </Button>
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleSave}
-          className="h-8"
-        >
-          <Save className="h-4 w-4 mr-1" />
-          Save
-        </Button>
-      </>
-    );
-  }
-
   return (
     <>
       <Button
         variant="ghost"
-        size="icon"
-        onClick={() => setIsEditMode(true)}
-        className="h-8 w-8"
-        title="Edit document"
+        size="sm"
+        onClick={handleDiscard}
+        className="h-8 text-gray-500 hover:text-gray-700"
       >
-        <Pencil className="h-4 w-4" />
+        <X className="h-4 w-4 mr-1" />
+        Discard
       </Button>
-      <OutlineButton />
+      <Button
+        size="sm"
+        onClick={handleSave}
+        className="h-8 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+      >
+        <Save className="h-4 w-4 mr-1" />
+        Save
+      </Button>
     </>
+  );
+}
+
+// Edit Button - must be inside EditorProvider (for future dirty state checking)
+function EditButton({
+  isActive,
+  setIsEditMode,
+}: {
+  isActive: boolean;
+  setIsEditMode: (value: boolean) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setIsEditMode(!isActive)}
+      className={cn("h-8 w-8", isActive && "bg-gray-200 text-gray-900 hover:bg-gray-300")}
+      title={isActive ? "Exit edit mode" : "Edit document"}
+    >
+      <Pencil className="h-4 w-4" />
+    </Button>
+  );
+}
+
+// Animated scrolling text for long titles (infinite ticker)
+function ScrollingText({
+  text,
+  className,
+  onHoverOnly = false,
+  isActive = false,
+}: {
+  text: string;
+  className?: string;
+  onHoverOnly?: boolean;
+  isActive?: boolean;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [textWidth, setTextWidth] = useState(0);
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (containerRef.current && textRef.current) {
+        const container = containerRef.current.offsetWidth;
+        const textW = textRef.current.scrollWidth;
+        setTextWidth(textW);
+        setIsOverflowing(textW > container);
+      }
+    };
+
+    checkOverflow();
+    window.addEventListener("resize", checkOverflow);
+    return () => window.removeEventListener("resize", checkOverflow);
+  }, [text]);
+
+  // Calculate animation duration based on text length
+  const gap = 48; // gap between repeated text
+  const animationDuration = Math.max(5, (textWidth + gap) / 50);
+
+  // Determine animation class: active forces animation, onHoverOnly uses hover trigger
+  const shouldAnimate = isOverflowing && (isActive || !onHoverOnly);
+  const useHoverAnimation = isOverflowing && onHoverOnly && !isActive;
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn(
+        "overflow-hidden",
+        useHoverAnimation && "marquee-hover-container",
+        className
+      )}
+      title={text}
+    >
+      <div
+        className={cn(
+          "inline-flex whitespace-nowrap",
+          shouldAnimate && "marquee-ticker",
+          useHoverAnimation && "marquee-ticker-hover"
+        )}
+        style={
+          isOverflowing
+            ? ({
+                "--marquee-duration": `${animationDuration}s`,
+                "--marquee-distance": `-${textWidth + gap}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        <span ref={textRef}>{text}</span>
+        {isOverflowing && <span className="ml-12">{text}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Helper to format duration from character count
+function formatDurationFromChars(chars: number): string {
+  // 1h = 55000 characters
+  const totalSeconds = Math.round((chars / 55000) * 3600);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    return `${minutes} min`;
+  } else {
+    return "< 1 min";
+  }
+}
+
+// Version tabs with horizontal scroll and arrows
+function VersionTabsWithScroll({
+  versions,
+  activeVersionId,
+  onVersionChange,
+  onCreateNew,
+}: {
+  versions: {
+    id: string;
+    version_name: string;
+    blocks?: { content: string; disabled?: boolean }[];
+  }[];
+  activeVersionId: string;
+  onVersionChange: (versionId: string) => void;
+  onCreateNew: () => void;
+}) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const hasOverflow = scrollWidth > clientWidth;
+
+    setIsOverflowing(hasOverflow);
+    setCanScrollLeft(scrollLeft > 0);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener("resize", checkScroll);
+    return () => window.removeEventListener("resize", checkScroll);
+  }, [checkScroll, versions]);
+
+  const scroll = (direction: "left" | "right") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const scrollAmount = 150;
+    container.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+
+  return (
+    <div className="-mx-4 -mb-4 mt-4.5 pb-1 pt-0.75 px-1 pr-2 bg-gray-100 rounded-b-sm border-t">
+      <div className="flex items-center gap-2">
+        {/* Scrollable tabs container with overlay arrows */}
+        <div className="relative flex-1 min-w-0">
+          {/* Left scroll arrow - overlay */}
+          {canScrollLeft && (
+            <button
+              onClick={() => scroll("left")}
+              className="absolute left-0 top-0 bottom-0 z-10 w-10 flex items-center justify-start pl-1 bg-gradient-to-r from-muted via-muted/80 to-transparent"
+            >
+              <ChevronLeft className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+            </button>
+          )}
+
+          {/* Scrollable container */}
+          <div
+            ref={scrollContainerRef}
+            onScroll={checkScroll}
+            className="overflow-x-auto scrollbar-hide"
+          >
+            <Tabs value={activeVersionId} onValueChange={onVersionChange}>
+              <TabsList className="h-auto p-1 inline-flex w-max">
+                {versions.map((version) => {
+                  const charCount =
+                    version.blocks?.reduce(
+                      (acc, block) =>
+                        acc + (block.disabled ? 0 : block.content.length),
+                      0
+                    ) || 0;
+                  const duration = formatDurationFromChars(charCount);
+
+                  return (
+                    <TabsTrigger
+                      key={version.id}
+                      value={version.id}
+                      className="flex-col items-start gap-0 h-auto py-1.5 px-3 flex-shrink-0"
+                    >
+                      <span className="text-sm font-medium">
+                        {version.version_name}
+                      </span>
+                      <span className="text-xs opacity-70 leading-tight">
+                        {duration}
+                      </span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </Tabs>
+          </div>
+
+          {/* Right scroll arrow - overlay */}
+          {canScrollRight && (
+            <button
+              onClick={() => scroll("right")}
+              className="absolute right-0 top-0 bottom-0 z-10 w-10 flex items-center justify-end pr-1 bg-gradient-to-l from-muted via-muted/80 to-transparent"
+            >
+              <ChevronRight className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+            </button>
+          )}
+        </div>
+
+        {/* New version button - minimal when overflowing */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onCreateNew}
+                className={cn(
+                  "flex-shrink-0 bg-brand-primary-dark text-white flex items-center justify-center hover:opacity-90 transition-all",
+                  isOverflowing
+                    ? "h-8 w-8 rounded-full"
+                    : "h-8 px-3 rounded-full gap-1.5 text-sm font-medium"
+                )}
+              >
+                <Plus className="h-4 w-4" />
+                {!isOverflowing && <span>New version</span>}
+              </button>
+            </TooltipTrigger>
+            {isOverflowing && (
+              <TooltipContent>
+                <p>New version</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
+
+// Document Title Popover - centered title button with document info on hover
+function DocumentTitlePopover({
+  document,
+  versions,
+  activeVersionId,
+  activeVersionName,
+  onVersionChange,
+  onCreateNew,
+}: {
+  document: {
+    title: string;
+    author?: string;
+    thumbnail_path?: string;
+    page_count?: number;
+    file_type: string;
+  };
+  versions: {
+    id: string;
+    version_name: string;
+    blocks?: { content: string; disabled?: boolean }[];
+  }[];
+  activeVersionId: string;
+  activeVersionName: string;
+  onVersionChange: (versionId: string) => void;
+  onCreateNew: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState(false);
+  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnter = useCallback(() => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    setIsOpen(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    closeTimeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 150);
+  }, []);
+
+  const fileTypeLabel = document.file_type?.toUpperCase() || "PDF";
+  const showThumbnail = document.thumbnail_path && !thumbnailError;
+
+  return (
+    <HoverCard open={isOpen}>
+      <HoverCardTrigger asChild>
+        <button
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-accent transition-colors max-w-[500px]"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <ScrollingText
+            text={document.title}
+            className="text-sm font-medium max-w-[280px]"
+            onHoverOnly
+            isActive={isOpen}
+          />
+          <span className="text-muted-foreground flex-shrink-0">·</span>
+          <span className="text-sm text-muted-foreground flex-shrink-0">
+            {activeVersionName}
+          </span>
+          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="bottom"
+        align="center"
+        className="w-[480px] max-w-[calc(100vw-2rem)] p-4"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <div className="flex flex-col">
+          {/* Top section: Document info + Thumbnail */}
+          <div className="flex gap-4">
+            {/* Left side: Title, Author, Metadata */}
+            <div className="flex-1 min-w-0">
+              <h3
+                className="text-lg font-bold line-clamp-3 leading-tight"
+                title={document.title}
+              >
+                {document.title}
+              </h3>
+              <p
+                className="text-sm text-muted-foreground truncate mt-1"
+                title={document.author || "Unknown author"}
+              >
+                {document.author || "Unknown author"}
+              </p>
+              {/* Metadata: page count and file type */}
+              <p className="text-xs text-muted-foreground mt-1">
+                {document.page_count &&
+                  `${document.page_count} page${
+                    document.page_count !== 1 ? "s" : ""
+                  } · `}
+                {fileTypeLabel}
+              </p>
+            </div>
+
+            {/* Right side: Thumbnail */}
+            <div className="relative flex-shrink-0">
+              {showThumbnail ? (
+                <div className="w-28 h-36 rounded-md shadow-[0px_2px_4px_0px_rgba(0,0,0,0.12)] bg-muted overflow-hidden">
+                  <img
+                    src={document.thumbnail_path}
+                    alt="Document thumbnail"
+                    className="w-full h-full object-cover object-top"
+                    onError={() => setThumbnailError(true)}
+                  />
+                </div>
+              ) : (
+                <div className="w-28 h-36 rounded-md bg-muted flex items-center justify-center">
+                  <FileText className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom section: Versions */}
+          <VersionTabsWithScroll
+            versions={versions}
+            activeVersionId={activeVersionId}
+            onVersionChange={onVersionChange}
+            onCreateNew={onCreateNew}
+          />
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -537,6 +959,7 @@ function DocumentTextView() {
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refreshRecent, refreshStarred } = useSidebarData();
@@ -672,20 +1095,31 @@ function DocumentTextView() {
     );
   }
 
-  function handleGenerateVersion(
-    processingLevel: 0 | 1 | 2 | 3,
-    voiceArray: string[],
-    _language: string
-  ) {
-    if (document && document.raw_text)
-      generateWithAi({
-        documentId: document.id,
-        existingDocumentVersions: document.versions,
-        rawInputText: document.raw_text,
-        voicesArray: voiceArray,
-        processingLevel,
-      });
-    else console.log("empty text");
+  async function handleCreateVersion(processingLevel: 0 | 1 | 2 | 3) {
+    if (document && document.raw_text) {
+      try {
+        const result = await generateWithAi({
+          documentId: document.id,
+          existingDocumentVersions: document.versions,
+          rawInputText: document.raw_text,
+          voicesArray: [],
+          processingLevel,
+          skipAudio: true,
+          // For Original level, reuse document's existing processed_text (no API call needed)
+          documentProcessedText:
+            processingLevel === 0 ? document.processed_text : undefined,
+        });
+
+        // Navigate to the new version (full page reload will close modals)
+        if (result.documentVersion?.id) {
+          window.location.href = `/library/${document.id}?version=${result.documentVersion.id}`;
+        }
+      } catch (error) {
+        console.error("Failed to create version:", error);
+      }
+    } else {
+      console.log("empty text");
+    }
   }
 
   function handleCloseCreateVersionModal() {
@@ -723,59 +1157,88 @@ function DocumentTextView() {
           <div className="bg-sidebar">
             {/* Breadcrumb Header - sticky at top */}
             <div className="sticky top-0 z-20">
-              <div className="pl-6 pr-4 h-12 flex items-center justify-between bg-sidebar">
-                <div className="flex items-center gap-2">
-                  {/* Star Button */}
+              <div className="pl-2 pr-4 h-12 flex items-center bg-sidebar">
+                {/* Left section */}
+                <div className="flex items-center gap-1 flex-1">
+                  {/* Back to Library Button */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={handleToggleStar}
+                    onClick={() => {
+                      if (isEditMode) {
+                        setShowBackConfirmation(true);
+                      } else {
+                        router.push("/library");
+                      }
+                    }}
                     className="h-8 w-8"
-                    title={isStarred ? "Remove from starred" : "Add to starred"}
+                    title="Back to library"
                   >
-                    <Star
-                      className={`h-4 w-4 ${
-                        isStarred ? "fill-yellow-400 text-yellow-400" : ""
-                      }`}
-                    />
+                    <ChevronLeft className="h-4 w-4" />
                   </Button>
 
-                  {/* Document Title */}
-                  <span
-                    className="text-sm font-normal text-foreground truncate max-w-72"
-                    title={document.title}
-                  >
-                    {document.title}
-                  </span>
+                  {/* Vertical Separator */}
+                  <Separator orientation="vertical" className="h-5 mx-1" />
 
-                  {/* Separator */}
-                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  {/* Outline Button */}
+                  <OutlineButton />
 
-                  {/* Version Selector (read mode) or Version Name Input (edit mode) */}
-                  {isEditMode ? (
-                    <VersionNameInput />
-                  ) : (
-                    sortedVersions.length > 0 && (
-                      <VersionSelector
-                        activeVersionId={activeVersionId}
-                        versions={sortedVersions}
-                        onVersionChange={handleVersionChange}
-                        onCreateNew={() => setCreateVersionModalOpen(true)}
-                      />
-                    )
-                  )}
+                  {/* Edit Button (read mode only) */}
+                  {!isEditMode && <EditButton isActive={false} setIsEditMode={setIsEditMode} />}
 
                   {/* Save Indicator */}
                   <SaveIndicator />
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                {/* Center section - Bookmark + Document Title with Popover */}
+                <div className="flex-shrink-0 flex items-center gap-1">
+                  {isEditMode ? (
+                    /* Edit mode: Show version name input */
+                    <VersionNameInput />
+                  ) : (
+                    /* Read mode: Bookmark + title popover */
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleToggleStar}
+                        className="h-8 w-8"
+                        title={
+                          isStarred
+                            ? "Remove from favorites"
+                            : "Add to favorites"
+                        }
+                      >
+                        <Bookmark
+                          className={`h-4 w-4 ${
+                            isStarred ? "fill-current" : ""
+                          }`}
+                        />
+                      </Button>
+                      <DocumentTitlePopover
+                        document={document}
+                        versions={sortedVersions}
+                        activeVersionId={activeVersionId}
+                        activeVersionName={activeVersion?.version_name || ""}
+                        onVersionChange={handleVersionChange}
+                        onCreateNew={() => setCreateVersionModalOpen(true)}
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* Right section */}
+                <div className="flex items-center gap-3 flex-1 justify-end">
+                  {/* Edit mode: Save/Discard buttons */}
+                  {isEditMode && (
+                    <EditModeButtons setIsEditMode={setIsEditMode} />
+                  )}
+
+                  {/* Read mode: EcoBadge */}
                   {!isEditMode && <EcoBadge />}
-                  <EditorActionButtons
-                    isEditMode={isEditMode}
-                    setIsEditMode={setIsEditMode}
-                  />
+
+                  {/* User menu */}
+                  <HeaderUserMenu />
                 </div>
               </div>
               {/* Gradient fade */}
@@ -807,10 +1270,31 @@ function DocumentTextView() {
 
       <CreateVersionDialog
         document={document}
-        handleGenerateVersion={handleGenerateVersion}
+        handleCreateVersion={handleCreateVersion}
         onClose={handleCloseCreateVersionModal}
       />
       <DialogTrigger className="hidden" />
+
+      {/* Confirmation dialog for leaving edit mode */}
+      <AlertDialog open={showBackConfirmation} onOpenChange={setShowBackConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. If you leave now, your changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => router.push("/library")}
+              className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+            >
+              Discard and leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

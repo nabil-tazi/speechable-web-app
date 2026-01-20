@@ -2,7 +2,6 @@ import Link from "next/link";
 import { getCurrentUserProfile } from "@/app/features/users/models";
 import { createClient } from "@/app/lib/supabase/server";
 import UserMenu from "./components/user-menu";
-import PDFUploader from "./features/pdf/components/pdf-uploader";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -59,7 +58,20 @@ export default async function Home() {
                 Welcome back, {userProfile?.display_name || user.email}
               </p>
 
-              <PDFUploader userId={user.id} />
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link
+                  href="/library"
+                  className="inline-flex justify-center items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  Go to Library
+                </Link>
+                <Link
+                  href="/library/new-document"
+                  className="inline-flex justify-center items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  Upload New Document
+                </Link>
+              </div>
 
               {!userProfile?.display_name && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
