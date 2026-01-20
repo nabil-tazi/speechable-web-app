@@ -7,7 +7,7 @@ import { useAudioPlayer } from "@/app/features/audio/hooks/use-audio-player";
 import { Plus, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
+import { CreateVersionDialogLegacy as CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog-legacy";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { DocumentVersionContent } from "@/app/features/documents/components/document-version-content2";
 import { generateWithAi } from "@/app/features/generate-with-ai";

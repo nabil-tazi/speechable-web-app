@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   Check,
 } from "lucide-react";
+import { useAppSettings } from "@/app/features/app-settings/context";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TransitionPanel } from "@/components/ui/transition-panel";
 import { Input } from "@/components/ui/input";
@@ -313,6 +314,7 @@ export default function NewDocumentPage() {
   const [user, setUser] = useState<any>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const router = useRouter();
+  const { debugMode } = useAppSettings();
 
   // Form states for different modes
   const [urlInput, setUrlInput] = useState("");
@@ -482,7 +484,96 @@ export default function NewDocumentPage() {
     });
   };
 
-  // Process PDF document - runs both extractors for comparison
+  // Helper function to create document from extraction data
+  const createDocumentFromExtraction = async (
+    file: File,
+    extractorData: {
+      text: string;
+      numPages: number;
+      metadata: any;
+      highlights?: TextHighlight[];
+    },
+    extractorName: "pdfjs" | "mupdf"
+  ) => {
+    const highlights = extractorData.highlights || [];
+
+    // Step 1: Clean the text by removing all removable highlights
+    const cleanedText = removeHighlightedSections(
+      extractorData.text,
+      highlights,
+      [...REMOVABLE_HIGHLIGHT_TYPES]
+    );
+
+    const thumbnailDataUrl = await generatePDFThumbnail(file);
+
+    // Step 2: Create document with CLEANED text
+    const doc = await createDocumentFromData({
+      title: extractorData.metadata?.Title || extractorData.metadata?.title || file.name.replace(".pdf", ""),
+      author: extractorData.metadata?.Author || extractorData.metadata?.author || "",
+      text: cleanedText,
+      file_type: "pdf",
+      mime_type: file.type,
+      filename: file.name,
+      page_count: extractorData.numPages,
+      file_size: file.size,
+      metadata: {
+        extractedAt: new Date().toISOString(),
+        processingMethod: `${extractorName}-verified-sections`,
+        ...extractorData.metadata,
+      },
+      thumbnailDataUrl,
+    });
+
+    // Step 3: Get verified sections from highlights (no LLM)
+    const ttsSections = getTTSSections(extractorData.text, highlights);
+
+    // Step 4: Create blocks directly from TTSSections (simpler flow)
+    const documentTitle = extractorData.metadata?.Title || extractorData.metadata?.title || file.name.replace(".pdf", "");
+
+    // If no sections detected, create a default section with all content
+    const sectionsToConvert = ttsSections.length > 0
+      ? ttsSections
+      : [{ title: documentTitle, level: 1, content: cleanedText }];
+
+    // Generate blocks directly from TTSSections
+    const blocks = convertTTSSectionsToBlocks(sectionsToConvert);
+
+    // Generate processed_text from blocks (for backward compatibility with TTS)
+    const processedTextJson = convertBlocksToProcessedText(blocks);
+
+    const { error: versionError } = await createDocumentVersionAction({
+      document_id: doc.id,
+      version_name: "Original",
+      processed_text: processedTextJson,
+      blocks,
+      processing_type: "1",
+      processing_metadata: {
+        sectionsCount: sectionsToConvert.length,
+        blocksCount: blocks.length,
+        highlightsRemoved: highlights?.length || 0,
+        source: ttsSections.length > 0 ? "verified-sections" : "full-document",
+        extractor: extractorName,
+      },
+    });
+
+    if (versionError) {
+      console.error("[createDocumentFromExtraction] Failed to create version:", versionError);
+    } else {
+      // Update document with processed_text for block regeneration
+      const processedTextObject = JSON.parse(processedTextJson);
+      const { error: updateError } = await updateDocumentAction(doc.id, {
+        processed_text: processedTextObject,
+      });
+
+      if (updateError) {
+        console.error("[createDocumentFromExtraction] Failed to update document processed_text:", updateError);
+      }
+    }
+
+    return doc;
+  };
+
+  // Process PDF document - runs extractors based on debug mode
   const processPDFDocument = async (file: File) => {
     if (!user) {
       setError("You must be logged in to create documents");
@@ -496,7 +587,30 @@ export default function NewDocumentPage() {
       // Convert file to base64 for server action
       const base64Data = await fileToBase64(file);
 
-      // Run both extractors in parallel, plus PDF.js superscript detection for MuPDF
+      // In non-debug mode, only run MuPDF and create document directly
+      if (!debugMode) {
+        const mupdfResult = await processPDFWithMuPDFAction(base64Data, file.name);
+
+        if (mupdfResult.error || !mupdfResult.data) {
+          throw new Error(mupdfResult.error || "Failed to process PDF with MuPDF");
+        }
+
+        const doc = await createDocumentFromExtraction(
+          file,
+          {
+            text: mupdfResult.data.text,
+            numPages: mupdfResult.data.numPages,
+            metadata: mupdfResult.data.metadata,
+            highlights: mupdfResult.data.documentHighlights || [],
+          },
+          "mupdf"
+        );
+
+        router.push(`/library/${doc.id}`);
+        return;
+      }
+
+      // Debug mode: Run both extractors in parallel for comparison
       const [pdfjsResult, mupdfResult, fontBasedSuperscripts] = await Promise.all([
         // PDF.js runs client-side with enhanced processing
         (async () => {
@@ -598,7 +712,7 @@ export default function NewDocumentPage() {
     }
   };
 
-  // Create document from selected extractor result
+  // Create document from selected extractor result (used in debug mode comparison view)
   const createDocumentFromComparison = async () => {
     if (!comparisonResult || !user) return;
 
@@ -610,70 +724,17 @@ export default function NewDocumentPage() {
       const extractorData = selectedExtractor === "pdfjs"
         ? comparisonResult.pdfjs
         : comparisonResult.mupdf;
-      const highlights = extractorData.highlights;
 
-      // Step 1: Clean the text by removing all removable highlights
-      const cleanedText = removeHighlightedSections(
-        extractorData.text,
-        highlights,
-        [...REMOVABLE_HIGHLIGHT_TYPES]
+      const doc = await createDocumentFromExtraction(
+        comparisonResult.file,
+        {
+          text: extractorData.text,
+          numPages: extractorData.numPages,
+          metadata: extractorData.metadata,
+          highlights: extractorData.highlights,
+        },
+        selectedExtractor
       );
-
-      const thumbnailDataUrl = await generatePDFThumbnail(comparisonResult.file);
-
-      // Step 2: Create document with CLEANED text
-      const doc = await createDocumentFromData({
-        title: extractorData.metadata?.Title || extractorData.metadata?.title || comparisonResult.file.name.replace(".pdf", ""),
-        author: extractorData.metadata?.Author || extractorData.metadata?.author || "",
-        text: cleanedText,
-        file_type: "pdf",
-        mime_type: comparisonResult.file.type,
-        filename: comparisonResult.file.name,
-        page_count: extractorData.numPages,
-        file_size: comparisonResult.file.size,
-        metadata: {
-          extractedAt: new Date().toISOString(),
-          processingMethod: `${selectedExtractor}-verified-sections`,
-          ...extractorData.metadata,
-        },
-        thumbnailDataUrl,
-      });
-
-      // Step 3: Get verified sections from highlights (no LLM)
-      const ttsSections = getTTSSections(extractorData.text, highlights);
-
-      // Step 4: Create blocks directly from TTSSections (simpler flow)
-      const documentTitle = extractorData.metadata?.Title || extractorData.metadata?.title || comparisonResult.file.name.replace(".pdf", "");
-
-      // If no sections detected, create a default section with all content
-      const sectionsToConvert = ttsSections.length > 0
-        ? ttsSections
-        : [{ title: documentTitle, level: 1, content: cleanedText }];
-
-      // Generate blocks directly from TTSSections
-      const blocks = convertTTSSectionsToBlocks(sectionsToConvert);
-
-      // Generate processed_text from blocks (for backward compatibility with TTS)
-      const processedTextJson = convertBlocksToProcessedText(blocks);
-
-      const { error: versionError } = await createDocumentVersionAction({
-        document_id: doc.id,
-        version_name: "Original",
-        processed_text: processedTextJson,
-        blocks,
-        processing_type: "1",
-        processing_metadata: {
-          sectionsCount: sectionsToConvert.length,
-          blocksCount: blocks.length,
-          highlightsRemoved: highlights?.length || 0,
-          source: ttsSections.length > 0 ? "verified-sections" : "full-document",
-          extractor: selectedExtractor,
-        },
-      });
-
-      if (versionError) {
-        console.error("[createDocumentFromComparison] Failed to create version:", versionError);
-      }
 
       router.push(`/library/${doc.id}`);
     } catch (err) {

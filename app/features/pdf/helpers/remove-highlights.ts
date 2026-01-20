@@ -1,6 +1,7 @@
 import type { TextHighlight, HighlightType } from "@/app/features/pdf/types";
 import { REMOVABLE_HIGHLIGHT_TYPES } from "@/app/features/pdf/types";
-import { detectReferences } from "@/app/features/pdf/utils/paragraph-joining";
+import { detectReferences } from "@/app/features/pdf/utils/reference-detection";
+import { isSentenceEnding } from "@/app/features/pdf/utils/pdf-utils-common";
 
 /**
  * Calculate merged ranges from highlights for removal.
@@ -65,7 +66,8 @@ function removeRangesFromText(
     const trimmedAfter = after.trimStart();
 
     // Check if first part ends with sentence-ending punctuation
-    const endsWithSentence = /[.!?]["'»)}\]]*$/.test(trimmedBefore);
+    // Uses isSentenceEnding which handles abbreviations like "Mr.", "et al.", etc.
+    const endsWithSentence = isSentenceEnding(trimmedBefore);
 
     // Check if second part starts with a capital letter
     // Exclude parenthetical starts like "(ITO)" - these are not paragraph starts
@@ -117,9 +119,11 @@ export function removeHighlightedSections(
   }
 
   const shouldRemoveReferences = typesToRemove.includes('reference');
+  const hasExistingRefHighlights = highlights.some(h => h.type === 'reference');
 
-  if (shouldRemoveReferences) {
-    // Two-pass approach: remove artifacts first, then detect and remove references
+  if (shouldRemoveReferences && !hasExistingRefHighlights) {
+    // Two-pass approach: only when we need to DETECT references via regex
+    // (no font-based reference highlights provided)
 
     // Pass 1: Remove all non-reference highlights
     const nonRefTypes = typesToRemove.filter(t => t !== 'reference');
@@ -132,11 +136,6 @@ export function removeHighlightedSections(
 
     // Pass 2: Detect references on cleaned text (catches refs that were split by artifacts)
     const detectedRefs = detectReferences(cleanedText);
-
-    // Also include any pre-existing reference highlights that survived the first pass
-    // (need to adjust their positions based on what was removed)
-    // For simplicity, we just detect fresh on the cleaned text
-
     if (detectedRefs.length > 0) {
       cleanedText = removeRangesFromText(cleanedText, detectedRefs);
     }
@@ -266,11 +265,10 @@ export function getTTSSections(
   }
 
   // Get section markers sorted by position
-  // Prefer section_start (from PDF outline) over heading (from font detection)
-  // If outline exists (section_start markers), use only those to avoid duplication
-  const hasOutline = highlights.some(h => h.type === 'section_start');
+  // Use only 'heading' type - these are now enriched with outline metadata
+  // (sectionTitle, sectionLevel, verified) when a PDF outline is available
   const sectionMarkers = highlights
-    .filter(h => hasOutline ? h.type === 'section_start' : h.type === 'heading')
+    .filter(h => h.type === 'heading')
     .sort((a, b) => a.start - b.start);
 
   if (sectionMarkers.length === 0) {

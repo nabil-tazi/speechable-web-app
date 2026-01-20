@@ -437,11 +437,12 @@ export async function processPDFWithMuPDFAction(
 
     // Join lines into paragraphs (remove mid-sentence line breaks)
     // Pass metadata author to help detect author blocks
+    // Pass PDF outline to enable outline match bonus in heading detection
     const metadataAuthor = typeof metadata.author === 'string' ? metadata.author : '';
-    const paragraphPages = joinLinesIntoParagraphs(processedPages, averageFontSize, { metadataAuthor });
+    const paragraphPages = joinLinesIntoParagraphs(processedPages, averageFontSize, { metadataAuthor }, pdfOutline);
 
     // Join pages ONCE to get consistent text and highlights for both document and sections
-    const joinedResult = joinPagesWithHyphenHandling(paragraphPages);
+    const joinedResult = joinPagesWithHyphenHandling(paragraphPages, pdfOutline);
     const cleanedText = joinedResult.text;
     const documentHighlights = joinedResult.highlights;
 
@@ -509,98 +510,11 @@ export async function processPDFWithMuPDFAction(
       // console.log('=========================================\n');
     }
 
-    // Insert section_start highlights for verified sections only
-    // These are permanent markers that won't be removed when hiding tagged sections
-    const sectionMarkers: TextHighlight[] = [];
-    for (const section of curatedSections) {
-      if (!section.verified) continue;
-
-      // Always use trimmed title for searching
-      const titleToFind = section.title.trim();
-
-      // Find the title position in the full text
-      // Try multiple search strategies
-      let titlePos = -1;
-      let actualLength = titleToFind.length;
-
-      // Strategy 1: Exact match near expected position
-      const searchStart = Math.max(0, section.startOffset - titleToFind.length - 100);
-      titlePos = cleanedText.indexOf(titleToFind, searchStart);
-
-      // Strategy 2: If not found or found after content start, try from beginning
-      if (titlePos === -1 || titlePos >= section.startOffset) {
-        titlePos = cleanedText.indexOf(titleToFind);
-      }
-
-      // Strategy 3: Try case-insensitive search
-      if (titlePos === -1) {
-        const lowerText = cleanedText.toLowerCase();
-        const lowerTitle = titleToFind.toLowerCase();
-        titlePos = lowerText.indexOf(lowerTitle);
-      }
-
-      // Strategy 4: Whitespace-normalized search (handles "1Introduction" vs "1 Introduction")
-      if (titlePos === -1) {
-        // Remove all spaces from both title and create a pattern to find it
-        const titleNoSpaces = titleToFind.replace(/\s+/g, '');
-        const textNoSpaces = cleanedText.replace(/\s+/g, '');
-        const posInNoSpaces = textNoSpaces.toLowerCase().indexOf(titleNoSpaces.toLowerCase());
-
-        if (posInNoSpaces !== -1) {
-          // Found in space-collapsed text, now find the actual position in original text
-          // Count characters in original text until we reach posInNoSpaces non-space chars
-          let nonSpaceCount = 0;
-          let actualPos = 0;
-          for (let i = 0; i < cleanedText.length && nonSpaceCount < posInNoSpaces; i++) {
-            if (!/\s/.test(cleanedText[i])) {
-              nonSpaceCount++;
-            }
-            actualPos = i + 1;
-          }
-          // Now find where the title ends (titleNoSpaces.length non-space chars from actualPos)
-          let endNonSpaceCount = 0;
-          let actualEnd = actualPos;
-          for (let i = actualPos; i < cleanedText.length && endNonSpaceCount < titleNoSpaces.length; i++) {
-            if (!/\s/.test(cleanedText[i])) {
-              endNonSpaceCount++;
-            }
-            actualEnd = i + 1;
-          }
-          titlePos = actualPos;
-          actualLength = actualEnd - actualPos;
-          // console.log(`[MuPDF] Whitespace-normalized match: "${titleToFind}" found at ${titlePos}-${titlePos + actualLength}`);
-        }
-      }
-
-      if (titlePos !== -1) {
-        // Format the title for display:
-        // 1. Remove line breaks
-        // 2. Add space between number and text (e.g., "2.3Difference" → "2.3 Difference")
-        const formattedTitle = titleToFind
-          .replace(/[\r\n]+/g, ' ')  // Remove line breaks
-          .replace(/(\d+\.?\d*\.?\d*)\s*([A-Za-z])/g, '$1 $2')  // Add space after number prefix
-          .replace(/\s+/g, ' ')  // Normalize multiple spaces
-          .trim();
-
-        sectionMarkers.push({
-          type: 'section_start',
-          start: titlePos,
-          end: titlePos + actualLength,
-          sectionTitle: formattedTitle,
-          sectionLevel: section.level,
-        });
-        // console.log(`[MuPDF] Section marker: "${formattedTitle}" at pos ${titlePos}-${titlePos + actualLength}`);
-      } else {
-        // console.log(`[MuPDF] Section title NOT FOUND: "${titleToFind}" (startOffset: ${section.startOffset})`);
-        // Debug: show nearby text
-        // const nearby = cleanedText.slice(Math.max(0, section.startOffset - 50), section.startOffset + 50);
-        // console.log(`[MuPDF] Nearby text: "${nearby}"`);
-      }
-    }
-
-    // Merge section markers into document highlights
-    const allHighlights = [...documentHighlights, ...sectionMarkers];
-    // console.log(`[MuPDF] Added ${sectionMarkers.length} section_start markers for verified sections`);
+    // NOTE: section_start highlights are no longer created here.
+    // Instead, the PDF outline is passed to detectHeadingsFromText via joinPagesWithHyphenHandling,
+    // which enriches heading highlights with outline metadata (sectionLevel, sectionTitle, verified).
+    // This ensures heading boundaries come from font-based detection (correct) rather than
+    // outline title search (which could have incorrect boundaries, e.g., "Methods" vs "2. Methods").
 
     // cleanedText and documentHighlights already computed above (before section detection)
     // This ensures the same highlights are used for both document display and section cleanup
@@ -610,12 +524,6 @@ export async function processPDFWithMuPDFAction(
     }));
 
     const processingTime = performance.now() - startTime;
-
-    // Target debug: check text being returned
-    if (cleanedText.includes('Outside')) {
-      const idx = cleanedText.indexOf('Outside');
-      console.log(`[MUPDF_RETURN] text around "Outside": "${cleanedText.slice(Math.max(0, idx-10), idx+60).replace(/\n/g, '\\n')}"`);
-    }
 
     return {
       data: {
@@ -630,7 +538,7 @@ export async function processPDFWithMuPDFAction(
         detectedSections: curatedSections,
         sectionTree,
         detectedLettrines,
-        documentHighlights: allHighlights.length > 0 ? allHighlights : undefined,
+        documentHighlights: documentHighlights.length > 0 ? documentHighlights : undefined,
         pdfOutline: pdfOutline.length > 0 ? pdfOutline : undefined,
         outlineSections: outlineSections && outlineSections.length > 0 ? outlineSections : undefined,
       },

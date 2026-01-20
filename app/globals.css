@@ -69,6 +69,7 @@
 
 body {
   font-family: var(--font-satoshi);
+  font-weight: 500;
 }
 
 :root {
@@ -174,4 +175,30 @@ body {
 
 .animate-pulse-spin {
   animation: pulse-spin 4s ease-in-out infinite;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
+@keyframes marquee-ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(var(--marquee-distance, -200px));
+  }
+}
+
+.marquee-ticker {
+  animation: marquee-ticker var(--marquee-duration, 5s) linear infinite;
+}
+
+.marquee-hover-container:hover .marquee-ticker-hover {
+  animation: marquee-ticker var(--marquee-duration, 5s) linear infinite;
 }

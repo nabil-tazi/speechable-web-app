@@ -126,10 +126,10 @@ export function convertBlocksToProcessedText(blocks: Block[]): string {
         content: { speech: [] },
       };
     } else if (block.type === "text") {
-      // Add to current section or create default section
+      // Add to current section or create default section (no heading for pre-heading content)
       if (!currentSection) {
         currentSection = {
-          title: "Content",
+          title: "",
           content: { speech: [] },
         };
       }

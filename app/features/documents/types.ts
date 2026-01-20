@@ -28,7 +28,7 @@ export interface Document {
   user_id: string;
   thumbnail_path?: string;
   raw_text?: string;
-  processed_text?: string; // Moved from document_versions for block regeneration
+  processed_text?: ProcessedText; // JSONB in DB - stores the object for block regeneration
   document_type: string;
   language?: string;
   page_count?: number;

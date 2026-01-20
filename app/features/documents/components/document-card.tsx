@@ -10,7 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { File, GalleryHorizontalEnd, Globe, Pen } from "lucide-react";
+import { File, GalleryHorizontalEnd, Globe, Pen, Bookmark } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   getLanguageName,
@@ -29,6 +29,7 @@ import {
 import { DOCUMENT_TYPES } from "../constants";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useSidebarData } from "@/app/features/sidebar/context";
 interface DocumentCardProps {
   doc: DocumentWithVersions;
   onClick?: () => void;
@@ -76,6 +77,15 @@ export function DocumentCard({
 
   const { updateDocument } = useDocumentsActions();
   const router = useRouter();
+  const { starredDocuments, refreshStarred } = useSidebarData();
+  const isStarred = starredDocuments.some((s) => s.id === doc.id);
+
+  const handleToggleStar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const { toggleDocumentStarredAction } = await import("../actions");
+    await toggleDocumentStarredAction(doc.id);
+    await refreshStarred();
+  };
 
   const handleCancel = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -128,7 +138,21 @@ export function DocumentCard({
       className={`flex flex-col gap-3 group ${onClick && "cursor-pointer"}`}
       onClick={onClick}
     >
-      <Card className="relative w-50 h-32 p-0 overflow-hidden bg-gray-50 group-hover:bg-gray-100 border-none">
+      <Card className="relative w-50 h-32 p-0 overflow-hidden bg-gray-200 group-hover:bg-gray-200 border-none">
+        <button
+          onClick={handleToggleStar}
+          className={`absolute top-2 left-2 z-10 size-6 flex items-center justify-center rounded transition-all ${
+            isStarred
+              ? "opacity-100 bg-transparent group-hover:bg-white group-hover:border group-hover:border-gray-200"
+              : "opacity-0 group-hover:opacity-100 bg-white border border-gray-200 hover:bg-gray-50"
+          }`}
+        >
+          <Bookmark
+            className={`w-3.5 h-3.5 text-gray-600 ${
+              isStarred ? "fill-current" : ""
+            }`}
+          />
+        </button>
         {/* <Badge
           variant="outline"
           className="absolute text-xs bg-white top-2 left-2 z-1"
@@ -138,10 +162,10 @@ export function DocumentCard({
           {doc.versions.length > 1 ? "s" : ""}
         </Badge> */}
         <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <div className="flex h-full pt-8 group-hover:pt-4 transition-all duration-200">
+          <div className="flex h-full pt-8 group-hover:pt-6 transition-all duration-200">
             {doc?.thumbnail_path && (
               <div
-                className="w-32 h-full rounded-tl-sm rounded-tr-sm shadow-[0px_2px_4px_0px_rgba(0,0,0,0.08)] bg-cover bg-no-repeat opacity-70 mx-auto"
+                className="w-32 h-full rounded-tl-sm rounded-tr-sm shadow-[0px_2px_4px_0px_rgba(0,0,0,0.08)] bg-cover bg-no-repeat opacity-70 mx-auto group-hover:scale-115 transition-transform duration-200"
                 style={{
                   backgroundImage: `url("${doc.thumbnail_path}")`,
                 }}
@@ -209,17 +233,15 @@ export function DocumentCard({
           {/* Hover Actions */}
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <PopoverTrigger asChild>
-              <Button
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsOpen(true);
                 }}
-                variant="secondary"
-                size="icon"
-                className="size-8 bg-white hover:bg-gray-50 border-1 border-gray-200"
+                className="size-6 flex items-center justify-center rounded bg-white hover:bg-gray-50 border border-gray-200"
               >
-                <Pen className="w-4 h-4" />
-              </Button>
+                <Pen className="w-3.5 h-3.5 text-gray-600" />
+              </button>
             </PopoverTrigger>
           </div>
 

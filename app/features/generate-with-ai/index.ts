@@ -1,15 +1,95 @@
 import { createAudioVersionAction } from "../audio/actions";
 import { Language } from "../audio/voice-types";
 import { createDocumentVersionAction } from "../documents/actions";
-import { createAudioSegmentAction } from "../audio/actions"; // Add this import
+import { createAudioSegmentAction } from "../audio/actions";
 import { isStructuredContent } from "./audio-generation";
 import { convertProcessedTextToBlocks } from "../block-editor";
 import { identifySections } from "../pdf/helpers/identify-sections";
-import { processText } from "../pdf/helpers/process-text";
 import { getAudioDurationAccurate } from "../audio/utils";
-import { DocumentVersion } from "../documents/types";
+import { DocumentVersion, ProcessedSection, ProcessedText } from "../documents/types";
 import { PROCESSING_ARRAY } from "../pdf/types";
 import { assignVoicesToReaders } from "../documents/utils";
+
+// DeepInfra endpoint helpers
+async function processWithDeepInfraNatural(
+  text: string,
+  title?: string
+): Promise<string> {
+  const response = await fetch("/api/deepinfra-text/natural", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, title }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || "Natural processing failed");
+  }
+
+  const data = await response.json();
+  return data.result;
+}
+
+async function processWithDeepInfraLecture(
+  text: string,
+  title?: string
+): Promise<string> {
+  const response = await fetch("/api/deepinfra-text/lecture", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, title }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || "Lecture processing failed");
+  }
+
+  const data = await response.json();
+  return data.result;
+}
+
+async function processWithDeepInfraConversational(
+  text: string,
+  title?: string
+): Promise<{ text: string; reader_id: string }[]> {
+  const response = await fetch("/api/deepinfra-text/conversational", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, title }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || "Conversational processing failed");
+  }
+
+  const data = await response.json();
+  return data.dialogue;
+}
+
+// Helper to create ProcessedSection from text
+function createSectionFromText(text: string, title: string): ProcessedSection {
+  return {
+    title,
+    content: {
+      speech: [{ text, reader_id: "Narrator" }],
+    },
+  };
+}
+
+// Helper to create ProcessedSection from dialogue
+function createSectionFromDialogue(
+  dialogue: { text: string; reader_id: string }[],
+  title: string
+): ProcessedSection {
+  return {
+    title,
+    content: {
+      speech: dialogue,
+    },
+  };
+}
 
 type GenerateWithAiInput = {
   documentId: string;
@@ -19,9 +99,9 @@ type GenerateWithAiInput = {
   voicesArray: string[];
   targetLanguage?: Language;
   documentTitle?: string;
+  skipAudio?: boolean;
+  documentProcessedText?: ProcessedText; // For Original level, reuse existing processed_text
 };
-
-type SectionTTSInput = any; // Replace with your actual type
 
 export async function generateWithAi({
   documentId,
@@ -31,80 +111,113 @@ export async function generateWithAi({
   voicesArray,
   targetLanguage = "en",
   documentTitle = "Document",
+  skipAudio = false,
+  documentProcessedText,
 }: GenerateWithAiInput) {
   let processedResult;
 
   // Process text based on processing level
-  if (processingLevel === 0 || processingLevel === 1) {
-    // Section-based processing
-    try {
-      console.log("Starting section identification...");
-      const sectionIdentificationResult = await identifySections(rawInputText);
-
-      console.log(
-        "Section identification result:",
-        sectionIdentificationResult
+  if (processingLevel === 0) {
+    // Level 0: Original - Requires document's existing processed_text
+    if (!documentProcessedText) {
+      throw new Error(
+        "Cannot create Original version: document has no processed_text. Please try uploading the original document again."
       );
-      console.log("SECTION IDENTIFICATION SUCCESS");
+    }
+    console.log("Using existing document processed_text for Original version");
+    processedResult = {
+      cleanedText: documentProcessedText,
+      metadata: {
+        processingLevel,
+        source: "document_processed_text",
+        totalSections: documentProcessedText.processed_text?.sections?.length || 0,
+      },
+    };
+  } else if (processingLevel === 1) {
+    // Level 1: Natural - Section-based processing with DeepInfra
+    try {
+      console.log("Starting section identification for Natural processing...");
+      const sectionIdentificationResult = await identifySections(rawInputText);
 
       const structuredDocumentInput: { title: string; content: string }[] =
         sectionIdentificationResult.structuredDocument;
 
-      const processedSections: SectionTTSInput[] = [];
+      const processedSections: ProcessedSection[] = [];
 
-      // Process all sections in parallel
-      console.log("Processing sections in parallel...");
+      // Process all sections in parallel with DeepInfra Natural endpoint
+      console.log("Processing sections with DeepInfra Natural...");
       const sectionPromises = structuredDocumentInput.map(
         async ({ title, content }) => {
-          console.log("CALLING PROCESS TEXT for: ", title);
-          const { cleanedText } = await processText(
-            content,
-            title,
-            processingLevel
-          );
-
-          console.log("Processed text for", title, ":", cleanedText);
-          return cleanedText;
+          console.log("Processing section (Natural):", title);
+          const result = await processWithDeepInfraNatural(content, title);
+          return createSectionFromText(result, title);
         }
       );
 
-      // Wait for all sections to complete
       const results = await Promise.all(sectionPromises);
       processedSections.push(...results);
-
-      console.log("All sections processed:", processedSections);
 
       processedResult = {
         cleanedText: { processed_text: { sections: processedSections } },
         metadata: { processingLevel, totalSections: processedSections.length },
       };
     } catch (error) {
-      console.error("Error in section-based processing:", error);
+      console.error("Error in Natural processing:", error);
       throw new Error(
-        `Failed to process sections: ${
+        `Failed to process Natural: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  } else if (processingLevel === 2) {
+    // Level 2: Lecture - Process entire document with DeepInfra
+    try {
+      console.log("Starting Lecture processing with DeepInfra...");
+      const result = await processWithDeepInfraLecture(rawInputText, documentTitle);
+      const section = createSectionFromText(result, ""); // Empty title - no heading
+
+      processedResult = {
+        cleanedText: { processed_text: { sections: [section] } },
+        metadata: { processingLevel, processingMethod: "deepinfra-lecture" },
+      };
+      console.log("Lecture processing completed");
+    } catch (error) {
+      console.error("Error in Lecture processing:", error);
+      throw new Error(
+        `Failed to process Lecture: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  } else if (processingLevel === 3) {
+    // Level 3: Conversational - Process entire document with DeepInfra
+    try {
+      console.log("Starting Conversational processing with DeepInfra...");
+      const dialogue = await processWithDeepInfraConversational(
+        rawInputText,
+        documentTitle
+      );
+      const section = createSectionFromDialogue(dialogue, ""); // Empty title - no heading
+
+      processedResult = {
+        cleanedText: { processed_text: { sections: [section] } },
+        metadata: {
+          processingLevel,
+          processingMethod: "deepinfra-conversational",
+          dialogueCount: dialogue.length,
+        },
+      };
+      console.log("Conversational processing completed, dialogue count:", dialogue.length);
+    } catch (error) {
+      console.error("Error in Conversational processing:", error);
+      throw new Error(
+        `Failed to process Conversational: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
     }
   } else {
-    // Conversation processing (levels 2 & 3)
-    try {
-      console.log("Starting conversation processing...");
-      processedResult = await processText(
-        rawInputText,
-        documentTitle,
-        processingLevel
-      );
-
-      console.log("Conversation processing completed:", processedResult);
-    } catch (error) {
-      console.error("Error in conversation processing:", error);
-      throw new Error(
-        `Failed to process conversation: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+    throw new Error(`Invalid processing level: ${processingLevel}`);
   }
 
   console.log("Text processing completed, creating document version...");
@@ -136,6 +249,15 @@ export async function generateWithAi({
   }
 
   console.log("Document version created:", documentVersion.id);
+
+  // Skip audio generation if requested
+  if (skipAudio) {
+    console.log("Skipping audio generation (skipAudio=true)");
+    return {
+      documentVersion,
+      audioVersion: null,
+    };
+  }
 
   // Create audio version
   console.log("Creating audio version...");

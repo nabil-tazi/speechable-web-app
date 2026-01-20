@@ -18,9 +18,66 @@ function isEnglishVoice(voiceId: string): boolean {
   return voiceId.startsWith("a") || voiceId.startsWith("b");
 }
 
+// Get specific unavailability reason from capability result
+function getUnavailabilityReason(result: {
+  hasWebGPU?: boolean;
+  modelCached?: boolean;
+  testGenerationSuccess?: boolean;
+  testGenerationTimeMs?: number;
+  testAudioDurationMs?: number;
+  error?: string;
+} | null | undefined): { title: string; description: string } {
+  if (!result) {
+    return {
+      title: "Eco mode unavailable",
+      description: "Could not determine device capabilities.",
+    };
+  }
+
+  // WebGPU not supported
+  if (!result.hasWebGPU) {
+    return {
+      title: "WebGPU not supported",
+      description: "Your browser doesn't support WebGPU. Try Chrome 113+, Edge 113+, or Safari 18+.",
+    };
+  }
+
+  // Model failed to load
+  if (!result.modelCached) {
+    return {
+      title: "Model not loaded",
+      description: result.error || "The TTS model failed to load. Try refreshing the page.",
+    };
+  }
+
+  // Generation too slow (GPU not performant enough)
+  if (!result.testGenerationSuccess && result.testGenerationTimeMs && result.testAudioDurationMs) {
+    const rtf = result.testGenerationTimeMs / result.testAudioDurationMs;
+    return {
+      title: "GPU not fast enough",
+      description: `Your GPU generates audio at ${rtf.toFixed(1)}x real-time speed, which is too slow for seamless playback. A dedicated GPU is recommended.`,
+    };
+  }
+
+  // Test generation failed for other reasons
+  if (!result.testGenerationSuccess) {
+    return {
+      title: "Generation test failed",
+      description: result.error || "Audio generation test failed. Your device may not be compatible.",
+    };
+  }
+
+  // Fallback
+  return {
+    title: "Eco mode unavailable",
+    description: result.error || "Your device doesn't meet the requirements for local audio generation.",
+  };
+}
+
 export function EcoBadge() {
   const {
     capabilityStatus,
+    capabilityResult,
     ecoDisabled,
     setEcoDisabled,
     voiceQuality,
@@ -54,29 +111,34 @@ export function EcoBadge() {
   if (isChecking) {
     return (
       <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 w-[82px]">
-        <Leaf className="w-4 h-4" />
+        <span className="w-3.5 flex items-center justify-center">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        </span>
         <span className="text-xs">Eco</span>
-        <Loader2 className="w-3.5 h-3.5 ml-auto animate-spin" />
+        <Leaf className="w-4 h-4 ml-auto" />
       </div>
     );
   }
 
   // Eco unavailable - show disabled with info tooltip (takes priority over Expressive N/A)
   if (isUnavailable) {
+    const { title, description } = getUnavailabilityReason(capabilityResult);
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
-              <Leaf className="w-4 h-4" />
+              <span className="w-3.5 flex items-center justify-center">
+                <CircleHelp className="w-3.5 h-3.5" />
+              </span>
               <span className="text-xs">Eco</span>
-              <CircleHelp className="w-3.5 h-3.5 ml-auto" />
+              <Leaf className="w-4 h-4 ml-auto" />
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs">
-            <p className="font-medium">Eco mode unavailable</p>
+            <p className="font-medium">{title}</p>
             <p className="text-xs opacity-80 mt-1">
-              Requires WebGPU and a compatible GPU. Try Chrome or Edge on a device with dedicated graphics.
+              {description}
             </p>
           </TooltipContent>
         </Tooltip>
@@ -91,9 +153,11 @@ export function EcoBadge() {
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
-              <Leaf className="w-4 h-4" />
+              <span className="w-3.5 flex items-center justify-center">
+                <CircleHelp className="w-3.5 h-3.5" />
+              </span>
               <span className="text-xs">Eco</span>
-              <CircleHelp className="w-3.5 h-3.5 ml-auto" />
+              <Leaf className="w-4 h-4 ml-auto" />
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs">
@@ -114,9 +178,11 @@ export function EcoBadge() {
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
-              <Leaf className="w-4 h-4" />
+              <span className="w-3.5 flex items-center justify-center">
+                <CircleHelp className="w-3.5 h-3.5" />
+              </span>
               <span className="text-xs">Eco</span>
-              <CircleHelp className="w-3.5 h-3.5 ml-auto" />
+              <Leaf className="w-4 h-4 ml-auto" />
             </div>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs">
@@ -143,13 +209,15 @@ export function EcoBadge() {
                 "bg-gray-100 text-gray-600 hover:bg-gray-200"
               )}
             >
-              <Leaf className="w-4 h-4 text-brand-primary fill-brand-primary-lighter" />
-              <span className="text-xs font-medium">Eco</span>
               {/* Green LED indicator with pulse */}
-              <span className="relative flex h-[7px] w-[7px] items-center justify-center ml-auto">
-                <span className="animate-ping [animation-duration:1.5s] absolute inline-flex h-[9px] w-[9px] rounded-full bg-brand-primary opacity-75" />
-                <span className="relative inline-flex rounded-full h-[7px] w-[7px] bg-brand-primary" />
+              <span className="w-3.5 flex items-center justify-center">
+                <span className="relative flex h-[7px] w-[7px] items-center justify-center">
+                  <span className="animate-ping [animation-duration:1.5s] absolute inline-flex h-[9px] w-[9px] rounded-full bg-brand-primary opacity-75" />
+                  <span className="relative inline-flex rounded-full h-[7px] w-[7px] bg-brand-primary" />
+                </span>
               </span>
+              <span className="text-xs font-medium">Eco</span>
+              <Leaf className="w-4 h-4 text-brand-primary fill-brand-primary-lighter ml-auto" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -179,12 +247,14 @@ export function EcoBadge() {
                 "bg-gray-100 text-gray-500 hover:bg-gray-200"
               )}
             >
-              <Leaf className="w-4 h-4" />
-              <span className="text-xs">Eco</span>
               {/* Grey LED indicator (off) */}
-              <span className="relative flex h-[7px] w-[7px] items-center justify-center ml-auto">
-                <span className="relative inline-flex rounded-full h-[7px] w-[7px] bg-gray-400" />
+              <span className="w-3.5 flex items-center justify-center">
+                <span className="relative flex h-[7px] w-[7px] items-center justify-center">
+                  <span className="relative inline-flex rounded-full h-[7px] w-[7px] bg-gray-400" />
+                </span>
               </span>
+              <span className="text-xs">Eco</span>
+              <Leaf className="w-4 h-4 ml-auto" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">

@@ -1,82 +1,68 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import React, { useMemo, useState, useTransition, Suspense } from "react";
+import React, { useMemo, useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
+import { Plus, Search, X } from "lucide-react";
+import Image from "next/image";
 import { NoDocuments } from "@/app/features/documents/components/no-documents";
 import { LibraryLoader } from "@/app/features/documents/components/library-loader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DocumentsProvider,
-  useGroupedDocuments,
-  formatDocumentType,
-  getDocumentCount,
+  useDocuments,
 } from "@/app/features/documents/context";
-import { Badge } from "@/components/ui/badge";
 import { DocumentCard } from "@/app/features/documents/components/document-card";
-import { Separator } from "@/components/ui/separator";
+import { HorizontalDocumentScroll } from "@/app/features/documents/components/horizontal-document-scroll";
+import { NewDocumentModal } from "@/app/features/documents/components/new-document-modal";
+import { useSidebarData } from "@/app/features/sidebar/context";
+import { useAppSettings } from "@/app/features/app-settings/context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { HeaderUserMenu } from "@/components/header-user-menu";
 
-// Separate component that uses useSearchParams
 function LibraryContent() {
-  const { groupedDocuments, loading } = useGroupedDocuments();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { documents, loading } = useDocuments();
+  const { starredDocuments } = useSidebarData();
+  const { debugMode } = useAppSettings();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [newDocModalOpen, setNewDocModalOpen] = useState(false);
 
-  // Add state for tracking the active tab locally
-  const [localActiveTab, setLocalActiveTab] = useState<string>("");
-  const [, startTransition] = useTransition();
-
-  // Get category filter from URL
-  const categoryFilter = searchParams.get("category");
-
-  // Create tab data from grouped documents
-  const availableCategories = useMemo(() => {
-    return Object.keys(groupedDocuments).filter(
-      (category) => groupedDocuments[category].length > 0
-    );
-  }, [groupedDocuments]);
-
-  // Current active tab (use 'all' when no filter is applied)
-  const urlActiveTab = categoryFilter || "all";
-  const activeTab = localActiveTab || urlActiveTab;
-
-  // Handle tab change with instant UI update
-  const handleTabChange = (value: string) => {
-    // Update local state immediately for instant UI feedback
-    setLocalActiveTab(value);
-
-    // Update URL in a transition to avoid blocking the UI
-    startTransition(() => {
-      if (value === "all") {
-        router.push("/library");
-      } else {
-        router.push(`/library?category=${value}`);
-      }
-      // Reset local state once URL is updated
-      setLocalActiveTab("");
-    });
-  };
-
-  // Get documents for current tab
-  const currentDocuments = useMemo(() => {
-    if (activeTab === "all") {
-      return groupedDocuments;
-    }
-
-    if (groupedDocuments[activeTab]) {
-      return { [activeTab]: groupedDocuments[activeTab] };
-    }
-
-    return {};
-  }, [groupedDocuments, activeTab]);
-
-  // Handle document selection - preserve category filter in URL
-  const handleDocumentClick = (docId: string) => {
-    if (activeTab !== "all") {
-      router.push(`/library/${docId}?category=${activeTab}`);
+  // Handle new document button click
+  const handleNewDocument = () => {
+    if (debugMode) {
+      // In debug mode, go to page for comparison view
+      router.push("/library/new-document");
     } else {
-      router.push(`/library/${docId}`);
+      // In normal mode, open modal for direct processing
+      setNewDocModalOpen(true);
     }
   };
+
+  // Filter documents by search query
+  const filteredDocuments = useMemo(() => {
+    if (!searchQuery.trim()) return documents;
+    const query = searchQuery.toLowerCase();
+    return documents.filter(
+      (doc) =>
+        doc.title?.toLowerCase().includes(query) ||
+        doc.filename.toLowerCase().includes(query)
+    );
+  }, [documents, searchQuery]);
+
+  // Get full document objects for starred documents
+  const starredDocs = useMemo(() => {
+    return starredDocuments
+      .map((s) => documents.find((d) => d.id === s.id))
+      .filter((doc): doc is NonNullable<typeof doc> => doc !== undefined);
+  }, [starredDocuments, documents]);
+
+  // Sort all documents by updated_at (newest first)
+  const sortedDocuments = useMemo(() => {
+    return [...filteredDocuments].sort(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+  }, [filteredDocuments]);
 
   // Show loading state
   if (loading) {
@@ -84,74 +70,110 @@ function LibraryContent() {
   }
 
   // Check if we have any documents
-  const hasDocuments = Object.keys(groupedDocuments).length > 0;
+  const hasDocuments = documents.length > 0;
 
   return (
-    <Tabs value={activeTab} onValueChange={handleTabChange}>
-      <div className="w-full flex justify-center p-16 pt-8">
-        <div className="max-w-7xl w-full space-y-6">
-          {hasDocuments && (
-            <>
-              {/* All Documents Tab */}
-              <TabsContent value="all" className="space-y-8">
-                {Object.entries(currentDocuments).map(
-                  ([documentType, docs]) => (
-                    <section key={documentType} className="space-y-4">
-                      {/* Section Header */}
-                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                        <div>
-                          <h2 className="text-lg font-semibold text-gray-900">
-                            {formatDocumentType(documentType)}
-                            {docs.length > 1 ? "s" : ""}
-                          </h2>
-                          <p className="text-sm text-gray-500">
-                            {getDocumentCount(docs)}
-                          </p>
-                        </div>
-                      </div>
+    <div className="bg-sidebar min-h-full">
+      {/* Header - sticky at top */}
+      <div className="sticky top-0 z-20">
+        <div className="px-4 h-12 flex items-center bg-sidebar">
+          {/* Left section - Logo */}
+          <div className="flex items-center gap-1 flex-1">
+            <Image src="/logo.svg" alt="Speechable" width={32} height={32} />
+            <span className="text-lg text-gray-900 font-semibold">
+              Speechable
+            </span>
+          </div>
 
-                      {/* Documents Grid */}
-                      <div className="flex flex-wrap gap-8">
-                        {docs.map((doc, index) => (
-                          <DocumentCard
-                            key={doc.id}
-                            doc={doc}
-                            onClick={() => handleDocumentClick(doc.id)}
-                            priority={index < 6} // First 6 cards are likely above the fold
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  )
-                )}
-              </TabsContent>
-
-              {availableCategories.map((category) => (
-                <TabsContent
-                  key={category}
-                  value={category}
-                  className="space-y-6"
+          {/* Center section - Search + New button */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search library..."
+                className="pl-9 pr-9 h-8 bg-white border-gray-200 text-sm"
+              />
+              {searchQuery && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  onClick={() => setSearchQuery("")}
                 >
-                  <div className="flex flex-wrap gap-4">
-                    {(currentDocuments[category] || []).map((doc, index) => (
-                      <DocumentCard
-                        key={doc.id}
-                        doc={doc}
-                        onClick={() => handleDocumentClick(doc.id)}
-                        priority={index < 6} // First 6 cards are likely above the fold
-                      />
-                    ))}
-                  </div>
-                </TabsContent>
-              ))}
+                  <X className="h-3 w-3 text-gray-400" />
+                </button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+              onClick={handleNewDocument}
+            >
+              <Plus className="h-4 w-4" />
+              New
+            </Button>
+          </div>
+
+          {/* Right section - User menu */}
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <HeaderUserMenu />
+          </div>
+        </div>
+        {/* Gradient fade */}
+        <div className="h-4 bg-gradient-to-b from-sidebar to-transparent" />
+      </div>
+
+      {/* Content */}
+      <div className="w-full flex justify-center p-8 pt-6">
+        <div className="max-w-5xl w-full space-y-8">
+          {/* Favorites Section */}
+          {starredDocs.length > 0 && (
+            <>
+              <HorizontalDocumentScroll documents={starredDocs} />
+              <hr className="border-gray-200" />
             </>
           )}
 
-          {/* Empty state - show when no documents at all */}
-          {!loading && !hasDocuments && <NoDocuments />}
+          {/* All Documents Grid */}
+          {hasDocuments ? (
+            <section className="space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                All Documents{" "}
+                <span className="text-gray-500 font-normal">
+                  ({sortedDocuments.length})
+                </span>
+              </h2>
+
+              {sortedDocuments.length > 0 ? (
+                <div className="flex flex-wrap gap-8">
+                  {sortedDocuments.map((doc, index) => (
+                    <DocumentCard
+                      key={doc.id}
+                      doc={doc}
+                      onClick={() => router.push(`/library/${doc.id}`)}
+                      priority={index < 6}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <p>No documents match your search.</p>
+                </div>
+              )}
+            </section>
+          ) : (
+            <NoDocuments />
+          )}
         </div>
       </div>
-    </Tabs>
+
+      {/* New Document Modal */}
+      <NewDocumentModal
+        open={newDocModalOpen}
+        onOpenChange={setNewDocModalOpen}
+      />
+    </div>
   );
 }
 
