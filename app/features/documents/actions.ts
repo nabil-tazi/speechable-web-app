@@ -2,7 +2,7 @@
 
 import { createClient } from "@/app/lib/supabase/server";
 import type { Block, Document, DocumentVersion, DocumentWithVersions } from "./types";
-import { convertBlocksToProcessedText, convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
+import { convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
 
 // Server Action: Create a document
 export async function createDocumentAction(documentData: {
@@ -12,7 +12,6 @@ export async function createDocumentAction(documentData: {
   author: string;
   filename: string;
   document_type: string;
-  raw_text?: string;
   page_count?: number;
   file_size?: number;
   metadata?: Record<string, any>;
@@ -512,14 +511,10 @@ export async function updateDocumentVersionBlocksAction(
       return { data: null, error: "Version not found or access denied" };
     }
 
-    // Also update processed_text for backwards compatibility
-    const processedText = convertBlocksToProcessedText(blocks);
-
     const { data, error } = await supabase
       .from("document_versions")
       .update({
         blocks: blocks,
-        processed_text: processedText,
       })
       .eq("id", versionId)
       .select()
@@ -611,7 +606,6 @@ export async function regenerateBlocksFromProcessedTextAction(
       .select(
         `
         id,
-        processed_text,
         document:documents!inner(
           user_id,
           processed_text
@@ -627,12 +621,11 @@ export async function regenerateBlocksFromProcessedTextAction(
       return { data: null, error: "Version not found or access denied" };
     }
 
-    // Use document's processed_text if available, otherwise use version's
-    const processedText = doc.processed_text || versionWithDoc.processed_text;
-
-    if (!processedText) {
-      return { data: null, error: "No processed_text found" };
+    if (!doc.processed_text) {
+      return { data: null, error: "No processed_text found on document" };
     }
+
+    const processedText = doc.processed_text;
 
     const blocks = convertProcessedTextToBlocks(processedText);
 

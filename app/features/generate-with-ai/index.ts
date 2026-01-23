@@ -8,7 +8,7 @@ import { identifySections } from "../pdf/helpers/identify-sections";
 import { getAudioDurationAccurate } from "../audio/utils";
 import { DocumentVersion, ProcessedSection, ProcessedText } from "../documents/types";
 import { PROCESSING_ARRAY } from "../pdf/types";
-import { assignVoicesToReaders } from "../documents/utils";
+import { assignVoicesToReaders, extractTextFromProcessedText } from "../documents/utils";
 
 // DeepInfra endpoint helpers
 async function processWithDeepInfraNatural(
@@ -94,19 +94,17 @@ function createSectionFromDialogue(
 type GenerateWithAiInput = {
   documentId: string;
   existingDocumentVersions: DocumentVersion[];
-  rawInputText: string;
   processingLevel: 0 | 1 | 2 | 3;
   voicesArray: string[];
   targetLanguage?: Language;
   documentTitle?: string;
   skipAudio?: boolean;
-  documentProcessedText?: ProcessedText; // For Original level, reuse existing processed_text
+  documentProcessedText: ProcessedText; // Required - source of truth for text content
 };
 
 export async function generateWithAi({
   documentId,
   existingDocumentVersions,
-  rawInputText,
   processingLevel,
   voicesArray,
   targetLanguage = "en",
@@ -114,16 +112,17 @@ export async function generateWithAi({
   skipAudio = false,
   documentProcessedText,
 }: GenerateWithAiInput) {
+  if (!documentProcessedText) {
+    throw new Error(
+      "Cannot generate version: document has no processed_text. Please try uploading the document again."
+    );
+  }
+
   let processedResult;
 
   // Process text based on processing level
   if (processingLevel === 0) {
-    // Level 0: Original - Requires document's existing processed_text
-    if (!documentProcessedText) {
-      throw new Error(
-        "Cannot create Original version: document has no processed_text. Please try uploading the original document again."
-      );
-    }
+    // Level 0: Original - Reuse existing processed_text as-is
     console.log("Using existing document processed_text for Original version");
     processedResult = {
       cleanedText: documentProcessedText,
@@ -135,6 +134,8 @@ export async function generateWithAi({
     };
   } else if (processingLevel === 1) {
     // Level 1: Natural - Section-based processing with DeepInfra
+    // Extract raw text from processed_text for AI processing
+    const rawInputText = extractTextFromProcessedText(documentProcessedText);
     try {
       console.log("Starting section identification for Natural processing...");
       const sectionIdentificationResult = await identifySections(rawInputText);
@@ -171,6 +172,7 @@ export async function generateWithAi({
     }
   } else if (processingLevel === 2) {
     // Level 2: Lecture - Process entire document with DeepInfra
+    const rawInputText = extractTextFromProcessedText(documentProcessedText);
     try {
       console.log("Starting Lecture processing with DeepInfra...");
       const result = await processWithDeepInfraLecture(rawInputText, documentTitle);
@@ -191,6 +193,7 @@ export async function generateWithAi({
     }
   } else if (processingLevel === 3) {
     // Level 3: Conversational - Process entire document with DeepInfra
+    const rawInputText = extractTextFromProcessedText(documentProcessedText);
     try {
       console.log("Starting Conversational processing with DeepInfra...");
       const dialogue = await processWithDeepInfraConversational(
@@ -238,7 +241,6 @@ export async function generateWithAi({
     await createDocumentVersionAction({
       document_id: documentId,
       version_name: newVersionName,
-      processed_text: processedTextJson,
       blocks,
       processing_type: processingLevel.toString(),
       processing_metadata: processedResult.metadata,

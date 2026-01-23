@@ -62,7 +62,7 @@ export async function updateSession(request: NextRequest) {
           });
         },
       },
-    }
+    },
   );
 
   // IMPORTANT: This refreshes the session
@@ -70,17 +70,12 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Redirect root to library
-  if (request.nextUrl.pathname === "/") {
-    return NextResponse.redirect(new URL("/library", request.url));
-  }
-
   const protectedPaths = ["/library", "/profile", "/admin", "/settings"];
   const authPaths = ["/login", "/signup", "/auth"];
   const pathname = request.nextUrl.pathname;
 
   const isProtectedPath = protectedPaths.some((path) =>
-    pathname.startsWith(path)
+    pathname.startsWith(path),
   );
   const isAuthPath = authPaths.some((path) => pathname.startsWith(path));
 

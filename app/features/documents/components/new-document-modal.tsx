@@ -221,7 +221,6 @@ export function NewDocumentModal({
       title: docTitle,
       filename: file.name,
       document_type: "",
-      raw_text: cleanedText,
       page_count: extractorData.numPages,
       file_size: file.size,
       metadata: {
@@ -272,7 +271,6 @@ export function NewDocumentModal({
     const { error: versionError } = await createDocumentVersionAction({
       document_id: doc.id,
       version_name: "Original",
-      processed_text: processedTextJson,
       blocks,
       processing_type: "1",
       processing_metadata: {
@@ -534,9 +532,8 @@ export function NewDocumentModal({
         title: data.title || "Website Content",
         filename: `${data.title || "website"}.html`,
         document_type: "",
-        raw_text: data.text,
         page_count: 1,
-        file_size: data.text.length,
+        file_size: data.text?.length || 0,
         metadata: {
           extractedAt: new Date().toISOString(),
           processingMethod: "url-extraction",
@@ -557,7 +554,6 @@ export function NewDocumentModal({
         const { error: versionError } = await createDocumentVersionAction({
           document_id: doc.id,
           version_name: "Original",
-          processed_text: processedTextJson,
           blocks,
           processing_type: "1",
           processing_metadata: {
@@ -597,21 +593,23 @@ export function NewDocumentModal({
     setError(null);
 
     try {
+      const trimmedText = textInput.trim();
+      const trimmedTitle = titleInput.trim();
+
       // Create document
       const { data: doc, error: docError } = await createDocumentAction({
         mime_type: "text/plain",
         file_type: "text",
         author: "",
-        title: titleInput.trim(),
-        filename: `${titleInput.trim()}.txt`,
+        title: trimmedTitle,
+        filename: `${trimmedTitle}.txt`,
         document_type: "",
-        raw_text: textInput.trim(),
         page_count: 1,
-        file_size: textInput.length,
+        file_size: trimmedText.length,
         metadata: {
           extractedAt: new Date().toISOString(),
           processingMethod: "direct-input",
-          characterCount: textInput.length,
+          characterCount: trimmedText.length,
         },
       });
 
@@ -619,9 +617,33 @@ export function NewDocumentModal({
         throw new Error(docError || "Failed to create document");
       }
 
+      // Create processed_text structure and version
+      const sections = [{ title: trimmedTitle, level: 1, content: trimmedText }];
+      const blocks = convertTTSSectionsToBlocks(sections);
+      const processedTextJson = convertBlocksToProcessedText(blocks);
+
+      const { error: versionError } = await createDocumentVersionAction({
+        document_id: doc.id,
+        version_name: "Original",
+        blocks,
+        processing_type: "1",
+        processing_metadata: {
+          sectionsCount: 1,
+          blocksCount: blocks.length,
+          source: "direct-input",
+        },
+      });
+
+      if (!versionError) {
+        const processedTextObject = JSON.parse(processedTextJson);
+        await updateDocumentAction(doc.id, {
+          processed_text: processedTextObject,
+        });
+      }
+
       // Classify document
-      if (textInput.trim().length > 0) {
-        const classification = await classifyDocument(textInput.trim());
+      if (trimmedText.length > 0) {
+        const classification = await classifyDocument(trimmedText);
         if (classification) {
           await updateDocumentAction(doc.id, {
             language: classification.language,
@@ -697,9 +719,12 @@ export function NewDocumentModal({
         setOcrProgress(progress);
       });
 
-      if (!result.combinedText.trim()) {
+      const extractedText = result.combinedText.trim();
+      if (!extractedText) {
         throw new Error("No text could be extracted from the images");
       }
+
+      const trimmedTitle = titleInput.trim();
 
       // Generate thumbnail from first image
       const thumbnailDataUrl = await generateImageThumbnail(selectedImages[0]);
@@ -709,19 +734,18 @@ export function NewDocumentModal({
         mime_type: "image/mixed",
         file_type: "images",
         author: "",
-        title: titleInput.trim(),
-        filename: `${titleInput.trim()}.txt`,
+        title: trimmedTitle,
+        filename: `${trimmedTitle}.txt`,
         document_type: "",
-        raw_text: result.combinedText,
         page_count: selectedImages.length,
-        file_size: result.combinedText.length,
+        file_size: extractedText.length,
         metadata: {
           extractedAt: new Date().toISOString(),
           processingMethod: "ocr-paddleocr",
           imageCount: selectedImages.length,
           imageNames: selectedImages.map((img) => img.name),
           averageConfidence: result.totalConfidence,
-          characterCount: result.combinedText.length,
+          characterCount: extractedText.length,
         },
       });
 
@@ -741,9 +765,33 @@ export function NewDocumentModal({
         }
       }
 
+      // Create processed_text structure and version
+      const sections = [{ title: trimmedTitle, level: 1, content: extractedText }];
+      const blocks = convertTTSSectionsToBlocks(sections);
+      const processedTextJson = convertBlocksToProcessedText(blocks);
+
+      const { error: versionError } = await createDocumentVersionAction({
+        document_id: doc.id,
+        version_name: "Original",
+        blocks,
+        processing_type: "1",
+        processing_metadata: {
+          sectionsCount: 1,
+          blocksCount: blocks.length,
+          source: "ocr-paddleocr",
+        },
+      });
+
+      if (!versionError) {
+        const processedTextObject = JSON.parse(processedTextJson);
+        await updateDocumentAction(doc.id, {
+          processed_text: processedTextObject,
+        });
+      }
+
       // Classify document
-      if (result.combinedText.trim().length > 0) {
-        const classification = await classifyDocument(result.combinedText.trim());
+      if (extractedText.length > 0) {
+        const classification = await classifyDocument(extractedText);
         if (classification) {
           await updateDocumentAction(doc.id, {
             language: classification.language,
