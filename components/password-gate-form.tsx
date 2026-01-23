@@ -55,9 +55,8 @@ export function PasswordGateForm({
       }
 
       console.log("[Gate] Verification successful, redirecting to:", redirectTo);
-      // Redirect to the original destination
-      router.push(redirectTo);
-      router.refresh();
+      // Use window.location for a full page reload to ensure the cookie is sent
+      window.location.href = redirectTo;
     } catch (err) {
       console.error("[Gate] Password gate error:", err);
       setError("An unexpected error occurred. Please try again.");
