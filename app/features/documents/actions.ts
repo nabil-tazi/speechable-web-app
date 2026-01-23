@@ -2,7 +2,7 @@
 
 import { createClient } from "@/app/lib/supabase/server";
 import type { Block, Document, DocumentVersion, DocumentWithVersions } from "./types";
-import { convertBlocksToProcessedText, convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
+import { convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
 
 // Server Action: Create a document
 export async function createDocumentAction(documentData: {
@@ -12,7 +12,6 @@ export async function createDocumentAction(documentData: {
   author: string;
   filename: string;
   document_type: string;
-  raw_text?: string;
   page_count?: number;
   file_size?: number;
   metadata?: Record<string, any>;
@@ -66,12 +65,18 @@ export async function uploadDocumentThumbnailAction(
       return { success: false, error: "User not authenticated" };
     }
 
-    const filePath = `${user.id}/${documentId}.png`;
     let uploadData: Buffer | File;
     let contentType = "image/png";
+    let fileExtension = "png";
 
     if (typeof thumbnailData === "string") {
-      // Handle data URL
+      // Handle data URL - extract mime type and data
+      const mimeMatch = thumbnailData.match(/^data:([^;]+);base64,/);
+      if (mimeMatch) {
+        contentType = mimeMatch[1];
+        // Get extension from mime type (e.g., image/webp -> webp)
+        fileExtension = contentType.split("/")[1] || "png";
+      }
       const base64Data = thumbnailData.split(",")[1];
       uploadData = Buffer.from(base64Data, "base64");
     } else {
@@ -79,7 +84,10 @@ export async function uploadDocumentThumbnailAction(
       const arrayBuffer = await thumbnailData.arrayBuffer();
       uploadData = Buffer.from(arrayBuffer);
       contentType = thumbnailData.type;
+      fileExtension = contentType.split("/")[1] || "png";
     }
+
+    const filePath = `${user.id}/${documentId}.${fileExtension}`;
 
     const { error: uploadError } = await supabase.storage
       .from("document-thumbnails")
@@ -512,14 +520,10 @@ export async function updateDocumentVersionBlocksAction(
       return { data: null, error: "Version not found or access denied" };
     }
 
-    // Also update processed_text for backwards compatibility
-    const processedText = convertBlocksToProcessedText(blocks);
-
     const { data, error } = await supabase
       .from("document_versions")
       .update({
         blocks: blocks,
-        processed_text: processedText,
       })
       .eq("id", versionId)
       .select()
@@ -611,7 +615,6 @@ export async function regenerateBlocksFromProcessedTextAction(
       .select(
         `
         id,
-        processed_text,
         document:documents!inner(
           user_id,
           processed_text
@@ -627,12 +630,11 @@ export async function regenerateBlocksFromProcessedTextAction(
       return { data: null, error: "Version not found or access denied" };
     }
 
-    // Use document's processed_text if available, otherwise use version's
-    const processedText = doc.processed_text || versionWithDoc.processed_text;
-
-    if (!processedText) {
-      return { data: null, error: "No processed_text found" };
+    if (!doc.processed_text) {
+      return { data: null, error: "No processed_text found on document" };
     }
+
+    const processedText = doc.processed_text;
 
     const blocks = convertProcessedTextToBlocks(processedText);
 
