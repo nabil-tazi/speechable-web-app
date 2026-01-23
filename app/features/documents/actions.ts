@@ -65,12 +65,18 @@ export async function uploadDocumentThumbnailAction(
       return { success: false, error: "User not authenticated" };
     }
 
-    const filePath = `${user.id}/${documentId}.png`;
     let uploadData: Buffer | File;
     let contentType = "image/png";
+    let fileExtension = "png";
 
     if (typeof thumbnailData === "string") {
-      // Handle data URL
+      // Handle data URL - extract mime type and data
+      const mimeMatch = thumbnailData.match(/^data:([^;]+);base64,/);
+      if (mimeMatch) {
+        contentType = mimeMatch[1];
+        // Get extension from mime type (e.g., image/webp -> webp)
+        fileExtension = contentType.split("/")[1] || "png";
+      }
       const base64Data = thumbnailData.split(",")[1];
       uploadData = Buffer.from(base64Data, "base64");
     } else {
@@ -78,7 +84,10 @@ export async function uploadDocumentThumbnailAction(
       const arrayBuffer = await thumbnailData.arrayBuffer();
       uploadData = Buffer.from(arrayBuffer);
       contentType = thumbnailData.type;
+      fileExtension = contentType.split("/")[1] || "png";
     }
+
+    const filePath = `${user.id}/${documentId}.${fileExtension}`;
 
     const { error: uploadError } = await supabase.storage
       .from("document-thumbnails")

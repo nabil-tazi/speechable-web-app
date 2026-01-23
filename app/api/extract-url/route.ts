@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
+import { chromium } from "playwright";
+import sharp from "sharp";
 
 interface SpeechItem {
   text: string;
@@ -13,6 +15,56 @@ interface ProcessedSection {
   content: {
     speech: SpeechItem[];
   };
+}
+
+// Capture a screenshot of the webpage using Playwright
+async function captureScreenshot(url: string): Promise<string | null> {
+  let browser = null;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+    });
+    // Use a portrait ratio viewport to match document thumbnail style (2:3 ratio)
+    const context = await browser.newContext({
+      viewport: { width: 800, height: 1200 },
+    });
+    const page = await context.newPage();
+
+    // Navigate to the URL with a timeout
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 15000,
+    });
+
+    // Wait a bit for any JavaScript to render
+    await page.waitForTimeout(1000);
+
+    // Capture screenshot of the full viewport (no clip)
+    const screenshotBuffer = await page.screenshot({
+      type: "png",
+    });
+
+    await browser.close();
+
+    // Resize to thumbnail size (300x450) with WebP compression
+    const resizedBuffer = await sharp(screenshotBuffer)
+      .resize(300, 450)
+      .webp({
+        quality: 40,
+        effort: 6,    // Compression effort (0-6, higher = smaller file)
+      })
+      .toBuffer();
+
+    // Convert to data URL
+    const base64 = resizedBuffer.toString("base64");
+    return `data:image/webp;base64,${base64}`;
+  } catch (error) {
+    console.error("Screenshot capture error:", error);
+    if (browser) {
+      await browser.close();
+    }
+    return null;
+  }
 }
 
 function parseHtmlToSections(html: string): { sections: ProcessedSection[] } {
@@ -144,6 +196,9 @@ export async function POST(request: Request) {
       },
     };
 
+    // Capture screenshot of the webpage (run in parallel with content extraction completion)
+    const screenshotDataUrl = await captureScreenshot(url);
+
     // Build the response
     const result = {
       title,
@@ -154,6 +209,7 @@ export async function POST(request: Request) {
       siteName: article.siteName || null,
       lang: article.lang || null,
       processed_text,
+      screenshotDataUrl,
     };
 
     return NextResponse.json(result);

@@ -156,7 +156,7 @@ export function NewDocumentModal({
         canvas: canvas,
       }).promise;
 
-      return canvas.toDataURL("image/png");
+      return canvas.toDataURL("image/webp", 0.4);
     } catch (error) {
       console.error("Error generating PDF thumbnail:", error);
       return null;
@@ -546,6 +546,21 @@ export function NewDocumentModal({
         throw new Error(docError || "Failed to create document");
       }
 
+      // Upload thumbnail if screenshot was captured
+      if (data.screenshotDataUrl) {
+        try {
+          const { uploadDocumentThumbnailAction } = await import(
+            "@/app/features/documents/actions"
+          );
+          const result = await uploadDocumentThumbnailAction(doc.id, data.screenshotDataUrl);
+          if (!result.success) {
+            console.warn("Thumbnail upload failed:", result.error);
+          }
+        } catch (thumbError) {
+          console.warn("Thumbnail upload failed:", thumbError);
+        }
+      }
+
       // Create document version with processed_text and blocks
       if (data.processed_text) {
         const processedTextJson = JSON.stringify(data.processed_text);
@@ -691,7 +706,7 @@ export function NewDocumentModal({
           canvas.width = width;
           canvas.height = height;
           ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/png", 0.8));
+          resolve(canvas.toDataURL("image/webp", 0.4));
         };
 
         img.onerror = () => resolve(null);

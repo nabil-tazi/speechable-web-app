@@ -71,7 +71,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const protectedPaths = ["/library", "/profile", "/admin", "/settings"];
-  const authPaths = ["/login", "/signup", "/auth"];
+  const authPaths = ["/signin", "/signup", "/auth"];
   const pathname = request.nextUrl.pathname;
 
   const isProtectedPath = protectedPaths.some((path) =>
@@ -80,7 +80,7 @@ export async function updateSession(request: NextRequest) {
   const isAuthPath = authPaths.some((path) => pathname.startsWith(path));
 
   if (isProtectedPath && !user) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/signin", request.url);
     loginUrl.searchParams.set("redirectTo", pathname);
     return NextResponse.redirect(loginUrl);
   }
@@ -94,7 +94,7 @@ export async function updateSession(request: NextRequest) {
     if (user) {
       return NextResponse.redirect(new URL("/library", request.url));
     } else {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL("/signin", request.url));
     }
   }
 

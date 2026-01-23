@@ -152,7 +152,7 @@ export function SignupForm({
                   Didn't receive the email? Check your spam folder.
                 </p>
                 <Link
-                  href="/login"
+                  href="/signin"
                   className="inline-block font-medium text-blue-600 hover:text-blue-500 transition-colors text-sm"
                 >
                   Back to Login
@@ -181,7 +181,7 @@ export function SignupForm({
                   <div className="text-sm text-red-800">{error}</div>
                   {error.includes("already exists") && (
                     <Link
-                      href="/login"
+                      href="/signin"
                       className="mt-2 text-sm font-medium text-red-600 hover:text-red-500 underline block"
                     >
                       Go to Login →
@@ -303,7 +303,7 @@ export function SignupForm({
 
               <div className="text-center text-sm">
                 Already have an account?{" "}
-                <Link href="/login" className="underline underline-offset-4">
+                <Link href="/signin" className="underline underline-offset-4">
                   Login here
                 </Link>
               </div>

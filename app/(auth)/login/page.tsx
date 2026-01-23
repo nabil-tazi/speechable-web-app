@@ -1,12 +1,5 @@
-"use client";
-
-import { LoginForm } from "@/components/login-form";
-import { AuthLayout } from "@/components/ui/auth-wrapper";
+import { redirect } from "next/navigation";
 
 export default function LoginPage() {
-  return (
-    <AuthLayout>
-      <LoginForm />
-    </AuthLayout>
-  );
+  redirect("/signin");
 }
