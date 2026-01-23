@@ -89,15 +89,24 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL("/library", request.url));
   }
 
+  // Redirect root path based on auth status
+  if (pathname === "/") {
+    if (user) {
+      return NextResponse.redirect(new URL("/library", request.url));
+    } else {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
   return supabaseResponse;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request);
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2|woff|ttf|eot)$).*)",
   ],
 };
