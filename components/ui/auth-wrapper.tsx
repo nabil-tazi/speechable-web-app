@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { ReactNode } from "react";
+import { APP_VERSION } from "@/lib/version";
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -23,6 +24,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         </a>
         {children}
       </div>
+      <p className="text-xs text-muted-foreground">v{APP_VERSION}</p>
     </div>
   );
 }

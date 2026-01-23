@@ -18,6 +18,7 @@ import { useAppSettings } from "@/app/features/app-settings/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import { APP_VERSION } from "@/lib/version";
 
 function LibraryContent() {
   const router = useRouter();
@@ -166,6 +167,11 @@ function LibraryContent() {
             <NoDocuments />
           )}
         </div>
+      </div>
+
+      {/* Version */}
+      <div className="text-center pb-6">
+        <p className="text-xs text-gray-400">v{APP_VERSION}</p>
       </div>
 
       {/* New Document Modal */}
