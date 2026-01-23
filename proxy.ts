@@ -13,8 +13,8 @@ function checkPasswordGate(request: NextRequest): NextResponse | null {
 
   const pathname = request.nextUrl.pathname;
 
-  // Allow access to the password gate page and API
-  if (pathname === "/gate" || pathname === "/api/gate/verify") {
+  // Allow access to the password gate page and all API routes
+  if (pathname === "/gate" || pathname.startsWith("/api/")) {
     return null;
   }
 
@@ -69,6 +69,11 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Redirect root to library
+  if (request.nextUrl.pathname === "/") {
+    return NextResponse.redirect(new URL("/library", request.url));
+  }
 
   const protectedPaths = ["/library", "/profile", "/admin", "/settings"];
   const authPaths = ["/login", "/signup", "/auth"];

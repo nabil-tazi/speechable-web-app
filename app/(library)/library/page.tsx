@@ -14,7 +14,6 @@ import { DocumentCard } from "@/app/features/documents/components/document-card"
 import { HorizontalDocumentScroll } from "@/app/features/documents/components/horizontal-document-scroll";
 import { NewDocumentModal } from "@/app/features/documents/components/new-document-modal";
 import { useSidebarData } from "@/app/features/sidebar/context";
-import { useAppSettings } from "@/app/features/app-settings/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeaderUserMenu } from "@/components/header-user-menu";
@@ -24,19 +23,13 @@ function LibraryContent() {
   const router = useRouter();
   const { documents, loading } = useDocuments();
   const { starredDocuments } = useSidebarData();
-  const { debugMode } = useAppSettings();
   const [searchQuery, setSearchQuery] = useState("");
   const [newDocModalOpen, setNewDocModalOpen] = useState(false);
 
-  // Handle new document button click
+  // Handle new document button click - always open modal
+  // (debug mode PDF comparison is handled inside the modal)
   const handleNewDocument = () => {
-    if (debugMode) {
-      // In debug mode, go to page for comparison view
-      router.push("/library/new-document");
-    } else {
-      // In normal mode, open modal for direct processing
-      setNewDocModalOpen(true);
-    }
+    setNewDocModalOpen(true);
   };
 
   // Filter documents by search query

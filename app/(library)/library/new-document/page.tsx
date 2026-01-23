@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/app/lib/supabase/client";
 import { createDocumentAction, createDocumentVersionAction, updateDocumentAction } from "@/app/features/documents/actions";
-import { convertTTSSectionsToBlocks, convertBlocksToProcessedText } from "@/app/features/block-editor";
+import { convertTTSSectionsToBlocks, convertBlocksToProcessedText, convertProcessedTextToBlocks } from "@/app/features/block-editor";
 import { identifySections } from "@/app/features/pdf/helpers/identify-sections";
 import { processText as processTextWithLLM } from "@/app/features/pdf/helpers/process-text";
 import { processPDFFile } from "@/app/features/pdf/utils/pdf-processing";
@@ -790,6 +790,39 @@ export default function NewDocumentPage() {
           domain: new URL(urlInput).hostname,
         },
       });
+
+      // Create document version with processed_text and blocks
+      if (data.processed_text) {
+        const processedTextJson = JSON.stringify(data.processed_text);
+        const blocks = convertProcessedTextToBlocks(processedTextJson);
+
+        const { error: versionError } = await createDocumentVersionAction({
+          document_id: doc.id,
+          version_name: "Original",
+          processed_text: processedTextJson,
+          blocks,
+          processing_type: "1",
+          processing_metadata: {
+            sectionsCount: data.processed_text.processed_text?.sections?.length || 1,
+            blocksCount: blocks.length,
+            source: "url-extraction",
+          },
+        });
+
+        if (versionError) {
+          console.error("[processURL] Failed to create version:", versionError);
+        } else {
+          // Update document with processed_text for block regeneration
+          const { error: updateError } = await updateDocumentAction(doc.id, {
+            processed_text: data.processed_text,
+            language: data.lang || undefined,
+          });
+
+          if (updateError) {
+            console.error("[processURL] Failed to update document:", updateError);
+          }
+        }
+      }
 
       router.push(`/library/${doc.id}`);
     } catch (err) {
