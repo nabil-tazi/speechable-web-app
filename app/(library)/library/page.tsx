@@ -14,7 +14,6 @@ import { DocumentCard } from "@/app/features/documents/components/document-card"
 import { HorizontalDocumentScroll } from "@/app/features/documents/components/horizontal-document-scroll";
 import { NewDocumentModal } from "@/app/features/documents/components/new-document-modal";
 import { useSidebarData } from "@/app/features/sidebar/context";
-import { useAppSettings } from "@/app/features/app-settings/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeaderUserMenu } from "@/components/header-user-menu";
@@ -24,19 +23,13 @@ function LibraryContent() {
   const router = useRouter();
   const { documents, loading } = useDocuments();
   const { starredDocuments } = useSidebarData();
-  const { debugMode } = useAppSettings();
   const [searchQuery, setSearchQuery] = useState("");
   const [newDocModalOpen, setNewDocModalOpen] = useState(false);
 
-  // Handle new document button click
+  // Handle new document button click - always open modal
+  // (debug mode PDF comparison is handled inside the modal)
   const handleNewDocument = () => {
-    if (debugMode) {
-      // In debug mode, go to page for comparison view
-      router.push("/library/new-document");
-    } else {
-      // In normal mode, open modal for direct processing
-      setNewDocModalOpen(true);
-    }
+    setNewDocModalOpen(true);
   };
 
   // Filter documents by search query
@@ -74,7 +67,7 @@ function LibraryContent() {
   const hasDocuments = documents.length > 0;
 
   return (
-    <div className="bg-sidebar min-h-full">
+    <div className="bg-sidebar min-h-screen flex flex-col">
       {/* Header - sticky at top */}
       <div className="sticky top-0 z-20">
         <div className="px-4 h-12 flex items-center bg-sidebar">
@@ -86,35 +79,37 @@ function LibraryContent() {
             </span>
           </div>
 
-          {/* Center section - Search + New button */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search library..."
-                className="pl-9 pr-9 h-8 bg-white border-gray-200 text-sm"
-              />
-              {searchQuery && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                  onClick={() => setSearchQuery("")}
-                >
-                  <X className="h-3 w-3 text-gray-400" />
-                </button>
-              )}
+          {/* Center section - Search + New button (only when documents exist) */}
+          {hasDocuments && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search library..."
+                  className="pl-9 pr-9 h-8 bg-white border-gray-200 text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X className="h-3 w-3 text-gray-400" />
+                  </button>
+                )}
+              </div>
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+                onClick={handleNewDocument}
+              >
+                <Plus className="h-4 w-4" />
+                New
+              </Button>
             </div>
-            <Button
-              size="sm"
-              className="h-8 gap-1.5 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
-              onClick={handleNewDocument}
-            >
-              <Plus className="h-4 w-4" />
-              New
-            </Button>
-          </div>
+          )}
 
           {/* Right section - User menu */}
           <div className="flex items-center gap-3 flex-1 justify-end">
@@ -126,7 +121,7 @@ function LibraryContent() {
       </div>
 
       {/* Content */}
-      <div className="w-full flex justify-center p-8 pt-6">
+      <div className="w-full flex justify-center p-8 pt-6 flex-1">
         <div className="max-w-5xl w-full space-y-8">
           {/* Favorites Section */}
           {starredDocs.length > 0 && (
@@ -164,7 +159,7 @@ function LibraryContent() {
               )}
             </section>
           ) : (
-            <NoDocuments />
+            <NoDocuments onCreateNew={handleNewDocument} />
           )}
         </div>
       </div>

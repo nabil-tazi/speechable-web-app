@@ -27,8 +27,7 @@ export interface Document {
   id: string;
   user_id: string;
   thumbnail_path?: string;
-  raw_text?: string;
-  processed_text?: ProcessedText; // JSONB in DB - stores the object for block regeneration
+  processed_text?: ProcessedText; // JSONB in DB - source of truth for document content
   document_type: string;
   language?: string;
   page_count?: number;
@@ -50,8 +49,7 @@ export interface DocumentVersion {
   document_id: string;
   version_name: string;
   language?: string;
-  processed_text: string; // Legacy - kept for backwards compatibility
-  blocks?: Block[]; // New block-based content (optional, defaults to [])
+  blocks?: Block[]; // Block-based content (source of truth)
   processing_type: string;
   processing_metadata?: Record<string, any>;
   created_at: string;

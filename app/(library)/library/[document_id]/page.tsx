@@ -997,11 +997,7 @@ function DocumentTextView() {
   // These are the initial blocks - EditorProvider will manage the live state
   const initialBlocks = useMemo(() => {
     if (!activeVersion) return [];
-    // Use blocks if available, otherwise convert from processed_text
-    if (activeVersion.blocks && activeVersion.blocks.length > 0) {
-      return activeVersion.blocks;
-    }
-    return convertProcessedTextToBlocks(activeVersion.processed_text);
+    return activeVersion.blocks || [];
   }, [activeVersion]);
 
   // Function to update URL with version parameter
@@ -1096,18 +1092,15 @@ function DocumentTextView() {
   }
 
   async function handleCreateVersion(processingLevel: 0 | 1 | 2 | 3) {
-    if (document && document.raw_text) {
+    if (document && document.processed_text) {
       try {
         const result = await generateWithAi({
           documentId: document.id,
           existingDocumentVersions: document.versions,
-          rawInputText: document.raw_text,
           voicesArray: [],
           processingLevel,
           skipAudio: true,
-          // For Original level, reuse document's existing processed_text (no API call needed)
-          documentProcessedText:
-            processingLevel === 0 ? document.processed_text : undefined,
+          documentProcessedText: document.processed_text,
         });
 
         // Navigate to the new version (full page reload will close modals)
@@ -1118,7 +1111,7 @@ function DocumentTextView() {
         console.error("Failed to create version:", error);
       }
     } else {
-      console.log("empty text");
+      console.log("No processed_text available");
     }
   }
 

@@ -50,6 +50,24 @@ export function formatProcessingType(processingLevel: string) {
   }
 }
 
+/**
+ * Extract plain text from processed_text structure
+ * Used for AI processing - extracts text from sections for LLM input
+ */
+export function extractTextFromProcessedText(processedText: ProcessedText): string {
+  if (!processedText?.processed_text?.sections) {
+    return "";
+  }
+
+  return processedText.processed_text.sections
+    .map((section) => {
+      const title = section.title ? section.title + "\n\n" : "";
+      const content = section.content.speech.map((s) => s.text).join(" ");
+      return title + content;
+    })
+    .join("\n\n");
+}
+
 export function assignVoicesToReaders(
   processed_text: ProcessedText,
   voices: string[]
