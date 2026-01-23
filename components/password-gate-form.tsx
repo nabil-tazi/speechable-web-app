@@ -31,9 +31,6 @@ export function PasswordGateForm({
     setError(null);
     setIsLoading(true);
 
-    console.log("[Gate] Submitting password verification...");
-    console.log("[Gate] Redirect target:", redirectTo);
-
     try {
       const response = await fetch("/api/gate/verify", {
         method: "POST",
@@ -43,22 +40,17 @@ export function PasswordGateForm({
         body: JSON.stringify({ password }),
       });
 
-      console.log("[Gate] Response status:", response.status);
-
       const data = await response.json();
-      console.log("[Gate] Response data:", data);
 
       if (!response.ok) {
-        console.log("[Gate] Verification failed:", data.error);
         setError(data.error || "Invalid password");
         return;
       }
 
-      console.log("[Gate] Verification successful, redirecting to:", redirectTo);
       // Use window.location for a full page reload to ensure the cookie is sent
       window.location.href = redirectTo;
     } catch (err) {
-      console.error("[Gate] Password gate error:", err);
+      console.error("Password gate error:", err);
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
