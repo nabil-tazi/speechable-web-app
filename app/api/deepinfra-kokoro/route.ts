@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+  KOKORO_CHARACTERS_PER_CREDIT,
+} from "@/app/api/lib/credits-middleware";
 
 /**
  * DeepInfra Kokoro TTS API endpoint.
@@ -24,6 +29,15 @@ export async function POST(req: NextRequest) {
       { error: "Missing or empty input text" },
       { status: 400 }
     );
+  }
+
+  // Check credits before processing (Kokoro: 1 credit = 2000 chars)
+  const creditCheck = await checkCreditsForRequest({
+    textLength: input.length,
+    charactersPerCredit: KOKORO_CHARACTERS_PER_CREDIT,
+  });
+  if (!creditCheck.success) {
+    return creditCheck.response;
   }
 
   const apiKey = process.env.DEEPINFRA_API_KEY;
@@ -104,12 +118,21 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime;
     console.log(`[deepinfra-kokoro] Generated ${totalSize} bytes in ${duration}ms for voice ${voice}`);
 
+    // Deduct credits after successful generation (Kokoro: 1 credit = 2000 chars)
+    const creditResult = await deductCreditsAfterOperation(
+      creditCheck.userId,
+      input.length,
+      KOKORO_CHARACTERS_PER_CREDIT
+    );
+
     return new NextResponse(audioBuffer, {
       status: 200,
       headers: {
         "Content-Type": contentType,
         "Content-Length": totalSize.toString(),
         "X-Generation-Time-Ms": duration.toString(),
+        "X-Credits-Used": (creditResult?.creditsUsed ?? 0).toString(),
+        "X-Credits-Remaining": (creditResult?.creditsRemaining ?? 0).toString(),
       },
     });
   } catch (error) {

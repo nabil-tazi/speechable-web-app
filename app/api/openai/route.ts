@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DOCUMENT_SPECIFIC_INSTRUCTIONS } from "./constants";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+} from "@/app/api/lib/credits-middleware";
 
 import type { DocumentType } from "./constants";
 
@@ -168,9 +172,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Level 0: Return original text
+  // Level 0: Return original text (no credit charge)
   if (level === 0) {
     return NextResponse.json({ message: input });
+  }
+
+  // Check credits before processing
+  const creditCheck = await checkCreditsForRequest({ textLength: input.length });
+  if (!creditCheck.success) {
+    return creditCheck.response;
   }
 
   try {
@@ -209,6 +219,13 @@ export async function POST(req: NextRequest) {
         config,
         detectedDocType
       );
+
+      // Deduct credits after successful operation
+      const creditResult = await deductCreditsAfterOperation(
+        creditCheck.userId,
+        input.length
+      );
+
       return NextResponse.json({
         message: result,
         metadata: {
@@ -218,6 +235,8 @@ export async function POST(req: NextRequest) {
           originalLength: input.length,
           processedLength: result.length,
         },
+        creditsUsed: creditResult?.creditsUsed ?? 0,
+        creditsRemaining: creditResult?.creditsRemaining ?? 0,
       });
     } else {
       console.log("normal size");
@@ -253,6 +272,12 @@ export async function POST(req: NextRequest) {
       const data = await response.json();
       const result = data.choices[0].message.content;
 
+      // Deduct credits after successful operation
+      const creditResult = await deductCreditsAfterOperation(
+        creditCheck.userId,
+        input.length
+      );
+
       return NextResponse.json({
         message: result,
         metadata: {
@@ -262,6 +287,8 @@ export async function POST(req: NextRequest) {
           originalLength: input.length,
           processedLength: result.length,
         },
+        creditsUsed: creditResult?.creditsUsed ?? 0,
+        creditsRemaining: creditResult?.creditsRemaining ?? 0,
       });
     }
   } catch (error) {

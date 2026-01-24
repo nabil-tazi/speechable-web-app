@@ -86,6 +86,7 @@ import {
 import type { Block } from "@/app/features/documents/types";
 import { usePlayback, useGeneration } from "@/app/features/tts";
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import CreditDisplay from "@/app/features/credits/components/credit-display";
 
 // Version Name Input - must be inside EditorProvider
 function VersionNameInput() {
@@ -1229,6 +1230,9 @@ function DocumentTextView() {
 
                   {/* Read mode: EcoBadge */}
                   {!isEditMode && <EcoBadge />}
+
+                  {/* Credits display */}
+                  <CreditDisplay />
 
                   {/* User menu */}
                   <HeaderUserMenu />

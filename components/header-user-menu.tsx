@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, User, Bug } from "lucide-react";
+import { LogOut, User, Bug, Zap } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,13 +21,23 @@ import {
 import { useAuth } from "@/app/features/users/hooks/use-auth";
 import { isAdminUser } from "@/app/constants/admin";
 import { useAppSettings } from "@/app/features/app-settings/context";
+import { useCredits } from "@/app/features/users/context";
+import { refillCreditsAction } from "@/app/features/credits/actions";
 
 export function HeaderUserMenu() {
   const { user } = useUser();
   const { userProfile } = useUserProfile();
   const { signOut } = useAuth();
   const { debugMode, toggleDebugMode } = useAppSettings();
+  const { updateCredits } = useCredits();
   const isAdmin = isAdminUser(user?.id);
+
+  const handleRefillCredits = async () => {
+    const result = await refillCreditsAction();
+    if (result.success && result.credits !== undefined) {
+      updateCredits(result.credits);
+    }
+  };
 
   // Get user avatar - prioritize profile image, then user metadata, then default
   const getAvatarUrl = () => {
@@ -113,6 +123,10 @@ export function HeaderUserMenu() {
                   onCheckedChange={toggleDebugMode}
                 />
               </div>
+              <DropdownMenuItem onClick={handleRefillCredits}>
+                <Zap className="mr-2 h-4 w-4" />
+                Refill Credits
+              </DropdownMenuItem>
             </DropdownMenuGroup>
           </>
         )}

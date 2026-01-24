@@ -3,6 +3,12 @@ import { getTextContent } from "../utils/dom";
 import type { ActionType, PendingReplacement, SelectionMenu } from "../types";
 import type { BlockInput } from "@/app/features/documents/types";
 
+export interface InsufficientCreditsInfo {
+  creditsNeeded: number;
+  creditsAvailable: number;
+  nextRefillDate: string | null;
+}
+
 interface UseAITextActionsOptions {
   contentRef: React.RefObject<HTMLDivElement | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -15,12 +21,14 @@ interface UseAITextActionsOptions {
   originalScrollPosRef: React.MutableRefObject<number>;
   setSelectionMenu: React.Dispatch<React.SetStateAction<SelectionMenu>>;
   setIsEditing: (editing: boolean) => void;
+  onCreditsUpdated?: (newCredits: number) => void;
 }
 
 interface UseAITextActionsReturn {
   processingAction: ActionType | null;
   pendingReplacement: PendingReplacement | null;
   noChangesMessage: string | null;
+  insufficientCreditsInfo: InsufficientCreditsInfo | null;
   handleSelectionAction: (action: ActionType) => Promise<void>;
   handleBlockAction: (action: ActionType) => Promise<void>;
   handleAcceptReplacement: () => void;
@@ -28,6 +36,7 @@ interface UseAITextActionsReturn {
   handleTryAgain: () => Promise<void>;
   handleInsertBelow: () => void;
   setPendingReplacement: React.Dispatch<React.SetStateAction<PendingReplacement | null>>;
+  clearInsufficientCreditsInfo: () => void;
 }
 
 /**
@@ -45,10 +54,16 @@ export function useAITextActions({
   originalScrollPosRef,
   setSelectionMenu,
   setIsEditing,
+  onCreditsUpdated,
 }: UseAITextActionsOptions): UseAITextActionsReturn {
   const [processingAction, setProcessingAction] = useState<ActionType | null>(null);
   const [pendingReplacement, setPendingReplacement] = useState<PendingReplacement | null>(null);
   const [noChangesMessage, setNoChangesMessage] = useState<string | null>(null);
+  const [insufficientCreditsInfo, setInsufficientCreditsInfo] = useState<InsufficientCreditsInfo | null>(null);
+
+  const clearInsufficientCreditsInfo = useCallback(() => {
+    setInsufficientCreditsInfo(null);
+  }, []);
 
   // API call helper for AI text processing
   const callTextApi = useCallback(
@@ -60,19 +75,36 @@ export function useAITextActions({
           body: JSON.stringify({ text }),
         });
 
+        // Handle insufficient credits
+        if (response.status === 402) {
+          const errorData = await response.json();
+          setInsufficientCreditsInfo({
+            creditsNeeded: errorData.creditsNeeded,
+            creditsAvailable: errorData.creditsAvailable,
+            nextRefillDate: errorData.nextRefillDate || null,
+          });
+          return null;
+        }
+
         if (!response.ok) {
           console.error(`API error: ${response.status}`);
           return null;
         }
 
         const data = await response.json();
+
+        // Update credits if callback provided and credits info returned
+        if (onCreditsUpdated && typeof data.creditsRemaining === "number") {
+          onCreditsUpdated(data.creditsRemaining);
+        }
+
         return data.result || null;
       } catch (error) {
         console.error(`Error calling ${endpoint}:`, error);
         return null;
       }
     },
-    []
+    [onCreditsUpdated]
   );
 
   // Handle AI action for selected text
@@ -349,6 +381,7 @@ export function useAITextActions({
     processingAction,
     pendingReplacement,
     noChangesMessage,
+    insufficientCreditsInfo,
     handleSelectionAction,
     handleBlockAction,
     handleAcceptReplacement,
@@ -356,5 +389,6 @@ export function useAITextActions({
     handleTryAgain,
     handleInsertBelow,
     setPendingReplacement,
+    clearInsufficientCreditsInfo,
   };
 }

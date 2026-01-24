@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useTTSContext } from "../context/tts-provider";
+import { useCredits } from "@/app/features/users/context";
 import type { WorkerIncomingMessage, VoiceConfig, QueueItem } from "../types";
 import type { TTSMode, VoiceQuality } from "../context/tts-reducer";
+
+interface CloudGenerationResult {
+  audio: Blob;
+  duration: number;
+  creditsUsed?: number;
+  creditsRemaining?: number;
+}
 
 /**
  * Generate audio via cloud API (DeepInfra).
@@ -12,7 +20,7 @@ async function generateViaCloud(
   item: QueueItem,
   mode: "standard" | "expressive",
   chatterboxParams?: { cfg: number; exaggeration: number }
-): Promise<{ audio: Blob; duration: number }> {
+): Promise<CloudGenerationResult> {
   const endpoint =
     mode === "standard" ? "/api/deepinfra-kokoro" : "/api/deepinfra-chatterbox";
 
@@ -61,14 +69,23 @@ async function generateViaCloud(
     throw new Error(error.error || `API error: ${response.status}`);
   }
 
+  // Extract credit info from headers
+  const creditsUsed = parseFloat(response.headers.get("X-Credits-Used") || "0");
+  const creditsRemaining = parseFloat(response.headers.get("X-Credits-Remaining") || "0");
+
   const audioBlob = await response.blob();
-  console.log("[generateViaCloud] Received audio blob:", audioBlob.size, "bytes");
+  console.log("[generateViaCloud] Received audio blob:", audioBlob.size, "bytes, credits used:", creditsUsed);
 
   // Estimate duration from blob size (rough estimate for mp3)
   // More accurate would be to decode and check, but this is faster
   const estimatedDuration = audioBlob.size / (16000 * 2); // Very rough estimate
 
-  return { audio: audioBlob, duration: estimatedDuration };
+  return {
+    audio: audioBlob,
+    duration: estimatedDuration,
+    creditsUsed: creditsUsed > 0 ? creditsUsed : undefined,
+    creditsRemaining: creditsRemaining > 0 ? creditsRemaining : undefined,
+  };
 }
 
 /**
@@ -76,6 +93,7 @@ async function generateViaCloud(
  */
 export function useGeneration() {
   const { state, dispatch, workerRef, generationQueueRef } = useTTSContext();
+  const { updateCredits } = useCredits();
 
   // Track the currently processing sentence and its epoch
   const processingIdRef = useRef<string | null>(null);
@@ -153,7 +171,7 @@ export function useGeneration() {
         exaggeration: state.chatterboxExaggeration,
       };
       generateViaCloud(next, ttsMode as "standard" | "expressive", chatterboxParams)
-        .then(({ audio, duration }) => {
+        .then(({ audio, duration, creditsRemaining }) => {
           console.log("[useGeneration] Cloud generation complete for:", next.sentenceId);
           dispatch({
             type: "GENERATION_COMPLETE",
@@ -163,6 +181,11 @@ export function useGeneration() {
             speed: next.speed,
             voice: next.voice,
           });
+
+          // Update credits display if we got credit info back
+          if (typeof creditsRemaining === "number") {
+            updateCredits(creditsRemaining);
+          }
         })
         .catch((error) => {
           console.error("[useGeneration] Cloud generation error:", error);
