@@ -1,6 +1,14 @@
 /**
  * Citation, URL, email, and figure detection utilities.
  * Functions for detecting various types of references in PDF text.
+ *
+ * Reference patterns include:
+ * - Superscript numbers: ¹²³
+ * - Bracketed numbers: [1], [1,2], [1-3]
+ * - Inline superscript-style: word1, word12,13
+ * - Author-year citations: (Author, 2020), (Castells 2001)
+ * - Year-only citations: (2012)
+ * - Figure/table cross-references: (Figure 3), [Table 2], (see Figures 12 and 13)
  */
 
 import type { StructuredBlock } from "../types";
@@ -28,6 +36,15 @@ const LIST_ITEM_PATTERN =
 const REFERENCE_PATTERNS = [
   /[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, // Unicode superscript numbers
   /\[\d+(?:[,\-–]\s*\d+)*\]/g, // [1], [1,2], [1-3]
+
+  // === FIGURE/TABLE CROSS-REFERENCES ===
+  // Parenthetical: (Figure 3), (see Figure 5), (Figures 12 and 13), (Fig. 3), (Table 2)
+  /\(\s*(?:see\s+|cf\.?\s+)?(?:fig(?:ure)?s?|tables?|charts?|graphs?|diagrams?|panels?)\.?\s+\d+(?:\s*(?:and|&|,|–|-)\s*\d+)*\s*\)/gi,
+  // Bracketed: [Figure 3], [Table 2], [Fig. 3]
+  /\[\s*(?:see\s+|cf\.?\s+)?(?:fig(?:ure)?s?|tables?|charts?|graphs?|diagrams?|panels?)\.?\s+\d+(?:\s*(?:and|&|,|–|-)\s*\d+)*\s*\]/gi,
+  // Appendix references with numbers OR letters: (Appendix A), [Appendix 1], (Appendices A and B)
+  /\(\s*(?:see\s+|cf\.?\s+)?(?:appendix|appendices)\s+[A-Z\d]+(?:\s*(?:and|&|,|–|-)\s*[A-Z\d]+)*\s*\)/gi,
+  /\[\s*(?:see\s+|cf\.?\s+)?(?:appendix|appendices)\s+[A-Z\d]+(?:\s*(?:and|&|,|–|-)\s*[A-Z\d]+)*\s*\]/gi,
   // Inline superscript numbers after lowercase letters or sentence-ending punctuation
   // Matches: "word1", "word12,13", "word1-3" (reference lists)
   // Excludes: "CO2" (uppercase), "0.5" (decimal), "1,000" (thousands - 3 digits after comma)

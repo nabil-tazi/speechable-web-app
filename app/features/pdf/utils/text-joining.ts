@@ -587,20 +587,67 @@ export function processBlockWithTracking(
         // Join lines - add space if needed between words
         // MuPDF inserts spaces between words WITHIN a line based on character positioning,
         // but NOT between lines. When text wraps to a new line, we need to add the space.
-        // Only skip adding space if the previous text ends with whitespace or
-        // current text starts with whitespace (MuPDF already provided it).
+
+        // IMPORTANT: Check for whitespace BEFORE trimming - this tells us if MuPDF
+        // intended a space between these words (e.g., italic text in the middle of a sentence)
+        const prevHadTrailingSpace = /\s$/.test(result);
+        const currHadLeadingSpace = /^\s/.test(currentText);
+
+        // First, normalize trailing whitespace to avoid double spaces
+        // MuPDF sometimes includes trailing spaces on lines, which would cause
+        // multiple consecutive spaces when joining
+        const trimmedResult = result.trimEnd();
+        if (trimmedResult.length < result.length) {
+          result = trimmedResult;
+          // Update font ranges that extend past the trimmed length
+          for (let j = fontRanges.length - 1; j >= 0; j--) {
+            const fr = fontRanges[j];
+            if (fr.end > result.length) {
+              if (fr.start >= result.length) {
+                fontRanges.splice(j, 1);
+              } else {
+                fr.end = result.length;
+              }
+            } else {
+              break;
+            }
+          }
+          // Update span positions that extend past the trimmed length
+          for (let j = i - 1; j >= 0; j--) {
+            const sp = spanPositions.get(j);
+            if (sp && sp.end > result.length) {
+              if (sp.start >= result.length) {
+                spanPositions.delete(j);
+              } else {
+                sp.end = result.length;
+              }
+            } else {
+              break;
+            }
+          }
+        }
+
+        // Also trim leading whitespace from current text to normalize
+        const trimmedCurrentText = currentText.trimStart();
+        const leadingTrimmed = currentText.length - trimmedCurrentText.length;
+
         const prevEndsWithSpace = /\s$/.test(result);
-        const currStartsWithSpace = /^\s/.test(currentText);
+        const currStartsWithSpace = /^\s/.test(trimmedCurrentText);
 
         // Detect mid-word line breaks using Y position AND X gap
         // If two MuPDF "lines" have the same Y position AND are close together (small X gap),
         // it's a word split and should be joined without a space.
         // If they have the same Y but a larger gap, they're separate words needing a space.
+        //
+        // IMPORTANT: If MuPDF included whitespace at the boundary (trailing space on prev line
+        // or leading space on current line), respect that - it indicates separate words.
+        // Only apply word-split detection when there's NO whitespace hint from MuPDF.
         let isWordSplit = false;
         const fontSize = prevLine.font.size || 12;
 
-        if (sameVisualLine) {
+        if (sameVisualLine && !prevHadTrailingSpace && !currHadLeadingSpace) {
           // Check X gap to distinguish word splits from separate words
+          // Only apply this heuristic when MuPDF didn't provide whitespace hints
           const prevEndX = prevLine.bbox.x + prevLine.bbox.w;
           const currStartX = currentLine.bbox.x;
           const xGap = currStartX - prevEndX;
@@ -618,13 +665,13 @@ export function processBlockWithTracking(
           !currStartsWithSpace &&
           !isWordSplit &&
           result.length > 0 &&
-          currentText.length > 0;
+          trimmedCurrentText.length > 0;
 
         if (needsSpace) {
           result += " ";
         }
         const startPos = result.length;
-        result += currentText;
+        result += trimmedCurrentText;
         spanPositions.set(i, { start: startPos, end: result.length });
         fontRanges.push({
           start: startPos,

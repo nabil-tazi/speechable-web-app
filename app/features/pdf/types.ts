@@ -81,6 +81,7 @@ export interface BlockHeadingCandidate {
   fontWeight: string;        // Dominant font weight
   italic: boolean;           // Whether italic
   verticalGapBefore: number; // Gap from previous block (px)
+  lineCount: number;         // Number of lines in the heading (for position calculation)
 }
 
 export interface StructuredPage {

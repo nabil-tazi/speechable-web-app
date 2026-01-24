@@ -299,6 +299,7 @@ export function detectBlockHeadingCandidate(
       fontWeight: isDominantBold(block) ? "bold" : "normal",
       italic: isDominantItalic(block),
       verticalGapBefore,
+      lineCount,
     };
   }
 

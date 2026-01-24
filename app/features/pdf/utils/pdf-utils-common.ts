@@ -142,7 +142,7 @@ export const ZONE_SCORE_BONUS = 4;
 
 // Debug flag for anomaly scoring
 export const DEBUG_ANOMALY_SCORING = false;
-export const DEBUG_ANOMALY_PATTERN = "differences are relative";
+export const DEBUG_ANOMALY_PATTERN = "";
 
 // Debug flag for line break investigation
 export const DEBUG_LINE_BREAK = false;
