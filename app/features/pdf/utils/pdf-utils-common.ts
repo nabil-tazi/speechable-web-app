@@ -154,15 +154,15 @@ export const DEBUG_HEADING_PATTERN = "";
 
 // Debug flag for superscript position investigation
 export const DEBUG_SUPERSCRIPT = false;
-export const DEBUG_SUPERSCRIPT_PATTERN = "";
+export const DEBUG_SUPERSCRIPT_PATTERN: string = "";
 
 // Debug flag for line joining investigation
 export const DEBUG_LINE_JOIN = false;
-export const DEBUG_LINE_JOIN_PATTERN = "";
+export const DEBUG_LINE_JOIN_PATTERN: string = "";
 
 // Debug flag for writing mode (vertical text) investigation
 export const DEBUG_WMODE = false;
-export const DEBUG_WMODE_PATTERN = "";
+export const DEBUG_WMODE_PATTERN: string = "";
 
 // ============================================================================
 // SHARED TYPES

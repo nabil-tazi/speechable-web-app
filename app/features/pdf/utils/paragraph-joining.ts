@@ -782,7 +782,7 @@ export function joinPagesWithHyphenHandling(
   }
 
   // Step 6: Detect headings on cleaned text
-  // Exclude TOC and bibliography ranges (in cleaned text coordinates)
+  // Exclude TOC, bibliography, and anomaly ranges (in cleaned text coordinates)
   const excludeRanges: Array<{ start: number; end: number }> = [];
   if (tocResult.hasTOC) {
     excludeRanges.push({
@@ -795,6 +795,18 @@ export function joinPagesWithHyphenHandling(
       start: bibResult.startOffset,
       end: bibResult.endOffset,
     });
+  }
+
+  // Also exclude anomaly ranges to prevent Stage 2 heading detection
+  // from finding headings inside already-detected anomalies
+  for (const h of adjustedHighlights) {
+    if (h.type === "anomaly") {
+      const cleanedStart = positionMap.toClean(h.start);
+      const cleanedEnd = positionMap.toClean(h.end);
+      if (cleanedEnd > cleanedStart) {
+        excludeRanges.push({ start: cleanedStart, end: cleanedEnd });
+      }
+    }
   }
 
   // Adjust page break positions for artifact removal (map to cleaned text coordinates)
