@@ -835,14 +835,20 @@ export function joinLinesIntoParagraphs(
       const blockText = processedResult.text;
 
       if (blockText.length > 1) {
-        // Get average font size from block lines
-        const fontSizes = block.lines
-          .map((l) => l.font.size)
-          .filter((s) => s > 0);
-        const avgFontSize =
-          fontSizes.length > 0
-            ? fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length
-            : 12;
+        // Get weighted average font size from block lines (weighted by text length)
+        // This prevents short superscript/subscript lines from skewing the average
+        const linesWithSize = block.lines.filter(
+          (l) => l.font.size > 0 && l.text.length > 0
+        );
+        const totalWeight = linesWithSize.reduce(
+          (sum, l) => sum + l.text.length,
+          0
+        );
+        const weightedSum = linesWithSize.reduce(
+          (sum, l) => sum + l.font.size * l.text.length,
+          0
+        );
+        const avgFontSize = totalWeight > 0 ? weightedSum / totalWeight : 12;
 
         // Check if block is predominantly bold
         const boldLines = block.lines.filter(
