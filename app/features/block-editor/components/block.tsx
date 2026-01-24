@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 import type { BlockType } from "@/app/features/documents/types";
 
 import { useEditor } from "../context/editor-provider";
+import { useCredits } from "@/app/features/users/context";
 import { ReaderSelector } from "./reader-selector";
 import { SentenceRenderer } from "./sentence-renderer";
 import { FloatingMenu } from "./floating-menu";
 import { BlockDropdownMenu } from "./block-dropdown-menu";
 import { PendingReplacementPreview } from "./pending-replacement-preview";
 import { PendingEditDialog } from "./pending-edit-dialog";
+import InsufficientCreditsDialog from "@/app/features/credits/components/insufficient-credits-dialog";
 
 import {
   useScrollContainer,
@@ -38,6 +40,7 @@ export function BlockComponent({
   onSentenceClick,
 }: BlockComponentProps) {
   const { updateBlock, deleteBlock, addBlock, blocks, dispatch } = useEditor();
+  const { updateCredits } = useCredits();
 
   // Refs
   const contentRef = useRef<HTMLDivElement>(null);
@@ -98,12 +101,14 @@ export function BlockComponent({
     processingAction,
     pendingReplacement,
     noChangesMessage,
+    insufficientCreditsInfo,
     handleSelectionAction,
     handleBlockAction,
     handleAcceptReplacement,
     handleDiscardReplacement,
     handleTryAgain,
     handleInsertBelow,
+    clearInsufficientCreditsInfo,
   } = useAITextActions({
     contentRef,
     containerRef,
@@ -116,6 +121,7 @@ export function BlockComponent({
     originalScrollPosRef,
     setSelectionMenu,
     setIsEditing,
+    onCreditsUpdated: updateCredits,
   });
 
   // Keyboard handler hook
@@ -450,6 +456,15 @@ export function BlockComponent({
           handleAcceptReplacement();
           setShowPendingDialog(false);
         }}
+      />
+
+      {/* Insufficient credits dialog */}
+      <InsufficientCreditsDialog
+        isOpen={!!insufficientCreditsInfo}
+        onClose={clearInsufficientCreditsInfo}
+        creditsNeeded={insufficientCreditsInfo?.creditsNeeded ?? 0}
+        creditsAvailable={insufficientCreditsInfo?.creditsAvailable ?? 0}
+        nextRefillDate={insufficientCreditsInfo?.nextRefillDate ?? null}
       />
     </div>
   );

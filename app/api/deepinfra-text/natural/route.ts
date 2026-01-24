@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+} from "@/app/api/lib/credits-middleware";
 
 const SYSTEM_PROMPT = `You are a text processing assistant that improves text for natural-sounding speech.`;
 
@@ -36,6 +40,12 @@ export async function POST(req: NextRequest) {
       { error: "Missing or empty text" },
       { status: 400 }
     );
+  }
+
+  // Check credits before processing
+  const creditCheck = await checkCreditsForRequest({ textLength: text.length });
+  if (!creditCheck.success) {
+    return creditCheck.response;
   }
 
   const apiKey = process.env.DEEPINFRA_API_KEY;
@@ -90,7 +100,17 @@ export async function POST(req: NextRequest) {
       result = result.slice(1, -1);
     }
 
-    return NextResponse.json({ result });
+    // Deduct credits after successful operation
+    const creditResult = await deductCreditsAfterOperation(
+      creditCheck.userId,
+      text.length
+    );
+
+    return NextResponse.json({
+      result,
+      creditsUsed: creditResult?.creditsUsed ?? 0,
+      creditsRemaining: creditResult?.creditsRemaining ?? 0,
+    });
   } catch (error) {
     console.error("[deepinfra-text/natural] Error:", error);
     return NextResponse.json(

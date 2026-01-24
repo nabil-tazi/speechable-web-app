@@ -17,6 +17,7 @@ import { useSidebarData } from "@/app/features/sidebar/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import CreditDisplay from "@/app/features/credits/components/credit-display";
 import { APP_VERSION } from "@/lib/version";
 
 function LibraryContent() {
@@ -111,8 +112,9 @@ function LibraryContent() {
             </div>
           )}
 
-          {/* Right section - User menu */}
+          {/* Right section - Credits + User menu */}
           <div className="flex items-center gap-3 flex-1 justify-end">
+            <CreditDisplay />
             <HeaderUserMenu />
           </div>
         </div>

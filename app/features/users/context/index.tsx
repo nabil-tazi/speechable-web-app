@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useReducer } from "react";
+import { createContext, useCallback, useContext, useEffect, useReducer } from "react";
 import type { UserProfile } from "../types";
 import { userReducer, type Action } from "./reducer";
 import { User } from "@supabase/supabase-js";
@@ -152,4 +152,26 @@ export function useUserDispatch() {
     throw new Error("useUserDispatch must be used within a UserProvider");
   }
   return dispatch;
+}
+
+/**
+ * Hook to access and update user credits
+ */
+export function useCredits() {
+  const state = useUserState();
+  const dispatch = useUserDispatch();
+
+  const updateCredits = useCallback(
+    (newCredits: number) => {
+      dispatch({ type: "UPDATE_CREDITS", payload: newCredits });
+    },
+    [dispatch]
+  );
+
+  return {
+    credits: state.userProfile?.credits ?? 0,
+    nextRefillDate: state.userProfile?.next_refill_date ?? null,
+    monthlyAllowance: state.userProfile?.monthly_credit_allowance ?? 10,
+    updateCredits,
+  };
 }

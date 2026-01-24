@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+} from "@/app/api/lib/credits-middleware";
 
 const SYSTEM_PROMPT = `You are a conversational content transformer. Create engaging dialogues between exactly 2 speakers with strict alternation. Always respond with valid JSON.`;
 
@@ -52,6 +56,12 @@ export async function POST(req: NextRequest) {
       { error: "Missing or empty text" },
       { status: 400 }
     );
+  }
+
+  // Check credits before processing
+  const creditCheck = await checkCreditsForRequest({ textLength: text.length });
+  if (!creditCheck.success) {
+    return creditCheck.response;
   }
 
   const apiKey = process.env.DEEPINFRA_API_KEY;
@@ -132,7 +142,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ dialogue });
+    // Deduct credits after successful operation
+    const creditResult = await deductCreditsAfterOperation(
+      creditCheck.userId,
+      text.length
+    );
+
+    return NextResponse.json({
+      dialogue,
+      creditsUsed: creditResult?.creditsUsed ?? 0,
+      creditsRemaining: creditResult?.creditsRemaining ?? 0,
+    });
   } catch (error) {
     console.error("[deepinfra-text/conversational] Error:", error);
     return NextResponse.json(
