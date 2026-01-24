@@ -130,11 +130,47 @@ function convertBbox(bbox: MuPDFBbox | number[]): BoundingBox {
   };
 }
 
+// Debug flag for vertical text detection
+const DEBUG_VERTICAL_TEXT = false;
+const DEBUG_VERTICAL_PATTERN = "downloaded";
+
+// Vertical text detection threshold: if height/width ratio exceeds this, text is vertical
+// Normal horizontal text has width >> height, vertical text has height >> width
+const VERTICAL_TEXT_RATIO_THRESHOLD = 3;
+
+/**
+ * Check if a bounding box indicates vertical/rotated text.
+ * Vertical text has height significantly larger than width.
+ */
+function isVerticalBbox(bbox: { w: number; h: number }): boolean {
+  if (bbox.w <= 0) return false;
+  return bbox.h / bbox.w > VERTICAL_TEXT_RATIO_THRESHOLD;
+}
+
 /**
  * Convert MuPDF line to our StructuredLine format
  * Extracts text from spans/chars and captures character positions for word-break detection
  */
 function convertLine(line: MuPDFLine): StructuredLine {
+  // Debug: Log direction vector for targeted pattern
+  if (DEBUG_VERTICAL_TEXT && line.text?.toLowerCase().includes(DEBUG_VERTICAL_PATTERN)) {
+    console.log(`[MuPDF Dir Debug] Found "${DEBUG_VERTICAL_PATTERN}":`);
+    console.log(`  dir: ${JSON.stringify(line.dir)}`);
+    console.log(`  wmode: ${line.wmode}`);
+    console.log(`  bbox: ${JSON.stringify(line.bbox)}`);
+    console.log(`  text: "${line.text?.slice(0, 50)}..."`);
+  }
+  // Also check spans for the pattern
+  if (DEBUG_VERTICAL_TEXT && line.spans) {
+    const spanText = line.spans.map(s => s.chars?.map(c => c.c).join('') || '').join('');
+    if (spanText.toLowerCase().includes(DEBUG_VERTICAL_PATTERN)) {
+      console.log(`[MuPDF Dir Debug] Found "${DEBUG_VERTICAL_PATTERN}" in spans:`);
+      console.log(`  dir: ${JSON.stringify(line.dir)}`);
+      console.log(`  wmode: ${line.wmode}`);
+      console.log(`  bbox: ${JSON.stringify(line.bbox)}`);
+      console.log(`  spanText: "${spanText.slice(0, 50)}..."`);
+    }
+  }
   // Track first and last character positions for word-break detection
   let firstCharX: number | undefined;
   let lastCharX: number | undefined;
@@ -214,10 +250,16 @@ function convertLine(line: MuPDFLine): StructuredLine {
  */
 function convertBlock(block: MuPDFBlock): StructuredBlock {
   const lines: StructuredLine[] = (block.lines || []).map(convertLine);
+  const bbox = convertBbox(block.bbox);
+
+  // Detect vertical text from bbox ratio (height >> width indicates rotated text)
+  const isVertical = isVerticalBbox(bbox);
+
   return {
     type: block.type,
-    bbox: convertBbox(block.bbox),
+    bbox,
     lines,
+    isVertical,
   };
 }
 

@@ -31,6 +31,7 @@ export interface StructuredBlock {
   type: string;
   bbox: BoundingBox;
   lines: StructuredLine[];
+  isVertical?: boolean;  // True if block contains vertical/rotated text (detected via bbox h/w ratio)
 }
 
 // Removable highlight types (cleaned when hiding tagged sections)

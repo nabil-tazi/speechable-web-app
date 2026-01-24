@@ -91,7 +91,12 @@ function calculateBibliographyScore(text: string): {
   const initialsFirstAuthors = (
     text.match(/[A-ZÀ-ÖØ-Þ]\.\s+(?:[A-ZÀ-ÖØ-Þ]\.\s+)?[A-ZÀ-ÖØ-Þ][a-zà-ÿ]+/g) || []
   ).length;
-  const authorInitials = surnameFirstAuthors + initialsFirstAuthors;
+  // Full name authors: "Surname, Firstname" (humanities/book style - Chicago, etc.)
+  // Matches: "Azoulay, Ariella", "Barthes, Roland", "Foucault, Michel"
+  const fullNameAuthors = (
+    text.match(/[A-ZÀ-ÖØ-Þ][a-zà-ÿ]+,\s+[A-ZÀ-ÖØ-Þ][a-zà-ÿ]{2,}/g) || []
+  ).length;
+  const authorInitials = surnameFirstAuthors + initialsFirstAuthors + fullNameAuthors;
   const ampersandAuthors = (text.match(/&\s+[A-ZÀ-ÖØ-Þ][a-zà-ÿ]+/g) || [])
     .length;
   // Also match "and X. Surname" pattern common in scientific refs

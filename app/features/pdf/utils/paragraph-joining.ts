@@ -26,6 +26,8 @@ import {
   DEBUG_LINE_JOIN_PATTERN,
   DEBUG_ANOMALY_SCORING,
   DEBUG_ANOMALY_PATTERN,
+  DEBUG_WMODE,
+  DEBUG_WMODE_PATTERN,
   ANOMALY_THRESHOLD,
   SHORT_BLOCK_THRESHOLD,
   LONG_BLOCK_THRESHOLD,
@@ -946,6 +948,61 @@ export function joinLinesIntoParagraphs(
     let blockIndex = 0;
     let prevBlockForHeading: StructuredBlock | null = null; // For heading gap calculation
     for (const block of page.blocks) {
+      // Debug: Check for vertical text
+      if (DEBUG_WMODE) {
+        const blockFullText = block.lines.map(l => l.text).join(' ').toLowerCase();
+        const matchesPattern = DEBUG_WMODE_PATTERN && blockFullText.includes(DEBUG_WMODE_PATTERN.toLowerCase());
+
+        // Targeted logging for specific pattern
+        if (matchesPattern) {
+          console.log(`[WmodeDebug] Found "${DEBUG_WMODE_PATTERN}" on page ${page.pageNumber}:`);
+          console.log(`  block bbox: x=${block.bbox.x.toFixed(1)}, y=${block.bbox.y.toFixed(1)}, w=${block.bbox.w.toFixed(1)}, h=${block.bbox.h.toFixed(1)}`);
+          console.log(`  block type: ${block.type}`);
+          console.log(`  lines: ${block.lines.length}`);
+          block.lines.forEach((l, i) => {
+            console.log(`    Line ${i}: "${l.text}"`);
+            console.log(`      wmode: ${l.wmode}`);
+            console.log(`      bbox: x=${l.bbox.x.toFixed(1)}, y=${l.bbox.y.toFixed(1)}, w=${l.bbox.w.toFixed(1)}, h=${l.bbox.h.toFixed(1)}`);
+            console.log(`      font: ${l.font.size}pt ${l.font.weight} "${l.font.name}"`);
+          });
+        }
+
+        // Check wmode property
+        for (const line of block.lines) {
+          if (line.wmode !== 0) {
+            console.log(`[WmodeDebug] Vertical text (wmode) on page ${page.pageNumber}:`);
+            console.log(`  wmode: ${line.wmode}`);
+            console.log(`  text: "${line.text.slice(0, 50)}${line.text.length > 50 ? '...' : ''}"`);
+            console.log(`  bbox: x=${line.bbox.x.toFixed(1)}, y=${line.bbox.y.toFixed(1)}, w=${line.bbox.w.toFixed(1)}, h=${line.bbox.h.toFixed(1)}`);
+          }
+        }
+
+        // Fallback: Detect vertical text by bounding box analysis
+        // Vertical text blocks typically have: height >> width, short lines
+        const blockWidth = block.bbox.w;
+        const blockHeight = block.bbox.h;
+        const aspectRatio = blockHeight / blockWidth;
+        const avgLineLength = block.lines.length > 0
+          ? block.lines.reduce((sum, l) => sum + l.text.length, 0) / block.lines.length
+          : 0;
+
+        // Heuristic: tall narrow block (aspect ratio > 3) with very short lines (avg < 3 chars)
+        const looksVertical = aspectRatio > 3 && avgLineLength < 3 && block.lines.length > 2;
+
+        if (looksVertical) {
+          const fullText = block.lines.map(l => l.text).join('');
+          console.log(`[WmodeDebug] Possible vertical text (bbox heuristic) on page ${page.pageNumber}:`);
+          console.log(`  block bbox: w=${blockWidth.toFixed(1)}, h=${blockHeight.toFixed(1)}, aspectRatio=${aspectRatio.toFixed(1)}`);
+          console.log(`  lines: ${block.lines.length}, avgLineLength: ${avgLineLength.toFixed(1)}`);
+          console.log(`  text (joined): "${fullText.slice(0, 50)}${fullText.length > 50 ? '...' : ''}"`);
+          console.log(`  individual lines:`);
+          block.lines.slice(0, 5).forEach((l, i) => {
+            console.log(`    ${i}: "${l.text}" (wmode=${l.wmode})`);
+          });
+          if (block.lines.length > 5) console.log(`    ... and ${block.lines.length - 5} more`);
+        }
+      }
+
       // Debug: Check if this block contains our target pattern
       const blockFirstLine = block.lines.length > 0 ? block.lines[0].text : "";
       if (
@@ -1139,7 +1196,10 @@ export function joinLinesIntoParagraphs(
           blockFontSize: avgFontSize, // Block's weighted average font size
         });
 
-        if (artifactType) {
+        if (block.isVertical) {
+          // Vertical/rotated text (detected via bbox h/w ratio) - treat as anomaly
+          sectionType = "anomaly";
+        } else if (artifactType) {
           // Artifact types: 'header' | 'footer' | 'page_number'
           sectionType = artifactType;
         } else if (blockIsAuthor) {
@@ -1827,24 +1887,36 @@ export function joinLinesIntoParagraphs(
       const prevContinues = blockContinuesToNext(prevBlockText);
       const currentContinuesFromPrev = blockContinuesFromPrevious(currentBlockText);
 
+      // Check if fonts match (same section) - required for joining based on prevContinues
+      // Different fonts indicate section change (e.g., keywords → body text)
+      const fontsMatch = Math.abs(prevBlockData.lastLineFontSize - currentBlockData.firstLineFontSize) < 0.5 &&
+        prevBlockData.lastLineBold === currentBlockData.firstLineBold;
+
+      // Determine if we should join:
+      // - If fonts match: use either signal (prevContinues OR currentContinuesFromPrev)
+      // - If fonts don't match: only join if current starts lowercase (strong continuation signal)
+      const shouldJoin = fontsMatch
+        ? (prevContinues || currentContinuesFromPrev)
+        : currentContinuesFromPrev;
+
       if (shouldDebugBlockJoin) {
         console.log(`  prevContinues: ${prevContinues}, currentContinuesFromPrev: ${currentContinuesFromPrev}`);
+        console.log(`  fontsMatch: ${fontsMatch} (prev: ${prevBlockData.lastLineFontSize}/${prevBlockData.lastLineBold ? 'bold' : 'normal'}, curr: ${currentBlockData.firstLineFontSize}/${currentBlockData.firstLineBold ? 'bold' : 'normal'})`);
         console.log(
           `  isHeadingToBody: ${isHeadingToBody}, isBodyToHeading: ${isBodyToHeading}`
         );
         console.log(
           `  Decision: ${
-            (prevContinues || currentContinuesFromPrev) && !isHeadingToBody && !isBodyToHeading
+            shouldJoin && !isHeadingToBody && !isBodyToHeading
               ? "JOIN with space"
               : "SEPARATE with \\n\\n"
           }`
         );
       }
 
-      // Join if previous block ends mid-sentence OR current block starts with lowercase
-      // (lowercase start indicates continuation even if prev ended with period/abbreviation)
+      // Join based on continuation signals, but require font match for weaker signals
       // BUT NOT if it's a heading transition (either direction)
-      if ((prevContinues || currentContinuesFromPrev) && !isHeadingToBody && !isBodyToHeading) {
+      if (shouldJoin && !isHeadingToBody && !isBodyToHeading) {
         // Join with space - sentence continues across blocks/columns
         const trimmedLength = result.trimEnd().length;
         const blockOffsetSpace = trimmedLength + 1; // +1 for space

@@ -160,6 +160,10 @@ export const DEBUG_SUPERSCRIPT_PATTERN = "";
 export const DEBUG_LINE_JOIN = false;
 export const DEBUG_LINE_JOIN_PATTERN = "";
 
+// Debug flag for writing mode (vertical text) investigation
+export const DEBUG_WMODE = false;
+export const DEBUG_WMODE_PATTERN = "";
+
 // ============================================================================
 // SHARED TYPES
 // ============================================================================
