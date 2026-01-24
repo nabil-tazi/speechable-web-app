@@ -62,6 +62,13 @@ const REFERENCE_PATTERNS = [
   // Year with page number(s): (2001, 16), (2001, 16–22), (2001, 16, 22, 45)
   /\(\s*(?:19|20)\d{2}\s*,\s*\d+(?:\s*[-–,]\s*\d+)*\s*\)/g,
 
+  // Author year: page (Chicago humanities style): (Sontag 1977: 3), (Sontag 2003: 110–13)
+  /\(\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]+\s+(?:19|20)\d{2}\s*:\s*\d+(?:\s*[-–]\s*\d+)?\s*\)/g,
+
+  // Page number(s) only: (6), (23), (127), (92–93), (87–88), (147–51)
+  // Matches 1-3 digit numbers or ranges in parentheses (common for page references)
+  /\(\s*\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*\)/g,
+
   // Single author with year (comma): (Author, Year) or (De Mello, 1999) or (van der Berg, 2019)
   // Allow lowercase prefixes (van der, von, de la), multi-word names, suffixes (Jr, Sr), accented chars, acronyms
   // Optional "see ", "e.g., ", "cf. " prefix
