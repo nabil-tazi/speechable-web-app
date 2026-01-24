@@ -71,10 +71,29 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
   // Auto-scroll to currently playing sentence
   useEffect(() => {
     if (playingSentenceRef.current && isPlaybackOn && currentSentence) {
-      playingSentenceRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
+      const scrollContainer = document.querySelector(
+        '[data-scroll-container="true"]'
+      );
+      if (scrollContainer) {
+        const headerOffset = 80; // Account for fixed header
+        const elementRect = playingSentenceRef.current.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+
+        // Check if element is outside visible area (accounting for header offset)
+        const isAboveViewport = elementRect.top < containerRect.top + headerOffset;
+        const isBelowViewport = elementRect.bottom > containerRect.bottom;
+
+        if (isAboveViewport || isBelowViewport) {
+          const elementTop = elementRect.top;
+          const containerTop = containerRect.top;
+          const scrollTop =
+            scrollContainer.scrollTop + elementTop - containerTop - headerOffset;
+          scrollContainer.scrollTo({
+            top: scrollTop,
+            behavior: "smooth",
+          });
+        }
+      }
     }
   }, [currentIndex, isPlaybackOn, currentSentence]);
 

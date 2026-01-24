@@ -10,7 +10,6 @@ export { useGain } from "./hooks/use-gain";
 
 // Components
 export { TTSPlayer } from "./components/tts-player";
-export { SentenceDisplay } from "./components/sentence-display";
 export { DownloadButton } from "./components/download-button";
 export { EcoBadge } from "./components/eco-badge";
 
