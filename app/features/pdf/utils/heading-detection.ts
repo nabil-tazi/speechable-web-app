@@ -11,7 +11,7 @@ import type {
   BlockHeadingCandidate,
   OutlineEntry,
 } from "../types";
-import { DEBUG_HEADING, DEBUG_HEADING_PATTERN, FontSignature, getFontSignatureKey, OUTLINE_MATCH_BONUS } from "./pdf-utils-common";
+import { DEBUG_HEADING, DEBUG_HEADING_PATTERNS, FontSignature, getFontSignatureKey, OUTLINE_MATCH_BONUS } from "./pdf-utils-common";
 import {
   HeadingPatternType,
   extractHeadingPattern,
@@ -539,7 +539,7 @@ export function detectHeadingsFromText(
     // Debug logging for target pattern
     if (
       DEBUG_HEADING &&
-      candidate.text.toLowerCase().includes(DEBUG_HEADING_PATTERN)
+      DEBUG_HEADING_PATTERNS.some(p => p && candidate.text.toLowerCase().includes(p.toLowerCase()))
     ) {
       console.log(
         `[HeadingFromCandidate] "${candidate.text.slice(0, 50)}..." score=${
@@ -586,7 +586,7 @@ export function detectHeadingsFromText(
     // Debug: Check if this line matches our target pattern
     const shouldDebugHeading =
       DEBUG_HEADING &&
-      trimmedLine.toLowerCase().includes(DEBUG_HEADING_PATTERN);
+      DEBUG_HEADING_PATTERNS.some(p => p && trimmedLine.toLowerCase().includes(p.toLowerCase()));
 
     if (trimmedLine && trimmedLine.length <= 150) {
       // Check if line is in excluded range

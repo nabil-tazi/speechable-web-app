@@ -4,7 +4,7 @@
  */
 
 import type { StructuredPage, StructuredBlock } from "../types";
-import { DEBUG_HEADING, DEBUG_HEADING_PATTERN } from "./pdf-utils-common";
+import { DEBUG_HEADING, DEBUG_HEADING_PATTERNS } from "./pdf-utils-common";
 
 // ============================================================================
 // TYPES
@@ -126,7 +126,7 @@ export function extractHeadingPattern(text: string): HeadingPatternResult | null
   const trimmed = text.trim();
 
   // Debug: Log pattern matching for target heading
-  if (DEBUG_HEADING && trimmed.toLowerCase().includes(DEBUG_HEADING_PATTERN)) {
+  if (DEBUG_HEADING && DEBUG_HEADING_PATTERNS.some(p => p && trimmed.toLowerCase().includes(p.toLowerCase()))) {
     console.log(`[extractHeadingPattern] Input: "${trimmed.slice(0, 80)}"`);
     // Test the numbered pattern specifically
     const numberedMatch = trimmed.match(/^(\d+)\.?\s+\S/);
