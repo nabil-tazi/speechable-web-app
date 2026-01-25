@@ -3,6 +3,7 @@ import {
   createDocumentAction,
   updateDocumentAction,
   uploadDocumentThumbnailAction,
+  deleteDocumentAction,
 } from "../actions";
 import type { DocumentsAction } from "../context/reducer";
 import { CustomContextAction } from "@/app/features/shared/types/context-actions";
@@ -30,6 +31,7 @@ interface DocumentsActions {
 
   refreshDocuments: () => Promise<void>;
   removeDocument: (documentId: string) => void;
+  deleteDocument: (documentId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export function createDocumentsActions(
@@ -153,12 +155,28 @@ export function createDocumentsActions(
     dispatch({ type: "REMOVE_DOCUMENT", payload: documentId });
   };
 
+  const deleteDocument = async (documentId: string) => {
+    try {
+      const { success, error } = await deleteDocumentAction(documentId);
+
+      if (success) {
+        dispatch({ type: "REMOVE_DOCUMENT", payload: documentId });
+        return { success: true };
+      }
+
+      return { success: false, error: error || "Failed to delete document" };
+    } catch (error) {
+      return { success: false, error: "Failed to delete document" };
+    }
+  };
+
   return {
     createDocument,
     updateDocument,
     uploadThumbnail,
     refreshDocuments,
     removeDocument,
+    deleteDocument,
   };
 }
 

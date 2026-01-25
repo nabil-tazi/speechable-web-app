@@ -1,39 +1,43 @@
-import { useState } from "react";
-import type {
-  DocumentType,
-  DocumentWithVersions,
-} from "@/app/features/documents/types";
+import { useState, useRef } from "react";
+import type { DocumentWithVersions } from "@/app/features/documents/types";
 import { useDocumentsActions } from "../context";
 import { Card } from "@/components/ui/card";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { File, GalleryHorizontalEnd, Globe, Pen, Bookmark } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
-  getLanguageName,
-  LANGUAGE_MAP,
-} from "@/app/api/classify-document/constants";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Bookmark, MoreVertical, Trash2, FileText, Globe, Type, Images } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { DOCUMENT_TYPES } from "../constants";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { useSidebarData } from "@/app/features/sidebar/context";
 interface DocumentCardProps {
   doc: DocumentWithVersions;
   onClick?: () => void;
   priority?: boolean; // For LCP optimization - set true for above-the-fold images
+}
+
+const SOURCE_LABELS: Record<string, { label: string; icon: typeof FileText }> = {
+  pdf: { label: "PDF Upload", icon: FileText },
+  url: { label: "Web Page", icon: Globe },
+  text: { label: "Text Input", icon: Type },
+  images: { label: "Image OCR", icon: Images },
+};
+
+function getSourceInfo(fileType: string) {
+  return SOURCE_LABELS[fileType] || { label: fileType, icon: FileText };
 }
 
 function getRelativeTime(dateString: string): string {
@@ -67,16 +71,19 @@ export function DocumentCard({
   onClick,
   priority = false,
 }: DocumentCardProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editValues, setEditValues] = useState({
-    filename: doc.filename,
-    language: doc.language || "",
-    document_type: doc.document_type as DocumentType,
+    title: doc.title || "",
+    author: doc.author || "",
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const { updateDocument } = useDocumentsActions();
-  const router = useRouter();
+  // Track when dialog just closed to prevent click-through to card
+  const justClosedDialogRef = useRef(false);
+
+  const { updateDocument, deleteDocument } = useDocumentsActions();
   const { starredDocuments, refreshStarred } = useSidebarData();
   const isStarred = starredDocuments.some((s) => s.id === doc.id);
 
@@ -90,11 +97,10 @@ export function DocumentCard({
   const handleCancel = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     setEditValues({
-      filename: doc.filename,
-      language: doc.language || "",
-      document_type: doc.document_type as DocumentType,
+      title: doc.title || "",
+      author: doc.author || "",
     });
-    setIsOpen(false);
+    setIsEditOpen(false);
   };
 
   const handleSave = async (e?: React.MouseEvent) => {
@@ -104,27 +110,22 @@ export function DocumentCard({
       const updates: any = {};
 
       // Only include changed values
-      if (editValues.filename !== doc.filename) {
-        updates.filename = editValues.filename;
+      if (editValues.title !== (doc.title || "")) {
+        updates.title = editValues.title;
       }
-      if (editValues.language !== (doc.language || "")) {
-        updates.language = editValues.language || null;
-      }
-      if (editValues.document_type !== doc.document_type) {
-        updates.document_type = editValues.document_type;
+      if (editValues.author !== (doc.author || "")) {
+        updates.author = editValues.author;
       }
 
       if (Object.keys(updates).length > 0) {
         const result = await updateDocument(doc.id, updates);
         if (result.success) {
-          if (updates.document_type)
-            router.push(`/library?category=${updates.document_type}`);
-          setIsOpen(false);
+          setIsEditOpen(false);
         } else {
           console.error("Failed to update document:", result.error);
         }
       } else {
-        setIsOpen(false);
+        setIsEditOpen(false);
       }
     } catch (error) {
       console.error("Failed to update document:", error);
@@ -133,22 +134,45 @@ export function DocumentCard({
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const result = await deleteDocument(doc.id);
+      if (!result.success) {
+        console.error("Failed to delete document:", result.error);
+      }
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to delete document:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCardClick = () => {
+    if (justClosedDialogRef.current) {
+      justClosedDialogRef.current = false;
+      return;
+    }
+    onClick?.();
+  };
+
   return (
     <div
       className={`flex flex-col gap-3 group ${onClick && "cursor-pointer"}`}
-      onClick={onClick}
+      onClick={handleCardClick}
     >
       <Card className="relative w-50 h-32 p-0 overflow-hidden bg-gray-200 group-hover:bg-gray-200 border-none">
         <button
           onClick={handleToggleStar}
-          className={`absolute top-2 left-2 z-10 size-6 flex items-center justify-center rounded transition-all ${
+          className={`absolute top-2 left-2 z-10 size-8 sm:size-6 flex items-center justify-center rounded transition-all ${
             isStarred
-              ? "opacity-100 bg-transparent group-hover:bg-white group-hover:border group-hover:border-gray-200"
-              : "opacity-0 group-hover:opacity-100 bg-white border border-gray-200 hover:bg-gray-50"
+              ? "opacity-100 bg-transparent sm:group-hover:bg-white sm:group-hover:border sm:group-hover:border-gray-200"
+              : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-white border border-gray-200 sm:hover:bg-gray-50"
           }`}
         >
           <Bookmark
-            className={`w-3.5 h-3.5 text-gray-600 ${
+            className={`w-4 h-4 sm:w-3.5 sm:h-3.5 text-gray-600 ${
               isStarred ? "fill-current" : ""
             }`}
           />
@@ -161,201 +185,187 @@ export function DocumentCard({
           {doc.versions.length} version
           {doc.versions.length > 1 ? "s" : ""}
         </Badge> */}
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <div className="flex h-full pt-8 group-hover:pt-6 transition-all duration-200">
-            {doc?.thumbnail_path && (
-              <div
-                className="w-32 h-full rounded-tl-sm rounded-tr-sm shadow-[0px_2px_4px_0px_rgba(0,0,0,0.08)] bg-cover bg-no-repeat opacity-70 mx-auto group-hover:scale-115 transition-transform duration-200"
-                style={{
-                  backgroundImage: `url("${doc.thumbnail_path}")`,
-                }}
-              />
-            )}
-            {/* Left section - Thumbnail (full height) */}
-            {/* <div className="w-24 h-full flex items-center justify-center border-r shrink-0"></div> */}
+        <div className="flex h-full pt-8 group-hover:pt-6 transition-all duration-200">
+          {doc?.thumbnail_path && (
+            <div
+              className="w-32 h-full rounded-tl-sm rounded-tr-sm shadow-[0px_2px_4px_0px_rgba(0,0,0,0.08)] bg-cover bg-no-repeat opacity-70 mx-auto group-hover:scale-115 transition-transform duration-200"
+              style={{
+                backgroundImage: `url("${doc.thumbnail_path}")`,
+              }}
+            />
+          )}
+        </div>
 
-            {/* Right section - File Info (full height) */}
-            {/* <div className="flex-1 p-3 flex flex-col justify-between">
-            <div className="min-w-0">
-              <h3
-                style={{ maxWidth: "180px" }}
-                className="font-medium text-sm text-gray-900 leading-tight mb-2 truncate"
-                title={doc.filename}
-              >
-                {doc.filename}
-              </h3>
+        {/* Hover Actions - Details Button (always visible on mobile) */}
+        <div className="absolute top-2 right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditOpen(true);
+            }}
+            className="size-8 sm:size-6 flex items-center justify-center rounded bg-white hover:bg-gray-50 border border-gray-200"
+          >
+            <MoreVertical className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-gray-600" />
+          </button>
+        </div>
 
-              <div className="text-xs text-gray-600 space-y-1">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">
-                    <File className="w-3 h-3 mr-1" />
-                    {doc.file_type}
-                  </Badge>
+        {/* Details Dialog */}
+        <Dialog open={isEditOpen} onOpenChange={(open) => {
+          if (!open) justClosedDialogRef.current = true;
+          setIsEditOpen(open);
+        }}>
+          <DialogContent className="sm:max-w-xl" onClick={(e) => e.stopPropagation()} onPointerDownOutside={(e) => e.stopPropagation()}>
+            <DialogHeader>
+              <DialogTitle>Details</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-5 py-2">
+              {/* Top section: Thumbnail + Metadata (stacked on mobile, side-by-side on desktop) */}
+              <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 min-w-0">
+                {/* Thumbnail */}
+                {doc.thumbnail_path && (
+                  <div
+                    className="w-24 h-32 sm:w-32 sm:h-44 rounded-md shadow-sm bg-cover bg-center bg-no-repeat border flex-shrink-0 mx-auto sm:mx-0"
+                    style={{
+                      backgroundImage: `url("${doc.thumbnail_path}")`,
+                    }}
+                  />
+                )}
 
-                  {doc.page_count && (
-                    <div>
-                      {doc.page_count} page
-                      {doc.page_count > 1 ? "s" : ""}
+                {/* Read-only metadata */}
+                <div className="flex-1 min-w-0 space-y-2 text-sm text-center sm:text-left">
+                  {/* Source */}
+                  <div className="flex items-center justify-center sm:justify-start gap-2">
+                    {(() => {
+                      const sourceInfo = getSourceInfo(doc.file_type);
+                      const SourceIcon = sourceInfo.icon;
+                      return (
+                        <>
+                          <SourceIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          <span className="text-gray-600">{sourceInfo.label}</span>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Filename */}
+                  <div
+                    className="text-gray-500 line-clamp-2"
+                    title={doc.filename}
+                  >
+                    {doc.filename}
+                  </div>
+
+                  {/* Pages - not shown for URL imports */}
+                  {doc.page_count && doc.file_type !== "url" && (
+                    <div className="text-gray-500">
+                      {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              {doc.language && (
-                <Badge variant="secondary" className="text-xs">
-                  <Globe className="w-3 h-3 mr-1" />
-                  {getLanguageName(doc.language)}
-                </Badge>
-              )}
-              {doc.versions.length > 0 && (
-                <Badge variant="secondary" className="text-xs">
-                  <GalleryHorizontalEnd className="w-3 h-3 mr-1" />
-                  {doc.versions.length} version
-                  {doc.versions.length > 1 ? "s" : ""}
-                </Badge>
-              )}
-            </div>
-
-            <div className="text-xs text-gray-500">
-              {new Date(doc.updated_at).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "numeric",
-              })}
-            </div>
-          </div> */}
-          </div>
-
-          {/* Hover Actions */}
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <PopoverTrigger asChild>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsOpen(true);
-                }}
-                className="size-6 flex items-center justify-center rounded bg-white hover:bg-gray-50 border border-gray-200"
-              >
-                <Pen className="w-3.5 h-3.5 text-gray-600" />
-              </button>
-            </PopoverTrigger>
-          </div>
-
-          <PopoverContent
-            className="w-80"
-            align="end"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsOpen(true);
-            }}
-          >
-            <div className="grid gap-4">
-              <div className="grid gap-3">
-                {/* Filename */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <Label htmlFor="filename" className="text-sm">
-                    Filename
+              {/* Editable fields */}
+              <div className="space-y-3 pt-2 border-t">
+                {/* Title */}
+                <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-1.5 sm:gap-4">
+                  <Label htmlFor="title" className="text-sm">
+                    Title
                   </Label>
                   <Input
-                    id="filename"
-                    value={editValues.filename}
+                    id="title"
+                    value={editValues.title}
                     onChange={(e) =>
                       setEditValues((prev) => ({
                         ...prev,
-                        filename: e.target.value,
+                        title: e.target.value,
                       }))
                     }
-                    className="col-span-2 h-8"
-                    placeholder="Enter filename"
+                    className="sm:col-span-3"
+                    placeholder="Enter title"
                   />
                 </div>
 
-                {/* Document Type */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <Label htmlFor="document-type" className="text-sm">
-                    Type
+                {/* Author */}
+                <div className="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-1.5 sm:gap-4">
+                  <Label htmlFor="author" className="text-sm">
+                    Author
                   </Label>
-                  <Select
-                    value={editValues.document_type}
-                    onValueChange={(value: DocumentType) =>
+                  <Input
+                    id="author"
+                    value={editValues.author}
+                    onChange={(e) =>
                       setEditValues((prev) => ({
                         ...prev,
-                        document_type: value,
+                        author: e.target.value,
                       }))
                     }
-                  >
-                    <SelectTrigger className="col-span-2 h-8">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(DOCUMENT_TYPES).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Language */}
-                <div className="grid grid-cols-3 items-center gap-3">
-                  <Label htmlFor="language" className="text-sm">
-                    Language
-                  </Label>
-                  <Select
-                    value={editValues.language || "none"}
-                    onValueChange={(value) =>
-                      setEditValues((prev) => ({
-                        ...prev,
-                        language: value === "none" ? "" : value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="col-span-2 h-8">
-                      <SelectValue placeholder="Select language" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">
-                        No language specified
-                      </SelectItem>
-                      {Array.from(LANGUAGE_MAP.entries())
-                        .sort((a, b) => a[1].localeCompare(b[1]))
-                        .map(([code, name]) => (
-                          <SelectItem key={code} value={code}>
-                            {name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                    className="sm:col-span-3"
+                    placeholder="Enter author"
+                  />
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
-                <Button
-                  onClick={handleCancel}
-                  variant="outline"
-                  className="flex-1 h-8"
+              <div className="flex items-center justify-between pt-2">
+                {/* Delete - left side */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDeleteDialogOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600"
                   type="button"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="flex-1 h-8"
-                  type="button"
-                >
-                  {isSaving ? "Saving..." : "Save"}
-                </Button>
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+
+                {/* Cancel/Save - right side */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleCancel}
+                    variant="outline"
+                    type="button"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    type="button"
+                  >
+                    {isSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
               </div>
             </div>
-          </PopoverContent>
-        </Popover>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => {
+          if (!open) justClosedDialogRef.current = true;
+          setIsDeleteDialogOpen(open);
+        }}>
+          <AlertDialogContent onClick={(e) => e.stopPropagation()} onPointerDownOutside={(e) => e.stopPropagation()}>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete document?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete &quot;{doc.title || doc.filename}&quot; and all its versions and audio. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </Card>
       <div className="flex flex-col gap-0 px-2">
         <h3
