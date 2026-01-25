@@ -25,7 +25,7 @@ import {
   DEBUG_LINE_JOIN,
   DEBUG_LINE_JOIN_PATTERN,
   DEBUG_ANOMALY_SCORING,
-  DEBUG_ANOMALY_PATTERN,
+  DEBUG_ANOMALY_PATTERNS,
   DEBUG_WMODE,
   DEBUG_WMODE_PATTERN,
   ANOMALY_THRESHOLD,
@@ -249,8 +249,9 @@ function calculateAnomalyScore(
   const factors: string[] = [];
 
   const text = blockText.trim();
+  const textLower = text.toLowerCase();
   const shouldDebug =
-    DEBUG_ANOMALY_SCORING && text.toLowerCase().includes(DEBUG_ANOMALY_PATTERN);
+    DEBUG_ANOMALY_SCORING && DEBUG_ANOMALY_PATTERNS.some(p => textLower.includes(p));
 
   // 1. Distance from column
   if (context.distanceToColumn > 80) {
@@ -349,9 +350,9 @@ function calculateAnomalyScore(
 
   // Debug output
   if (shouldDebug) {
-    console.log(`[AnomalyDebug] Block containing "${DEBUG_ANOMALY_PATTERN}":`);
+    console.log(`[AnomalyDebug] Block:`);
     console.log(
-      `  text: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`
+      `  text: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`
     );
     console.log(`  length: ${text.length} chars`);
     console.log(`  distanceToColumn: ${context.distanceToColumn}px`);
@@ -1092,19 +1093,20 @@ export function joinLinesIntoParagraphs(
         // by artifact detection but extracted first due to PDF internal ordering).
         let blockIsReadingOrderAnomaly = false;
 
-        // Find the last "normal" block to compare against
+        // Find the last "normal" block with a valid column index to compare against
         // Skip blocks in the bottom 15% of the page (likely footers/page numbers)
         const bottomZoneThreshold = page.height * 0.85;
         let prevNormalBlock: (typeof blockData)[number] | undefined;
         for (let i = blockData.length - 1; i >= 0; i--) {
           const isInBottomZone = blockData[i].bbox.y > bottomZoneThreshold;
-          if (blockData[i].sectionType === "normal" && !isInBottomZone) {
+          const hasValidColumn = blockData[i].columnIndex !== -1;
+          if (blockData[i].sectionType === "normal" && !isInBottomZone && hasValidColumn) {
             prevNormalBlock = blockData[i];
             break;
           }
         }
 
-        if (prevNormalBlock) {
+        if (prevNormalBlock && columnIndex !== -1) {
           const currentY = block.bbox.y;
           const prevY = prevNormalBlock.bbox.y;
 
@@ -1112,15 +1114,13 @@ export function joinLinesIntoParagraphs(
           if (currentY < prevY) {
             const prevColumnIndex = prevNormalBlock.columnIndex;
 
-            // Both blocks must be aligned with columns for this check to apply
-            if (columnIndex !== -1 && prevColumnIndex !== -1) {
-              // If current column is same or to the left of previous column, it's an anomaly
-              if (columnIndex <= prevColumnIndex) {
-                blockIsReadingOrderAnomaly = true;
-              }
+            // If current column is same or to the left of previous column, it's an anomaly
+            if (columnIndex <= prevColumnIndex) {
+              blockIsReadingOrderAnomaly = true;
             }
           }
         }
+
 
         // Violation zone tracking:
         // When a reading order violation is detected, establish a "zone" that captures

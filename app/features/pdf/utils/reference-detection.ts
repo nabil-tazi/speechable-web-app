@@ -83,8 +83,85 @@ const REFERENCE_PATTERNS = [
   /\(\s*(?:see\s+|e\.g\.?,?\s+|cf\.?\s+)?(?:(?:(?:van|von|de|du|la|le|di|da)(?:\s+(?:der|den|het|la|las|los))?\s+)?[A-ZÀ-ÖØ-Ý][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]*(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]+)*(?:\s+(?:Jr|Sr|III?|IV)\.?)?(?:\s+(?:and|&)\s+(?:(?:van|von|de|du|la|le|di|da)(?:\s+(?:der|den|het|la|las|los))?\s+)?[A-ZÀ-ÖØ-Ý][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]*(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]+)*(?:\s+(?:Jr|Sr|III?|IV)\.?)?)?(?:\s+et\.?\s*al\.?)?\s*[,\s]+(?:19|20)\d{2}[a-z]?(?:\s*;\s*)?)+\s*\)/g,
 ];
 
-// URL pattern - matches http(s):// and www. URLs
-const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"{}|\\^`[\]]+/gi;
+// Common TLDs for URL detection without protocol
+const COMMON_TLDS = [
+  // Generic
+  'com', 'org', 'net', 'edu', 'gov', 'io', 'co', 'info', 'biz', 'me', 'tv', 'cc', 'app', 'dev',
+  // Country codes (common ones)
+  'fr', 'uk', 'de', 'es', 'it', 'nl', 'be', 'ch', 'at', 'pl', 'pt', 'se', 'no', 'dk', 'fi',
+  'eu', 'ru', 'cn', 'jp', 'kr', 'au', 'nz', 'ca', 'mx', 'br', 'ar', 'in', 'za',
+  // UK variations
+  'co\\.uk', 'org\\.uk', 'ac\\.uk',
+];
+
+// Build TLD pattern for regex
+const TLD_PATTERN = COMMON_TLDS.join('|');
+
+// URL pattern - matches:
+// 1. http(s):// URLs
+// 2. www. URLs
+// 3. domain.tld/path URLs (where tld is a known extension)
+// Build URL pattern with TLDs
+// Characters not allowed in URLs: whitespace, <, >, ", {, }, |, \, ^, `, [, ]
+const URL_INVALID_CHARS = '[^\\s<>"{}|\\\\^`\\[\\]]*';
+const URL_PATTERN = new RegExp(
+  '(?:https?:\\/\\/|www\\.|[a-zA-Z0-9][-a-zA-Z0-9]*\\.(?:' + TLD_PATTERN + ')(?:\\/|(?=[^a-zA-Z0-9])|$))' + URL_INVALID_CHARS,
+  'gi'
+);
+
+// URL continuation characters - when a URL ends with these, it likely continues on next line
+const URL_CONTINUATION_CHARS = /[\/=?&-]$/;
+
+// URL path pattern - matches text that looks like a URL path continuation
+// e.g., "path/to/file", "notice/1234", "/resource"
+const URL_PATH_PATTERN = /^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9._~:?#\[\]@!$&'()*+,;=-]*)+/;
+
+/**
+ * Check if text ends with a URL and whether it ends with a continuation character.
+ * Used for determining if lines should be joined without space.
+ */
+export function endsWithURL(text: string): { isURL: boolean; endsWithContinuationChar: boolean; urlEndIndex: number } {
+  const urls = detectURLs(text);
+  if (urls.length === 0) {
+    return { isURL: false, endsWithContinuationChar: false, urlEndIndex: -1 };
+  }
+
+  // Check if the last URL ends at or near the end of the text
+  const lastURL = urls[urls.length - 1];
+  const textAfterURL = text.slice(lastURL.end).trim();
+
+  // URL should be at the end (allowing for trailing whitespace or minimal punctuation)
+  if (textAfterURL.length > 2) {
+    return { isURL: false, endsWithContinuationChar: false, urlEndIndex: -1 };
+  }
+
+  // Get the actual URL text
+  const urlText = text.slice(lastURL.start, lastURL.end);
+  const endsWithContinuation = URL_CONTINUATION_CHARS.test(urlText);
+
+  return {
+    isURL: true,
+    endsWithContinuationChar: endsWithContinuation,
+    urlEndIndex: lastURL.end
+  };
+}
+
+/**
+ * Check if text looks like a URL path continuation.
+ * e.g., "path/to/file", "notice/1234-something", "/resource"
+ */
+export function looksLikeURLPath(text: string): boolean {
+  const trimmed = text.trimStart();
+
+  // Check if it starts with a path-like pattern
+  // Either "/something" or "word/word"
+  if (trimmed.startsWith('/')) {
+    return true;
+  }
+
+  // Check for "word/word" pattern (no spaces before first /)
+  return URL_PATH_PATTERN.test(trimmed);
+}
 
 // Email pattern - matches standard email addresses
 const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -213,7 +290,12 @@ export function detectReferences(
 // ============================================================================
 
 /**
- * Detect URLs in text (http(s):// and www. URLs).
+ * Detect URLs in text.
+ * Matches:
+ * - http(s):// URLs
+ * - www. URLs
+ * - domain.tld/path URLs (where tld is a known extension like .com, .org, .fr, etc.)
+ *
  * Returns array of {start, end} positions for each detected URL.
  */
 export function detectURLs(

@@ -13,7 +13,7 @@ import {
   DEBUG_LINE_JOIN_PATTERN,
 } from "./pdf-utils-common";
 import { isSpecialKeywordHeading } from "./heading-patterns";
-import { isListItem } from "./reference-detection";
+import { isListItem, endsWithURL, looksLikeURLPath } from "./reference-detection";
 import { repairLigatures } from "./ligature-repair";
 
 // ============================================================================
@@ -660,10 +660,19 @@ export function processBlockWithTracking(
           isWordSplit = xGap < wordSplitThreshold;
         }
 
+        // Check for URL continuation - if prev line ends with a URL and curr line
+        // looks like a URL path continuation, join without space
+        const urlCheck = endsWithURL(result);
+        const isURLContinuation =
+          urlCheck.isURL &&
+          urlCheck.endsWithContinuationChar &&
+          looksLikeURLPath(trimmedCurrentText);
+
         const needsSpace =
           !prevEndsWithSpace &&
           !currStartsWithSpace &&
           !isWordSplit &&
+          !isURLContinuation &&
           result.length > 0 &&
           trimmedCurrentText.length > 0;
 

@@ -40,7 +40,8 @@ export const SENTENCE_END_PATTERN = /[.!?]["'»)\]]*$/;
 // Titles, Latin abbreviations, reference markers, etc.
 // Note: Single letters [A-Z] are only abbreviations when NOT followed by closing bracket
 // (e.g., "Dr. A." is abbreviation, but "Appendix A.)" is sentence ending)
-const ABBREVIATION_PATTERN = /(?:^|[\s(])(?:Mr|Mrs|Ms|Dr|Prof|Rev|Hon|Jr|Sr|vs|etc|al|viz|ca|cf|fig|eq|no|nos|vol|pp?|approx|i\.?e|e\.?g)\.\s*["'»)\]]*$/i;
+const ABBREVIATION_PATTERN =
+  /(?:^|[\s(])(?:Mr|Mrs|Ms|Dr|Prof|Rev|Hon|Jr|Sr|vs|etc|al|viz|ca|cf|fig|eq|no|nos|vol|pp?|approx|i\.?e|e\.?g)\.\s*["'»)\]]*$/i;
 
 // Single letter abbreviations (only when NOT followed by closing paren/bracket)
 const SINGLE_LETTER_ABBREV = /(?:^|[\s(])[A-Z]\.\s*["'»]*$/i;
@@ -111,7 +112,11 @@ export const EARLY_DOCUMENT_THRESHOLD = 500;
 export const CLUSTER_SHORT_THRESHOLD = 100;
 
 // Types that act as cluster boundaries (anomalies won't expand past these)
-export const CLUSTER_BOUNDARY_TYPES = new Set(["heading", "toc", "bibliography"]);
+export const CLUSTER_BOUNDARY_TYPES = new Set([
+  "heading",
+  "toc",
+  "bibliography",
+]);
 
 // Types that can be part of an anomaly cluster
 export const CLUSTER_MEMBER_TYPES = new Set(["anomaly", "legend"]);
@@ -142,11 +147,11 @@ export const ZONE_SCORE_BONUS = 4;
 
 // Debug flag for anomaly scoring
 export const DEBUG_ANOMALY_SCORING = false;
-export const DEBUG_ANOMALY_PATTERN = "";
+export const DEBUG_ANOMALY_PATTERNS: string[] = [];
 
 // Debug flag for line break investigation
 export const DEBUG_LINE_BREAK = false;
-export const DEBUG_LINE_BREAK_PATTERN = "schematic of a bhj";
+export const DEBUG_LINE_BREAK_PATTERN: string = "";
 
 // Debug flag for heading detection investigation
 export const DEBUG_HEADING = false;
