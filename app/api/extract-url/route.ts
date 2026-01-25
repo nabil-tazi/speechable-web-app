@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
-import { chromium } from "playwright";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 import sharp from "sharp";
 
 interface SpeechItem {
@@ -17,18 +18,23 @@ interface ProcessedSection {
   };
 }
 
-// Capture a screenshot of the webpage using Playwright
+// Capture a screenshot of the webpage using Puppeteer with serverless Chromium
 async function captureScreenshot(url: string): Promise<string | null> {
   let browser = null;
   try {
-    browser = await chromium.launch({
+    // Use different config for local dev vs serverless (Vercel)
+    const isLocal = process.env.NODE_ENV === "development";
+
+    browser = await puppeteer.launch({
+      args: isLocal ? [] : chromium.args,
+      defaultViewport: { width: 800, height: 1200 },
+      executablePath: isLocal
+        ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        : await chromium.executablePath(),
       headless: true,
     });
-    // Use a portrait ratio viewport to match document thumbnail style (2:3 ratio)
-    const context = await browser.newContext({
-      viewport: { width: 800, height: 1200 },
-    });
-    const page = await context.newPage();
+
+    const page = await browser.newPage();
 
     // Navigate to the URL with a timeout
     await page.goto(url, {
@@ -37,9 +43,9 @@ async function captureScreenshot(url: string): Promise<string | null> {
     });
 
     // Wait a bit for any JavaScript to render
-    await page.waitForTimeout(1000);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Capture screenshot of the full viewport (no clip)
+    // Capture screenshot of the full viewport
     const screenshotBuffer = await page.screenshot({
       type: "png",
     });
@@ -51,7 +57,7 @@ async function captureScreenshot(url: string): Promise<string | null> {
       .resize(300, 450)
       .webp({
         quality: 40,
-        effort: 6,    // Compression effort (0-6, higher = smaller file)
+        effort: 6, // Compression effort (0-6, higher = smaller file)
       })
       .toBuffer();
 

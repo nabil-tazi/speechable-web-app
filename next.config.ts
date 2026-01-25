@@ -18,8 +18,8 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // Exclude MuPDF from server-side bundling so it loads WASM correctly
-  serverExternalPackages: ["mupdf"],
+  // Exclude packages that need native binaries from server-side bundling
+  serverExternalPackages: ["mupdf", "@sparticuz/chromium", "puppeteer-core"],
 
   // Empty turbopack config to silence the warning
   turbopack: {},
