@@ -155,7 +155,11 @@ export const DEBUG_LINE_BREAK_PATTERN: string = "";
 
 // Debug flag for heading detection investigation
 export const DEBUG_HEADING = false;
-export const DEBUG_HEADING_PATTERN = "";
+export const DEBUG_HEADING_PATTERNS: string[] = [];
+
+// Debug flag for footnote detection investigation
+export const DEBUG_FOOTNOTE = false;
+export const DEBUG_FOOTNOTE_PATTERN: string = "";
 
 // Debug flag for superscript position investigation
 export const DEBUG_SUPERSCRIPT = false;

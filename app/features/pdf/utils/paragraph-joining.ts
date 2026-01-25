@@ -19,7 +19,7 @@ import {
   isSentenceEnding,
   CLUSTER_SHORT_THRESHOLD,
   DEBUG_HEADING,
-  DEBUG_HEADING_PATTERN,
+  DEBUG_HEADING_PATTERNS,
   DEBUG_LINE_BREAK,
   DEBUG_LINE_BREAK_PATTERN,
   DEBUG_LINE_JOIN,
@@ -28,6 +28,8 @@ import {
   DEBUG_ANOMALY_PATTERNS,
   DEBUG_WMODE,
   DEBUG_WMODE_PATTERN,
+  DEBUG_FOOTNOTE,
+  DEBUG_FOOTNOTE_PATTERN,
   ANOMALY_THRESHOLD,
   SHORT_BLOCK_THRESHOLD,
   LONG_BLOCK_THRESHOLD,
@@ -798,10 +800,10 @@ export function joinPagesWithHyphenHandling(
     });
   }
 
-  // Also exclude anomaly ranges to prevent Stage 2 heading detection
-  // from finding headings inside already-detected anomalies
+  // Also exclude anomaly and footnote ranges to prevent Stage 2 heading detection
+  // from finding headings inside already-detected anomalies/footnotes
   for (const h of adjustedHighlights) {
-    if (h.type === "anomaly") {
+    if (h.type === "anomaly" || h.type === "footnote") {
       const cleanedStart = positionMap.toClean(h.start);
       const cleanedEnd = positionMap.toClean(h.end);
       if (cleanedEnd > cleanedStart) {
@@ -1020,7 +1022,7 @@ export function joinLinesIntoParagraphs(
       const blockFirstLine = block.lines.length > 0 ? block.lines[0].text : "";
       if (
         DEBUG_HEADING &&
-        blockFirstLine.toLowerCase().includes(DEBUG_HEADING_PATTERN)
+        DEBUG_HEADING_PATTERNS.some(p => p && blockFirstLine.toLowerCase().includes(p.toLowerCase()))
       ) {
         console.log(
           `[BlockLoop] Found block with target pattern on page ${page.pageNumber}`
@@ -1264,10 +1266,12 @@ export function joinLinesIntoParagraphs(
         // Skip heading detection for anomaly/artifact blocks to avoid overlapping highlights
         // textPosition is 0 here - will be adjusted when blocks are joined
         // Pass PDF outline for bonus scoring on outline matches
+        const nextBlock = page.blocks[blockIndex + 1] ?? null;
         const headingCandidate = sectionType === "normal"
           ? detectBlockHeadingCandidate(
               block,
               prevBlockForHeading,
+              nextBlock,
               opts.bodyFontSize,
               0, // Position will be adjusted during page joining
               pdfOutline
@@ -1366,23 +1370,42 @@ export function joinLinesIntoParagraphs(
       }
     }
 
-    // Footnote detection: Update section types for footnotes
-    // Footnotes must be: smaller font AND at bottom of page
+    // Footnote detection: Bottom-up approach
+    // Start from the last block and work upward, marking blocks as footnotes
+    // while they have smaller font. Stop when we hit body-sized text.
     const footnoteThreshold = averageFontSize * 0.85;
-    const bottomZone = page.height * 0.75; // Bottom 25% of page
-    for (let i = 0; i < blockData.length; i++) {
+
+    for (let i = blockData.length - 1; i >= 0; i--) {
       const currentBlockData = blockData[i];
 
-      // If block has smaller font AND is at bottom of page, mark as footnote
-      // (but only if not already marked as legend/anomaly)
+      // Debug: targeted logging for footnote detection
+      const shouldDebugFootnote =
+        DEBUG_FOOTNOTE &&
+        DEBUG_FOOTNOTE_PATTERN &&
+        currentBlockData.text.toLowerCase().includes(DEBUG_FOOTNOTE_PATTERN.toLowerCase());
+
       const isFootnoteSize = currentBlockData.fontSize < footnoteThreshold;
-      const isAtBottom = currentBlockData.bbox.y > bottomZone;
-      if (
-        isFootnoteSize &&
-        isAtBottom &&
-        currentBlockData.sectionType === "normal"
-      ) {
+
+      if (shouldDebugFootnote) {
+        console.log(`[FootnoteDebug] Block: "${currentBlockData.text.slice(0, 60)}..."`);
+        console.log(`  fontSize: ${currentBlockData.fontSize.toFixed(1)}, avgFontSize: ${averageFontSize.toFixed(1)}`);
+        console.log(`  footnoteThreshold: ${footnoteThreshold.toFixed(1)} (avgFontSize * 0.85)`);
+        console.log(`  isFootnoteSize: ${isFootnoteSize} (fontSize < threshold)`);
+        console.log(`  sectionType: ${currentBlockData.sectionType}`);
+        console.log(`  result: ${isFootnoteSize && currentBlockData.sectionType === "normal" ? "FOOTNOTE" : "NOT FOOTNOTE (stopping scan)"}`);
+      }
+
+      // Skip blocks already marked as special (legend, anomaly, etc.)
+      if (currentBlockData.sectionType !== "normal") {
+        continue;
+      }
+
+      // If block has footnote-sized font, mark it as footnote
+      if (isFootnoteSize) {
         currentBlockData.sectionType = "footnote";
+      } else {
+        // Hit body-sized text - stop scanning upward
+        break;
       }
     }
 

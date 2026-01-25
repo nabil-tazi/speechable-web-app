@@ -3,9 +3,20 @@
  * Stage 1 of two-stage heading detection.
  */
 
-import type { StructuredBlock, BlockHeadingCandidate, OutlineEntry } from "../types";
-import { DEBUG_HEADING, DEBUG_HEADING_PATTERN, OUTLINE_MATCH_BONUS } from "./pdf-utils-common";
-import { extractHeadingPattern, isSpecialKeywordHeading } from "./heading-patterns";
+import type {
+  StructuredBlock,
+  BlockHeadingCandidate,
+  OutlineEntry,
+} from "../types";
+import {
+  DEBUG_HEADING,
+  DEBUG_HEADING_PATTERNS,
+  OUTLINE_MATCH_BONUS,
+} from "./pdf-utils-common";
+import {
+  extractHeadingPattern,
+  isSpecialKeywordHeading,
+} from "./heading-patterns";
 import { matchHeadingToOutline } from "./heading-detection";
 
 // ============================================================================
@@ -17,14 +28,14 @@ import { matchHeadingToOutline } from "./heading-detection";
  * A block is a candidate if total score >= HEADING_SCORE_THRESHOLD
  */
 export const HEADING_SCORE_WEIGHTS = {
-  PATTERN_NUMBERED: 30, // "1.", "Chapter 1", "1.2.3" etc.
+  PATTERN_NUMBERED: 20, // "1.", "Chapter 1", "1.2.3" etc.
   PATTERN_KEYWORD: 25, // "Introduction", "Conclusion", etc.
   FONT_SIZE_LARGE: 25, // Significantly larger than body text (≥1.3x)
   FONT_SIZE_MEDIUM: 15, // Moderately larger than body text (≥1.1x)
   FONT_WEIGHT_BOLD: 20, // Bold text
   FONT_ITALIC: 10, // Italic text (common for subheadings)
-  VERTICAL_GAP_LARGE: 20, // Large gap before block (>2x line height)
-  VERTICAL_GAP_MEDIUM: 10, // Medium gap (>1.5x line height)
+  GAP_BEFORE: 5, // Gap before block >= 0.75x body font size
+  GAP_AFTER: 5, // Gap after block >= 0.6x body font size
   SHORT_LINE: 5, // Single line, not paragraph-length
 };
 
@@ -151,7 +162,8 @@ export function estimateLineHeight(block: StructuredBlock): number {
  * we have access to vertical gaps, italic, and other signals.
  *
  * @param block The block to evaluate
- * @param prevBlock Previous block (for gap calculation)
+ * @param prevBlock Previous block (for gap-before calculation)
+ * @param nextBlock Next block (for gap-after calculation)
  * @param bodyFontSize The document's body text font size
  * @param textPosition Starting position in joined text
  * @param pdfOutline Optional PDF outline entries for bonus scoring
@@ -160,9 +172,10 @@ export function estimateLineHeight(block: StructuredBlock): number {
 export function detectBlockHeadingCandidate(
   block: StructuredBlock,
   prevBlock: StructuredBlock | null,
+  nextBlock: StructuredBlock | null,
   bodyFontSize: number,
   textPosition: number,
-  pdfOutline: OutlineEntry[] = []
+  pdfOutline: OutlineEntry[] = [],
 ): BlockHeadingCandidate | null {
   const firstLineText = getFirstLineText(block);
 
@@ -177,13 +190,13 @@ export function detectBlockHeadingCandidate(
   // Debug: log if this block might contain our target pattern
   if (
     DEBUG_HEADING &&
-    fullHeadingText.toLowerCase().includes(DEBUG_HEADING_PATTERN)
+    DEBUG_HEADING_PATTERNS.some(p => p && fullHeadingText.toLowerCase().includes(p.toLowerCase()))
   ) {
     console.log(
-      `[detectBlockHeadingCandidate] Block with "${fullHeadingText.slice(0, 60)}"`
+      `[detectBlockHeadingCandidate] Block with "${fullHeadingText.slice(0, 60)}"`,
     );
     console.log(
-      `  lines: ${block.lines.length}, headingLines: ${lineCount}, fullText: "${fullHeadingText}"`
+      `  lines: ${block.lines.length}, headingLines: ${lineCount}, fullText: "${fullHeadingText}"`,
     );
   }
 
@@ -230,18 +243,62 @@ export function detectBlockHeadingCandidate(
     factors.push("font-italic");
   }
 
-  // 5. Vertical gap before block
+  // 5. Vertical gap scoring (relative to body font size)
   let verticalGapBefore = 0;
-  if (prevBlock) {
+  let verticalGapAfter = 0;
+  const shouldDebugGap =
+    DEBUG_HEADING &&
+    DEBUG_HEADING_PATTERNS.some(p => p && fullHeadingText.toLowerCase().includes(p.toLowerCase()));
+
+  if (shouldDebugGap) {
+    console.log(`[HeadingGapDebug] "${fullHeadingText.slice(0, 50)}..."`);
+    console.log(`  prevBlock: ${prevBlock ? "exists" : "NULL"}`);
+    console.log(`  nextBlock: ${nextBlock ? "exists" : "NULL"}`);
+    console.log(`  bodyFontSize: ${bodyFontSize}`);
+  }
+
+  // Gap before (>= 0.75x body font size)
+  // For first block on page (no prevBlock), grant gap-before if font is larger than body
+  if (prevBlock && bodyFontSize > 0) {
     const gap = block.bbox.y - (prevBlock.bbox.y + prevBlock.bbox.h);
     verticalGapBefore = gap;
-    const lineHeight = estimateLineHeight(block);
-    if (gap > lineHeight * 2) {
-      score += HEADING_SCORE_WEIGHTS.VERTICAL_GAP_LARGE;
-      factors.push(`gap-large(${(gap / lineHeight).toFixed(1)}x)`);
-    } else if (gap > lineHeight * 1.5) {
-      score += HEADING_SCORE_WEIGHTS.VERTICAL_GAP_MEDIUM;
-      factors.push(`gap-medium(${(gap / lineHeight).toFixed(1)}x)`);
+    const threshold = bodyFontSize * 0.75;
+
+    if (shouldDebugGap) {
+      console.log(
+        `  gap-before: ${gap.toFixed(1)}px (threshold: ${threshold.toFixed(1)}px)`,
+      );
+    }
+
+    if (gap >= threshold) {
+      score += HEADING_SCORE_WEIGHTS.GAP_BEFORE;
+      factors.push(`gap-before(${(gap / bodyFontSize).toFixed(2)}x)`);
+    }
+  } else if (!prevBlock && bodyFontSize > 0 && blockFontSize > bodyFontSize) {
+    // First block on page with larger font - treat page start as implicit gap
+    score += HEADING_SCORE_WEIGHTS.GAP_BEFORE;
+    factors.push("gap-before(page-start)");
+
+    if (shouldDebugGap) {
+      console.log(`  gap-before: page-start (no prevBlock, larger font)`);
+    }
+  }
+
+  // Gap after (>= 0.6x body font size)
+  if (nextBlock && bodyFontSize > 0) {
+    const gap = nextBlock.bbox.y - (block.bbox.y + block.bbox.h);
+    verticalGapAfter = gap;
+    const threshold = bodyFontSize * 0.6;
+
+    if (shouldDebugGap) {
+      console.log(
+        `  gap-after: ${gap.toFixed(1)}px (threshold: ${threshold.toFixed(1)}px)`,
+      );
+    }
+
+    if (gap >= threshold) {
+      score += HEADING_SCORE_WEIGHTS.GAP_AFTER;
+      factors.push(`gap-after(${(gap / bodyFontSize).toFixed(2)}x)`);
     }
   }
 
@@ -255,7 +312,12 @@ export function detectBlockHeadingCandidate(
   // If this text matches an entry in the PDF's embedded outline, it's very likely a heading
   let outlineMatch = null;
   if (pdfOutline.length > 0) {
-    outlineMatch = matchHeadingToOutline(fullHeadingText, textPosition, pdfOutline, []);
+    outlineMatch = matchHeadingToOutline(
+      fullHeadingText,
+      textPosition,
+      pdfOutline,
+      [],
+    );
     if (outlineMatch) {
       score += OUTLINE_MATCH_BONUS;
       factors.push(`outline-match(${outlineMatch.matchConfidence})`);
@@ -265,26 +327,26 @@ export function detectBlockHeadingCandidate(
   // Debug logging for target pattern
   if (
     DEBUG_HEADING &&
-    fullHeadingText.toLowerCase().includes(DEBUG_HEADING_PATTERN)
+    DEBUG_HEADING_PATTERNS.some(p => p && fullHeadingText.toLowerCase().includes(p.toLowerCase()))
   ) {
     console.log(
       `[HeadingCandidate] "${fullHeadingText.slice(0, 60)}${
         fullHeadingText.length > 60 ? "..." : ""
-      }"`
+      }"`,
     );
     console.log(
-      `  score=${score} (threshold=${HEADING_SCORE_THRESHOLD}) factors=[${factors.join(", ")}]`
+      `  score=${score} (threshold=${HEADING_SCORE_THRESHOLD}) factors=[${factors.join(", ")}]`,
     );
     console.log(
-      `  font: ${blockFontSize}/${isDominantBold(block) ? "bold" : "normal"}, bodyFontSize: ${bodyFontSize}`
+      `  font: ${blockFontSize}/${isDominantBold(block) ? "bold" : "normal"}, bodyFontSize: ${bodyFontSize}`,
     );
     if (pdfOutline.length > 0) {
       console.log(
-        `  outline: ${outlineMatch ? `MATCHED "${outlineMatch.outlineEntry.title}"` : "no match"} (${pdfOutline.length} entries)`
+        `  outline: ${outlineMatch ? `MATCHED "${outlineMatch.outlineEntry.title}"` : "no match"} (${pdfOutline.length} entries)`,
       );
     }
     console.log(
-      `  result: ${score >= HEADING_SCORE_THRESHOLD ? "ACCEPTED" : "REJECTED"}`
+      `  result: ${score >= HEADING_SCORE_THRESHOLD ? "ACCEPTED" : "REJECTED"}`,
     );
   }
 
