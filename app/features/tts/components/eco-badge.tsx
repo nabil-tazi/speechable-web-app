@@ -110,7 +110,7 @@ export function EcoBadge() {
   // Still checking or unchecked - show loading state
   if (isChecking) {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 w-[82px]">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-400 w-[82px]">
         <span className="w-3.5 flex items-center justify-center">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
         </span>
@@ -127,7 +127,7 @@ export function EcoBadge() {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-400 cursor-help w-[82px]">
               <span className="w-3.5 flex items-center justify-center">
                 <CircleHelp className="w-3.5 h-3.5" />
               </span>
@@ -152,7 +152,7 @@ export function EcoBadge() {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-400 cursor-help w-[82px]">
               <span className="w-3.5 flex items-center justify-center">
                 <CircleHelp className="w-3.5 h-3.5" />
               </span>
@@ -177,7 +177,7 @@ export function EcoBadge() {
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-400 cursor-help w-[82px]">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-400 cursor-help w-[82px]">
               <span className="w-3.5 flex items-center justify-center">
                 <CircleHelp className="w-3.5 h-3.5" />
               </span>
@@ -206,7 +206,7 @@ export function EcoBadge() {
               onClick={() => setEcoDisabled(true)}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-colors w-[82px]",
-                "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
               )}
             >
               {/* Green LED indicator with pulse */}
@@ -244,7 +244,7 @@ export function EcoBadge() {
               onClick={() => setEcoDisabled(false)}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-colors w-[82px]",
-                "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                "bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
               )}
             >
               {/* Grey LED indicator (off) */}
