@@ -356,7 +356,7 @@ export function usePlayback() {
     // Validate that the audio was generated with the current config
     // This prevents playing stale audio after speed/voice changes
     const currentSpeed = state.voiceConfig.speed;
-    const currentVoice = state.voiceConfig.voiceMap[currentSentence.reader_id] || "af_sky";
+    const currentVoice = state.voiceConfig.voiceMap[currentSentence.reader_id] || "af_heart";
 
     if (audio.generatedSpeed !== currentSpeed || audio.generatedVoice !== currentVoice) {
       console.log("[usePlayback] Audio config mismatch, waiting for regeneration:", {
@@ -373,7 +373,7 @@ export function usePlayback() {
     const nextSentence = state.sentences[state.playback.currentIndex + 1];
     if (nextSentence) {
       const nextAudio = state.audioState.get(nextSentence.id);
-      const nextVoice = state.voiceConfig.voiceMap[nextSentence.reader_id] || "af_sky";
+      const nextVoice = state.voiceConfig.voiceMap[nextSentence.reader_id] || "af_heart";
 
       if (!nextAudio || nextAudio.status !== "ready" || !nextAudio.audioBlob) {
         console.log("[usePlayback] Waiting for next sentence to be ready for seamless playback");

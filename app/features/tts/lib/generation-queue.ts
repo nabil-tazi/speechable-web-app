@@ -87,7 +87,7 @@ export class GenerationQueue {
       if (this.queue.some((item) => item.globalIndex === sentence.globalIndex))
         return false;
 
-      const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_sky";
+      const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_heart";
       this.queue.push({
         sentenceId: sentence.id,
         globalIndex: sentence.globalIndex,
@@ -139,7 +139,7 @@ export class GenerationQueue {
       // Skip if already in queue
       if (this.queue.some((item) => item.globalIndex === sentence.globalIndex)) continue;
 
-      const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_sky";
+      const voice = voiceConfig.voiceMap[sentence.reader_id] || "af_heart";
       this.queue.push({
         sentenceId: sentence.id,
         globalIndex: sentence.globalIndex,

@@ -132,7 +132,7 @@ export function useVoiceConfig() {
    */
   const getVoice = useCallback(
     (readerId: string): string => {
-      return voiceConfig.voiceMap[readerId] || "af_sky";
+      return voiceConfig.voiceMap[readerId] || "af_heart";
     },
     [voiceConfig.voiceMap]
   );
