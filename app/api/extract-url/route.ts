@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
+import { parseHTML } from "linkedom";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import sharp from "sharp";
@@ -74,8 +74,7 @@ async function captureScreenshot(url: string): Promise<string | null> {
 }
 
 function parseHtmlToSections(html: string): { sections: ProcessedSection[] } {
-  const dom = new JSDOM(html);
-  const doc = dom.window.document;
+  const { document: doc } = parseHTML(html);
   const sections: ProcessedSection[] = [];
   let currentSection: ProcessedSection | null = null;
 
@@ -163,9 +162,16 @@ export async function POST(request: Request) {
 
     const html = await response.text();
 
-    // Parse with JSDOM and extract with Readability
-    const dom = new JSDOM(html, { url });
-    const reader = new Readability(dom.window.document);
+    // Parse with linkedom and extract with Readability
+    const { document } = parseHTML(html);
+    // Set the document URL for Readability
+    if (document.defaultView) {
+      Object.defineProperty(document.defaultView, "location", {
+        value: { href: url },
+        writable: false,
+      });
+    }
+    const reader = new Readability(document as unknown as Document);
     const article = reader.parse();
 
     if (!article || !article.content) {
