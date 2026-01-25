@@ -46,7 +46,7 @@ import {
   ChevronRight,
   ChevronDown,
   Bookmark,
-  Pencil,
+  SquarePen,
   Save,
   X,
   List,
@@ -75,6 +75,7 @@ import {
   parseSegmentsFromProcessedText,
   parseSegmentsFromBlocks,
 } from "@/app/features/tts";
+import { assignDefaultVoices } from "@/app/features/tts/lib/assign-default-voices";
 import {
   EditorProvider,
   BlockEditor,
@@ -86,6 +87,7 @@ import {
 import type { Block } from "@/app/features/documents/types";
 import { usePlayback, useGeneration } from "@/app/features/tts";
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import CreditDisplay from "@/app/features/credits/components/credit-display";
 
 // Version Name Input - must be inside EditorProvider
 function VersionNameInput() {
@@ -472,7 +474,7 @@ function OutlineButton() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8"
+          className="h-8 w-8 hover:bg-gray-200"
           title="Document outline"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -539,6 +541,47 @@ function EditModeButtons({
   );
 }
 
+// Exit Edit Mode Confirmation Dialog - must be inside EditorProvider
+function ExitEditModeDialog({
+  open,
+  onOpenChange,
+  setIsEditMode,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  setIsEditMode: (value: boolean) => void;
+}) {
+  const { discardChanges } = useEditor();
+
+  const handleDiscard = () => {
+    discardChanges();
+    setIsEditMode(false);
+    onOpenChange(false);
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved changes. If you exit edit mode now, your changes will be lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDiscard}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            Discard changes
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // Edit Button - must be inside EditorProvider (for future dirty state checking)
 function EditButton({
   isActive,
@@ -552,10 +595,10 @@ function EditButton({
       variant="ghost"
       size="icon"
       onClick={() => setIsEditMode(!isActive)}
-      className={cn("h-8 w-8", isActive && "bg-gray-200 text-gray-900 hover:bg-gray-300")}
+      className={cn("h-8 w-8 hover:bg-gray-200", isActive && "bg-gray-200 text-gray-900 hover:bg-gray-300")}
       title={isActive ? "Exit edit mode" : "Edit document"}
     >
-      <Pencil className="h-4 w-4" />
+      <SquarePen className="h-4 w-4" />
     </Button>
   );
 }
@@ -819,6 +862,14 @@ function DocumentTitlePopover({
   const [thumbnailError, setThumbnailError] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Preload thumbnail on mount
+  useEffect(() => {
+    if (document.thumbnail_path) {
+      const img = new Image();
+      img.src = document.thumbnail_path;
+    }
+  }, [document.thumbnail_path]);
+
   const handleMouseEnter = useCallback(() => {
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
@@ -840,7 +891,7 @@ function DocumentTitlePopover({
     <HoverCard open={isOpen}>
       <HoverCardTrigger asChild>
         <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-accent transition-colors max-w-[500px]"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors max-w-[500px]"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -933,7 +984,17 @@ function TTSProviderWithBlocks({ children }: { children: React.ReactNode }) {
     return parseSegmentsFromBlocks(blocks);
   }, [blocks]);
 
-  return <TTSProvider segments={segments}>{children}</TTSProvider>;
+  // Extract unique reader IDs and assign default voices
+  const initialVoiceMap = useMemo(() => {
+    const readerIds = [...new Set(segments.map((s) => s.reader_id))];
+    return assignDefaultVoices(readerIds);
+  }, [segments]);
+
+  return (
+    <TTSProvider segments={segments} initialVoiceMap={initialVoiceMap}>
+      {children}
+    </TTSProvider>
+  );
 }
 
 // Effect component to stop playback when entering edit mode
@@ -1001,24 +1062,31 @@ function DocumentTextView() {
   }, [activeVersion]);
 
   // Function to update URL with version parameter
+  // useReplace: true for automatic redirects (doesn't create history entry), false for user actions
   const updateVersionInUrl = useCallback(
-    (versionId: string) => {
+    (versionId: string, useReplace: boolean = false) => {
       if (!document) return;
       const params = new URLSearchParams(searchParams.toString());
       params.set("version", versionId);
-      router.push(`/library/${document.id}?${params.toString()}`);
+      const url = `/library/${document.id}?${params.toString()}`;
+      if (useReplace) {
+        router.replace(url);
+      } else {
+        router.push(url);
+      }
     },
     [document, searchParams, router]
   );
 
   // Auto-update URL with version parameter if not present
+  // Uses replace to avoid creating extra history entries
   useEffect(() => {
     const versionFromUrl = searchParams.get("version");
     const firstVersionId = sortedVersions[0]?.id;
 
     // If no version in URL but we have versions, add the first version to URL
     if (!versionFromUrl && firstVersionId && sortedVersions.length > 0) {
-      updateVersionInUrl(firstVersionId);
+      updateVersionInUrl(firstVersionId, true); // Use replace for automatic redirect
     }
   }, [searchParams, sortedVersions, updateVersionInUrl]);
 
@@ -1164,7 +1232,7 @@ function DocumentTextView() {
                         router.push("/library");
                       }
                     }}
-                    className="h-8 w-8"
+                    className="h-8 w-8 hover:bg-gray-200"
                     title="Back to library"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -1195,7 +1263,7 @@ function DocumentTextView() {
                         variant="ghost"
                         size="icon"
                         onClick={handleToggleStar}
-                        className="h-8 w-8"
+                        className="h-8 w-8 hover:bg-gray-200"
                         title={
                           isStarred
                             ? "Remove from favorites"
@@ -1230,6 +1298,9 @@ function DocumentTextView() {
                   {/* Read mode: EcoBadge */}
                   {!isEditMode && <EcoBadge />}
 
+                  {/* Credits display */}
+                  <CreditDisplay />
+
                   {/* User menu */}
                   <HeaderUserMenu />
                 </div>
@@ -1259,6 +1330,13 @@ function DocumentTextView() {
             </div>
           </div>
         </TTSProviderWithBlocks>
+
+        {/* Exit edit mode confirmation dialog - must be inside EditorProvider */}
+        <ExitEditModeDialog
+          open={showBackConfirmation}
+          onOpenChange={setShowBackConfirmation}
+          setIsEditMode={setIsEditMode}
+        />
       </EditorProvider>
 
       <CreateVersionDialog
@@ -1267,27 +1345,6 @@ function DocumentTextView() {
         onClose={handleCloseCreateVersionModal}
       />
       <DialogTrigger className="hidden" />
-
-      {/* Confirmation dialog for leaving edit mode */}
-      <AlertDialog open={showBackConfirmation} onOpenChange={setShowBackConfirmation}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard changes?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You have unsaved changes. If you leave now, your changes will be lost.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => router.push("/library")}
-              className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
-            >
-              Discard and leave
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Dialog>
   );
 }

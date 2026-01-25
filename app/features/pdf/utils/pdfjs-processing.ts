@@ -108,10 +108,7 @@ export async function processPDFWithPDFJSEnhanced(
     }
 
     // Apply artifact cleaning (headers, footers, page numbers)
-    const { cleanedPages, removedArtifacts } = cleanArtifacts(
-      structuredPages,
-      averageFontSize
-    );
+    const { cleanedPages, removedArtifacts } = cleanArtifacts(structuredPages);
 
     // Detect and merge lettrines (drop caps)
     const { processedPages, detectedLettrines } = detectAndMergeLettrines(

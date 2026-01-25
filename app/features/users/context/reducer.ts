@@ -7,7 +7,8 @@ export type Action =
   | { type: "CLEAR_USER" }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "UPDATE_PROFILE"; payload: UserProfile };
+  | { type: "UPDATE_PROFILE"; payload: UserProfile }
+  | { type: "UPDATE_CREDITS"; payload: number };
 
 export function userReducer(state: AuthState, action: Action): AuthState {
   switch (action.type) {
@@ -46,6 +47,16 @@ export function userReducer(state: AuthState, action: Action): AuthState {
       return {
         ...state,
         userProfile: action.payload,
+      };
+
+    case "UPDATE_CREDITS":
+      if (!state.userProfile) return state;
+      return {
+        ...state,
+        userProfile: {
+          ...state.userProfile,
+          credits: action.payload,
+        },
       };
 
     default:

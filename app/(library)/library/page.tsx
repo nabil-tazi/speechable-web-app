@@ -17,6 +17,7 @@ import { useSidebarData } from "@/app/features/sidebar/context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import CreditDisplay from "@/app/features/credits/components/credit-display";
 import { APP_VERSION } from "@/lib/version";
 
 function LibraryContent() {
@@ -25,6 +26,7 @@ function LibraryContent() {
   const { starredDocuments } = useSidebarData();
   const [searchQuery, setSearchQuery] = useState("");
   const [newDocModalOpen, setNewDocModalOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   // Handle new document button click - always open modal
   // (debug mode PDF comparison is handled inside the modal)
@@ -74,15 +76,16 @@ function LibraryContent() {
           {/* Left section - Logo */}
           <div className="flex items-center gap-1 flex-1">
             <Image src="/logo.svg" alt="Speechable" width={32} height={32} />
-            <span className="text-lg text-gray-900 font-semibold">
+            <span className="hidden sm:inline text-lg text-gray-900 font-semibold">
               Speechable
             </span>
           </div>
 
           {/* Center section - Search + New button (only when documents exist) */}
           {hasDocuments && (
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="relative w-64">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {/* Desktop search bar */}
+              <div className="relative w-64 hidden sm:block">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   type="text"
@@ -100,22 +103,72 @@ function LibraryContent() {
                   </button>
                 )}
               </div>
+              {/* Mobile search button */}
               <Button
                 size="sm"
-                className="h-8 gap-1.5 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+                variant="outline"
+                className="h-8 w-8 p-0 sm:hidden"
+                onClick={() => setMobileSearchOpen(true)}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              {/* New button - icon only on mobile */}
+              <Button
+                size="sm"
+                className="h-8 w-8 p-0 sm:w-auto sm:px-3 sm:gap-1.5 bg-brand-primary-dark hover:bg-brand-primary-dark/90"
                 onClick={handleNewDocument}
               >
                 <Plus className="h-4 w-4" />
-                New
+                <span className="hidden sm:inline">New</span>
               </Button>
             </div>
           )}
 
-          {/* Right section - User menu */}
-          <div className="flex items-center gap-3 flex-1 justify-end">
+          {/* Right section - Credits + User menu */}
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 justify-end">
+            <div className="hidden sm:block">
+              <CreditDisplay />
+            </div>
             <HeaderUserMenu />
           </div>
         </div>
+
+        {/* Mobile search overlay */}
+        {mobileSearchOpen && (
+          <div className="absolute inset-x-0 top-0 h-12 px-4 flex items-center gap-2 bg-sidebar sm:hidden z-30">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search library..."
+                className="pl-9 pr-9 h-8 bg-white border-gray-200 text-sm w-full"
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  onClick={() => setSearchQuery("")}
+                >
+                  <X className="h-3 w-3 text-gray-400" />
+                </button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2"
+              onClick={() => {
+                setMobileSearchOpen(false);
+                setSearchQuery("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+
         {/* Gradient fade */}
         <div className="h-4 bg-gradient-to-b from-sidebar to-transparent" />
       </div>

@@ -344,6 +344,7 @@ export function TTSPlayer() {
     togglePlayback,
     skipToPreviousSentence,
     skipToNextSentence,
+    playFromSentence,
     currentIndex,
   } = usePlayback();
   const { totalCount, sentences, currentSentence, isGenerating } =
@@ -400,6 +401,18 @@ export function TTSPlayer() {
   // Playback progress (0 to 100)
   const playbackProgress =
     totalCount > 0 ? ((currentIndex + 1) / totalCount) * 100 : 0;
+
+  // Find the heading preceding the current sentence
+  const currentHeading = useMemo(() => {
+    if (currentIndex < 0 || sentences.length === 0) return null;
+    // Look backwards from current sentence to find nearest title
+    for (let i = currentIndex; i >= 0; i--) {
+      if (sentences[i].isTitle) {
+        return sentences[i].text;
+      }
+    }
+    return null;
+  }, [currentIndex, sentences]);
 
   // Check if all TTS services are unavailable
   const allServicesDown =
@@ -475,9 +488,21 @@ export function TTSPlayer() {
       <SpeedSelector currentSpeed={speed} onSpeedChange={setSpeed} />
 
       {/* Simple Progress Bar */}
-      <div className="w-48 h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div
+        className="w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden cursor-pointer"
+        onClick={(e) => {
+          const percentage = e.nativeEvent.offsetX / e.currentTarget.offsetWidth;
+          const targetIndex = Math.min(
+            totalCount - 1,
+            Math.floor(percentage * totalCount)
+          );
+          if (targetIndex >= 0) {
+            playFromSentence(targetIndex);
+          }
+        }}
+      >
         <div
-          className="h-full bg-gray-400 transition-all duration-300"
+          className="h-full bg-gray-400 transition-all duration-300 pointer-events-none"
           style={{ width: `${playbackProgress}%` }}
         />
       </div>

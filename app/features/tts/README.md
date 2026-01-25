@@ -35,7 +35,6 @@ Worker:
 import {
   TTSProvider,
   TTSPlayer,
-  SentenceDisplay,
   parseSegmentsFromProcessedText,
 } from "@/app/features/tts";
 
@@ -45,7 +44,6 @@ function MyComponent({ processedText }) {
   return (
     <TTSProvider segments={segments}>
       <TTSPlayer />
-      <SentenceDisplay />
     </TTSProvider>
   );
 }
@@ -77,4 +75,3 @@ function MyComponent({ processedText }) {
 - `lib/generation-queue.ts` - Priority queue for generation
 - `worker/kokoro-worker.ts` - Web Worker for TTS
 - `components/tts-player.tsx` - Player UI
-- `components/sentence-display.tsx` - Text display with click-to-play

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LEVEL_PROMPT } from "./constants";
 import { PROCESSING_ARRAY } from "@/app/features/pdf/types";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+} from "@/app/api/lib/credits-middleware";
 
 import OpenAI from "openai";
 
@@ -298,10 +302,18 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Check credits before processing
+  const creditCheck = await checkCreditsForRequest({ textLength: text.length });
+  if (!creditCheck.success) {
+    return creditCheck.response;
+  }
+
   if (level === 0 || level === 1)
-    return processSingleSection(text, title, level);
+    return processSingleSection(text, title, level, creditCheck.userId);
   // if (level === 0 || level === 1) return processSectionBySection(input, level);
-  if (level === 2 || level === 3) return processAllAtOnce(text, level);
+  if (level === 2 || level === 3)
+    return processAllAtOnce(text, level, creditCheck.userId);
 }
 
 async function identifySections(
@@ -369,7 +381,8 @@ function extractSectionContent(
 async function processSingleSection(
   sectionContent: string,
   sectionTitle: string,
-  level: 0 | 1 | 2 | 3
+  level: 0 | 1 | 2 | 3,
+  userId: string
   // temperature: number
 ) {
   console.log("PROCESSING SECTION: ", sectionTitle);
@@ -391,6 +404,12 @@ async function processSingleSection(
     section = await processSectionSingle(sectionContent, sectionTitle, prompt);
   }
 
+  // Deduct credits after successful operation
+  const creditResult = await deductCreditsAfterOperation(
+    userId,
+    sectionContent.length
+  );
+
   return NextResponse.json({
     message: section,
     metadata: {
@@ -400,6 +419,8 @@ async function processSingleSection(
       originalLength: sectionContent.length,
       processedLength: JSON.stringify(section.content).length,
     },
+    creditsUsed: creditResult?.creditsUsed ?? 0,
+    creditsRemaining: creditResult?.creditsRemaining ?? 0,
   });
 }
 
@@ -607,7 +628,7 @@ function chunkText(text: string, maxChunkSize: number): string[] {
   return chunks;
 }
 
-async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
+async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3, userId: string) {
   try {
     console.log("Starting section-by-section processing...");
 
@@ -635,7 +656,8 @@ async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
       const processedSection = await processSingleSection(
         sectionContent,
         sectionInfo.title,
-        level
+        level,
+        userId
       );
 
       // processedSections.push(processedSection);
@@ -664,10 +686,10 @@ async function processSectionBySection(input: string, level: 0 | 1 | 2 | 3) {
   }
 }
 
-async function processAllAtOnce(input: string, level: 2 | 3) {
+async function processAllAtOnce(input: string, level: 2 | 3, userId: string) {
   try {
     console.log(`Starting all-at-once processing for level ${level}...`);
-    return await processAllAtOnceSingle(input, level);
+    return await processAllAtOnceSingle(input, level, userId);
     // Check if input needs chunking (80k chars ~= 20k tokens)
     // const needsChunking = input.length > 80000;
 
@@ -682,7 +704,7 @@ async function processAllAtOnce(input: string, level: 2 | 3) {
   }
 }
 
-async function processAllAtOnceSingle(input: string, level: 2 | 3) {
+async function processAllAtOnceSingle(input: string, level: 2 | 3, userId: string) {
   const prompt = LEVEL_PROMPT[level];
   const temperature = PROCESSING_ARRAY[level].temperature;
 
@@ -731,6 +753,9 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
     ]);
   }
 
+  // Deduct credits after successful operation
+  const creditResult = await deductCreditsAfterOperation(userId, input.length);
+
   return NextResponse.json({
     message: processedResult,
     metadata: {
@@ -743,6 +768,8 @@ async function processAllAtOnceSingle(input: string, level: 2 | 3) {
           processedResult.processed_text.sections[0].content.speech.length,
       }),
     },
+    creditsUsed: creditResult?.creditsUsed ?? 0,
+    creditsRemaining: creditResult?.creditsRemaining ?? 0,
   });
 }
 

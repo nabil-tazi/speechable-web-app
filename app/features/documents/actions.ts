@@ -593,6 +593,96 @@ export async function updateDocumentVersionNameAction(
   }
 }
 
+// Server Action: Delete a document and all associated data
+export async function deleteDocumentAction(
+  documentId: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "User not authenticated" };
+    }
+
+    // Get all associated files for cleanup
+    const { data: document } = await supabase
+      .from("documents")
+      .select(
+        `
+        thumbnail_path,
+        versions:document_versions(
+          audio_versions(
+            segments:audio_segments(audio_path)
+          )
+        )
+      `
+      )
+      .eq("id", documentId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (!document) {
+      return { success: false, error: "Document not found or access denied" };
+    }
+
+    // Collect all file paths to delete
+    const filesToDelete: string[] = [];
+
+    if (document.thumbnail_path) {
+      filesToDelete.push(document.thumbnail_path);
+    }
+
+    document.versions?.forEach((version) => {
+      version.audio_versions?.forEach((audioVersion) => {
+        audioVersion.segments?.forEach((segment) => {
+          if (segment.audio_path) {
+            filesToDelete.push(segment.audio_path);
+          }
+        });
+      });
+    });
+
+    // Delete files from storage
+    if (filesToDelete.length > 0) {
+      const thumbnailFiles = filesToDelete.filter((path) =>
+        path.includes(user.id)
+      );
+      const audioFiles = filesToDelete.filter(
+        (path) => path.includes(user.id) && !path.includes("thumbnail")
+      );
+
+      if (thumbnailFiles.length > 0) {
+        await supabase.storage
+          .from("document-thumbnails")
+          .remove(thumbnailFiles);
+      }
+      if (audioFiles.length > 0) {
+        await supabase.storage.from("version-audio").remove(audioFiles);
+      }
+    }
+
+    // Delete document (CASCADE will handle related records)
+    const { error } = await supabase
+      .from("documents")
+      .delete()
+      .eq("id", documentId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: "Failed to delete document" };
+  }
+}
+
 // Server Action: Regenerate blocks from document's processed_text
 export async function regenerateBlocksFromProcessedTextAction(
   versionId: string

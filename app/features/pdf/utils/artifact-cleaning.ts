@@ -11,11 +11,9 @@ export interface ArtifactCleaningOptions {
   removeHeaders?: boolean;
   removeFooters?: boolean;
   removeWatermarks?: boolean;
-  removeFootnotes?: boolean;
   // Thresholds (as percentage of page height/width)
   headerZonePercent?: number; // Default 8%
   footerZonePercent?: number; // Default 8%
-  footnoteMinFontSizeRatio?: number; // Font size ratio below average to consider footnote
 }
 
 const DEFAULT_OPTIONS: Required<ArtifactCleaningOptions> = {
@@ -23,10 +21,8 @@ const DEFAULT_OPTIONS: Required<ArtifactCleaningOptions> = {
   removeHeaders: true,
   removeFooters: true,
   removeWatermarks: false, // Disabled by default as it's harder to detect reliably
-  removeFootnotes: false, // Disabled by default as footnotes may be important
   headerZonePercent: 12, // Increased from 8% to catch headers further from top
   footerZonePercent: 18, // Increased from 12% to catch page numbers positioned higher
-  footnoteMinFontSizeRatio: 0.9,
 };
 
 /**
@@ -294,68 +290,13 @@ function detectBlockArtifacts(
   return artifacts;
 }
 
-/**
- * Detect line-level artifacts (footnotes) that require font size analysis
- */
-function detectLineArtifacts(
-  page: StructuredPage,
-  options: Required<ArtifactCleaningOptions>,
-  averageFontSize: number
-): DetectedArtifact[] {
-  const artifacts: DetectedArtifact[] = [];
-
-  if (!options.removeFootnotes) {
-    return artifacts;
-  }
-
-  for (const block of page.blocks) {
-    for (const line of block.lines) {
-      const text = line.text.trim();
-      if (!text) continue;
-
-      // Check for footnotes (small font at bottom of page)
-      if (
-        line.font.size < averageFontSize * options.footnoteMinFontSizeRatio &&
-        line.bbox.y + line.bbox.h > page.height * 0.8 // In bottom 20%
-      ) {
-        artifacts.push({
-          type: "footnote",
-          text,
-          pageNumber: page.pageNumber,
-          bbox: line.bbox,
-        });
-      }
-    }
-  }
-
-  return artifacts;
-}
 
 /**
- * Check if a line should be filtered based on line-level artifacts (footnotes)
- */
-function shouldFilterLine(
-  line: StructuredLine,
-  pageNumber: number,
-  lineArtifacts: DetectedArtifact[]
-): boolean {
-  const lineNormalized = normalizeForComparison(line.text);
-  return lineArtifacts.some(
-    (artifact) =>
-      artifact.pageNumber === pageNumber &&
-      Math.abs(artifact.bbox.x - line.bbox.x) < 5 &&
-      Math.abs(artifact.bbox.y - line.bbox.y) < 5 &&
-      normalizeForComparison(artifact.text) === lineNormalized
-  );
-}
-
-/**
- * Clean a single page by removing artifact blocks and lines
+ * Clean a single page by removing artifact blocks
  */
 function cleanPage(
   page: StructuredPage,
-  blockArtifacts: DetectedBlockArtifact[],
-  lineArtifacts: DetectedArtifact[]
+  blockArtifacts: DetectedBlockArtifact[]
 ): StructuredPage {
   // Get set of block indices to remove entirely
   const blocksToRemove = new Set(
@@ -373,18 +314,7 @@ function cleanPage(
     }
 
     const block = page.blocks[blockIndex];
-
-    // Filter individual lines for line-level artifacts (footnotes)
-    const cleanedLines = block.lines.filter((line) => {
-      return !shouldFilterLine(line, page.pageNumber, lineArtifacts);
-    });
-
-    if (cleanedLines.length > 0) {
-      cleanedBlocks.push({
-        ...block,
-        lines: cleanedLines,
-      });
-    }
+    cleanedBlocks.push(block);
   }
 
   // Rebuild raw text from cleaned blocks
@@ -407,11 +337,10 @@ function cleanPage(
 
 /**
  * Detect and optionally remove artifacts from structured pages
- * Uses block-level detection for headers/footers and line-level for footnotes
+ * Uses block-level detection for headers, footers, and page numbers
  */
 export function cleanArtifacts(
   pages: StructuredPage[],
-  averageFontSize: number,
   options: ArtifactCleaningOptions = {}
 ): {
   cleanedPages: StructuredPage[];
@@ -456,26 +385,16 @@ export function cleanArtifacts(
     allBlockArtifacts.push(...blockArtifacts);
   }
 
-  // Detect line-level artifacts (footnotes) on each page
-  const allLineArtifacts: DetectedArtifact[] = [];
-  for (const page of pages) {
-    const lineArtifacts = detectLineArtifacts(page, opts, averageFontSize);
-    allLineArtifacts.push(...lineArtifacts);
-  }
-
-  // Clean pages using both block and line artifacts
-  const cleanedPages = pages.map((page) => cleanPage(page, allBlockArtifacts, allLineArtifacts));
+  // Clean pages by removing artifact blocks
+  const cleanedPages = pages.map((page) => cleanPage(page, allBlockArtifacts));
 
   // Convert block artifacts to DetectedArtifact format for return value
-  const allArtifacts: DetectedArtifact[] = [
-    ...allBlockArtifacts.map(a => ({
-      type: a.type,
-      text: a.text,
-      pageNumber: a.pageNumber,
-      bbox: a.bbox,
-    })),
-    ...allLineArtifacts,
-  ];
+  const allArtifacts: DetectedArtifact[] = allBlockArtifacts.map(a => ({
+    type: a.type,
+    text: a.text,
+    pageNumber: a.pageNumber,
+    bbox: a.bbox,
+  }));
 
   return {
     cleanedPages,
@@ -488,10 +407,9 @@ export function cleanArtifacts(
  */
 export function getCleanText(
   pages: StructuredPage[],
-  averageFontSize: number,
   options: ArtifactCleaningOptions = {}
 ): string {
-  const { cleanedPages } = cleanArtifacts(pages, averageFontSize, options);
+  const { cleanedPages } = cleanArtifacts(pages, options);
   return cleanedPages.map((page) => page.rawText).join("\n\n").trim();
 }
 

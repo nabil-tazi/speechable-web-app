@@ -19,13 +19,17 @@ import {
   isSentenceEnding,
   CLUSTER_SHORT_THRESHOLD,
   DEBUG_HEADING,
-  DEBUG_HEADING_PATTERN,
+  DEBUG_HEADING_PATTERNS,
   DEBUG_LINE_BREAK,
   DEBUG_LINE_BREAK_PATTERN,
   DEBUG_LINE_JOIN,
   DEBUG_LINE_JOIN_PATTERN,
   DEBUG_ANOMALY_SCORING,
-  DEBUG_ANOMALY_PATTERN,
+  DEBUG_ANOMALY_PATTERNS,
+  DEBUG_WMODE,
+  DEBUG_WMODE_PATTERN,
+  DEBUG_FOOTNOTE,
+  DEBUG_FOOTNOTE_PATTERN,
   ANOMALY_THRESHOLD,
   SHORT_BLOCK_THRESHOLD,
   LONG_BLOCK_THRESHOLD,
@@ -118,10 +122,24 @@ function blockContinuesToNext(blockText: string): boolean {
   // If ends with continuation characters (comma, hyphen, dash), it continues
   if (CONTINUES_PATTERN.test(lastLine)) return true;
 
-  // If ends with a word (no punctuation), likely continues
-  // Check if last character is alphanumeric
-  const lastChar = lastLine[lastLine.length - 1];
-  if (/[a-zA-Z0-9\u00C0-\u024F]/.test(lastChar)) return true;
+  // Find the last "content" character, looking past any closing brackets
+  // Closing brackets don't determine sentence ending - the content before them does
+  const closingBrackets = /[)\]"'»›]/;
+  let checkIndex = lastLine.length - 1;
+  while (checkIndex >= 0 && closingBrackets.test(lastLine[checkIndex])) {
+    checkIndex--;
+  }
+
+  // If we found a content character, check if it's alphanumeric (continues)
+  // or sentence-ending punctuation (complete)
+  if (checkIndex >= 0) {
+    const contentChar = lastLine[checkIndex];
+    // If content char is alphanumeric, text continues
+    if (/[a-zA-Z0-9\u00C0-\u024F]/.test(contentChar)) return true;
+    // If content char is sentence-ending, text is complete (already handled by isSentenceEnding above)
+    // If content char is something else (comma, etc.), check continuation pattern
+    if (/[,;:\-–—]/.test(contentChar)) return true;
+  }
 
   return false;
 }
@@ -201,10 +219,15 @@ interface AnomalyScore {
  * - Distance from column (>80px): +4
  * - Starts with "Figure/Table X." (with delimiter): +3
  * - Starts with "Figure/Table X" (no delimiter): +1
- * - Block is short (< 100 chars): +2
+ * - Block is short (< 100 chars): +1
  * - Adjacent to confirmed anomaly: +1-2
  * - Reading order violation: +3
  * - Block length > 200 chars: -2
+ * - Isolated (large gaps before AND after): +2
+ * - Semi-isolated (large gap on one side): +1
+ * - Much shorter than neighbors (< 30% of avg, only if font <= 115% body): +1
+ * - Font size < 85% of body text: +2
+ * - Font size > 115% of body text: -3 (likely heading, not anomaly)
  */
 // Debug flags are imported from pdf-utils-common
 
@@ -215,14 +238,22 @@ function calculateAnomalyScore(
     hasReadingOrderViolation: boolean;
     adjacentAnomalies: number;
     inViolationZone: boolean;
+    // Isolation detection
+    verticalGapBefore: number;
+    verticalGapAfter: number;
+    avgFontSize: number;
+    textLengthRatio: number; // Current block length / average neighbor length (< 1 means shorter)
+    // Font comparison
+    blockFontSize: number; // Block's font size for comparison with body text
   }
 ): AnomalyScore {
   let score = 0;
   const factors: string[] = [];
 
   const text = blockText.trim();
+  const textLower = text.toLowerCase();
   const shouldDebug =
-    DEBUG_ANOMALY_SCORING && text.toLowerCase().includes(DEBUG_ANOMALY_PATTERN);
+    DEBUG_ANOMALY_SCORING && DEBUG_ANOMALY_PATTERNS.some(p => textLower.includes(p));
 
   // 1. Distance from column
   if (context.distanceToColumn > 80) {
@@ -252,7 +283,7 @@ function calculateAnomalyScore(
   // 3. Block length - skip penalty if in violation zone (figure legends can be long)
   if (!context.inViolationZone) {
     if (text.length < SHORT_BLOCK_THRESHOLD) {
-      score += 2;
+      score += 1;
       factors.push("short-block");
     } else if (text.length > LONG_BLOCK_THRESHOLD) {
       score -= 2;
@@ -279,11 +310,51 @@ function calculateAnomalyScore(
     factors.push("in-violation-zone");
   }
 
+  // 7. Isolation detection - block surrounded by large gaps
+  const gapThreshold = context.avgFontSize * 1.5; // Gap > 1.5x font size is significant
+  const hasLargeGapBefore = context.verticalGapBefore > gapThreshold;
+  const hasLargeGapAfter = context.verticalGapAfter > gapThreshold;
+
+  if (hasLargeGapBefore && hasLargeGapAfter) {
+    // Fully isolated - large gaps on both sides
+    score += 2;
+    factors.push(`isolated(gaps:${context.verticalGapBefore.toFixed(0)}/${context.verticalGapAfter.toFixed(0)})`);
+  } else if (hasLargeGapBefore || hasLargeGapAfter) {
+    // Partially isolated - large gap on one side
+    score += 1;
+    factors.push(`semi-isolated(gaps:${context.verticalGapBefore.toFixed(0)}/${context.verticalGapAfter.toFixed(0)})`);
+  }
+
+  // 8. Text length ratio - block much shorter than neighbors
+  // Skip this check if font is large (headings are naturally shorter than body paragraphs)
+  const fontRatioForLengthCheck = context.avgFontSize > 0 && context.blockFontSize > 0
+    ? context.blockFontSize / context.avgFontSize
+    : 1;
+  if (context.textLengthRatio > 0 && context.textLengthRatio < 0.3 && fontRatioForLengthCheck <= 1.15) {
+    // Current block is less than 30% of neighbor average length
+    score += 1;
+    factors.push(`short-vs-neighbors(${(context.textLengthRatio * 100).toFixed(0)}%)`);
+  }
+
+  // 9. Font size comparison with body text
+  if (context.avgFontSize > 0 && context.blockFontSize > 0) {
+    const fontRatio = context.blockFontSize / context.avgFontSize;
+    if (fontRatio < 0.85) {
+      // Smaller fonts suggest captions/labels
+      score += 2;
+      factors.push(`small-font(${(fontRatio * 100).toFixed(0)}%)`);
+    } else if (fontRatio > 1.15) {
+      // Larger fonts suggest headings, NOT anomalies - reduce score
+      score -= 3;
+      factors.push(`large-font(${(fontRatio * 100).toFixed(0)}%)`);
+    }
+  }
+
   // Debug output
   if (shouldDebug) {
-    console.log(`[AnomalyDebug] Block containing "${DEBUG_ANOMALY_PATTERN}":`);
+    console.log(`[AnomalyDebug] Block:`);
     console.log(
-      `  text: "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`
+      `  text: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`
     );
     console.log(`  length: ${text.length} chars`);
     console.log(`  distanceToColumn: ${context.distanceToColumn}px`);
@@ -292,6 +363,9 @@ function calculateAnomalyScore(
     );
     console.log(`  inViolationZone: ${context.inViolationZone}`);
     console.log(`  adjacentAnomalies: ${context.adjacentAnomalies}`);
+    console.log(`  verticalGaps: before=${context.verticalGapBefore.toFixed(1)}, after=${context.verticalGapAfter.toFixed(1)}`);
+    console.log(`  textLengthRatio: ${(context.textLengthRatio * 100).toFixed(1)}%`);
+    console.log(`  fontSize: block=${context.blockFontSize.toFixed(1)}, body=${context.avgFontSize.toFixed(1)} (${((context.blockFontSize / context.avgFontSize) * 100).toFixed(0)}%)`);
     console.log(`  factors: [${factors.join(", ")}]`);
     console.log(`  SCORE: ${score} (threshold: ${ANOMALY_THRESHOLD})`);
     console.log(
@@ -320,6 +394,66 @@ function countAdjacentAnomalies(
     count++;
   }
   return count;
+}
+
+/**
+ * Calculate isolation metrics for a block
+ * Returns vertical gaps before/after and text length ratio compared to neighbors
+ */
+function calculateIsolationMetrics(
+  blockData: Array<{
+    text: string;
+    bbox: { x: number; y: number; w: number; h: number };
+    sectionType: string;
+  }>,
+  index: number
+): {
+  verticalGapBefore: number;
+  verticalGapAfter: number;
+  textLengthRatio: number;
+} {
+  const current = blockData[index];
+  const currentTop = current.bbox.y;
+  const currentBottom = current.bbox.y + current.bbox.h;
+
+  // Calculate vertical gap before (from previous block's bottom to current top)
+  let verticalGapBefore = 0;
+  if (index > 0) {
+    const prev = blockData[index - 1];
+    const prevBottom = prev.bbox.y + prev.bbox.h;
+    verticalGapBefore = Math.max(0, currentTop - prevBottom);
+  } else {
+    // First block - use distance from top of page as "gap"
+    verticalGapBefore = currentTop;
+  }
+
+  // Calculate vertical gap after (from current bottom to next block's top)
+  let verticalGapAfter = 0;
+  if (index < blockData.length - 1) {
+    const next = blockData[index + 1];
+    verticalGapAfter = Math.max(0, next.bbox.y - currentBottom);
+  } else {
+    // Last block - consider it as having a large gap after
+    verticalGapAfter = 100; // Arbitrary large value
+  }
+
+  // Calculate text length ratio compared to neighbors
+  // Only compare with "normal" blocks to avoid comparing with other anomalies
+  let neighborTotalLength = 0;
+  let neighborCount = 0;
+
+  // Look at up to 2 blocks before and after
+  for (let i = Math.max(0, index - 2); i <= Math.min(blockData.length - 1, index + 2); i++) {
+    if (i !== index && blockData[i].sectionType === "normal") {
+      neighborTotalLength += blockData[i].text.length;
+      neighborCount++;
+    }
+  }
+
+  const avgNeighborLength = neighborCount > 0 ? neighborTotalLength / neighborCount : 0;
+  const textLengthRatio = avgNeighborLength > 0 ? current.text.length / avgNeighborLength : 1;
+
+  return { verticalGapBefore, verticalGapAfter, textLengthRatio };
 }
 
 /**
@@ -651,7 +785,7 @@ export function joinPagesWithHyphenHandling(
   }
 
   // Step 6: Detect headings on cleaned text
-  // Exclude TOC and bibliography ranges (in cleaned text coordinates)
+  // Exclude TOC, bibliography, and anomaly ranges (in cleaned text coordinates)
   const excludeRanges: Array<{ start: number; end: number }> = [];
   if (tocResult.hasTOC) {
     excludeRanges.push({
@@ -664,6 +798,18 @@ export function joinPagesWithHyphenHandling(
       start: bibResult.startOffset,
       end: bibResult.endOffset,
     });
+  }
+
+  // Also exclude anomaly and footnote ranges to prevent Stage 2 heading detection
+  // from finding headings inside already-detected anomalies/footnotes
+  for (const h of adjustedHighlights) {
+    if (h.type === "anomaly" || h.type === "footnote") {
+      const cleanedStart = positionMap.toClean(h.start);
+      const cleanedEnd = positionMap.toClean(h.end);
+      if (cleanedEnd > cleanedStart) {
+        excludeRanges.push({ start: cleanedStart, end: cleanedEnd });
+      }
+    }
   }
 
   // Adjust page break positions for artifact removal (map to cleaned text coordinates)
@@ -817,11 +963,66 @@ export function joinLinesIntoParagraphs(
     let blockIndex = 0;
     let prevBlockForHeading: StructuredBlock | null = null; // For heading gap calculation
     for (const block of page.blocks) {
+      // Debug: Check for vertical text
+      if (DEBUG_WMODE) {
+        const blockFullText = block.lines.map(l => l.text).join(' ').toLowerCase();
+        const matchesPattern = DEBUG_WMODE_PATTERN && blockFullText.includes(DEBUG_WMODE_PATTERN.toLowerCase());
+
+        // Targeted logging for specific pattern
+        if (matchesPattern) {
+          console.log(`[WmodeDebug] Found "${DEBUG_WMODE_PATTERN}" on page ${page.pageNumber}:`);
+          console.log(`  block bbox: x=${block.bbox.x.toFixed(1)}, y=${block.bbox.y.toFixed(1)}, w=${block.bbox.w.toFixed(1)}, h=${block.bbox.h.toFixed(1)}`);
+          console.log(`  block type: ${block.type}`);
+          console.log(`  lines: ${block.lines.length}`);
+          block.lines.forEach((l, i) => {
+            console.log(`    Line ${i}: "${l.text}"`);
+            console.log(`      wmode: ${l.wmode}`);
+            console.log(`      bbox: x=${l.bbox.x.toFixed(1)}, y=${l.bbox.y.toFixed(1)}, w=${l.bbox.w.toFixed(1)}, h=${l.bbox.h.toFixed(1)}`);
+            console.log(`      font: ${l.font.size}pt ${l.font.weight} "${l.font.name}"`);
+          });
+        }
+
+        // Check wmode property
+        for (const line of block.lines) {
+          if (line.wmode !== 0) {
+            console.log(`[WmodeDebug] Vertical text (wmode) on page ${page.pageNumber}:`);
+            console.log(`  wmode: ${line.wmode}`);
+            console.log(`  text: "${line.text.slice(0, 50)}${line.text.length > 50 ? '...' : ''}"`);
+            console.log(`  bbox: x=${line.bbox.x.toFixed(1)}, y=${line.bbox.y.toFixed(1)}, w=${line.bbox.w.toFixed(1)}, h=${line.bbox.h.toFixed(1)}`);
+          }
+        }
+
+        // Fallback: Detect vertical text by bounding box analysis
+        // Vertical text blocks typically have: height >> width, short lines
+        const blockWidth = block.bbox.w;
+        const blockHeight = block.bbox.h;
+        const aspectRatio = blockHeight / blockWidth;
+        const avgLineLength = block.lines.length > 0
+          ? block.lines.reduce((sum, l) => sum + l.text.length, 0) / block.lines.length
+          : 0;
+
+        // Heuristic: tall narrow block (aspect ratio > 3) with very short lines (avg < 3 chars)
+        const looksVertical = aspectRatio > 3 && avgLineLength < 3 && block.lines.length > 2;
+
+        if (looksVertical) {
+          const fullText = block.lines.map(l => l.text).join('');
+          console.log(`[WmodeDebug] Possible vertical text (bbox heuristic) on page ${page.pageNumber}:`);
+          console.log(`  block bbox: w=${blockWidth.toFixed(1)}, h=${blockHeight.toFixed(1)}, aspectRatio=${aspectRatio.toFixed(1)}`);
+          console.log(`  lines: ${block.lines.length}, avgLineLength: ${avgLineLength.toFixed(1)}`);
+          console.log(`  text (joined): "${fullText.slice(0, 50)}${fullText.length > 50 ? '...' : ''}"`);
+          console.log(`  individual lines:`);
+          block.lines.slice(0, 5).forEach((l, i) => {
+            console.log(`    ${i}: "${l.text}" (wmode=${l.wmode})`);
+          });
+          if (block.lines.length > 5) console.log(`    ... and ${block.lines.length - 5} more`);
+        }
+      }
+
       // Debug: Check if this block contains our target pattern
       const blockFirstLine = block.lines.length > 0 ? block.lines[0].text : "";
       if (
         DEBUG_HEADING &&
-        blockFirstLine.toLowerCase().includes(DEBUG_HEADING_PATTERN)
+        DEBUG_HEADING_PATTERNS.some(p => p && blockFirstLine.toLowerCase().includes(p.toLowerCase()))
       ) {
         console.log(
           `[BlockLoop] Found block with target pattern on page ${page.pageNumber}`
@@ -835,14 +1036,20 @@ export function joinLinesIntoParagraphs(
       const blockText = processedResult.text;
 
       if (blockText.length > 1) {
-        // Get average font size from block lines
-        const fontSizes = block.lines
-          .map((l) => l.font.size)
-          .filter((s) => s > 0);
-        const avgFontSize =
-          fontSizes.length > 0
-            ? fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length
-            : 12;
+        // Get weighted average font size from block lines (weighted by text length)
+        // This prevents short superscript/subscript lines from skewing the average
+        const linesWithSize = block.lines.filter(
+          (l) => l.font.size > 0 && l.text.length > 0
+        );
+        const totalWeight = linesWithSize.reduce(
+          (sum, l) => sum + l.text.length,
+          0
+        );
+        const weightedSum = linesWithSize.reduce(
+          (sum, l) => sum + l.font.size * l.text.length,
+          0
+        );
+        const avgFontSize = totalWeight > 0 ? weightedSum / totalWeight : 12;
 
         // Check if block is predominantly bold
         const boldLines = block.lines.filter(
@@ -888,19 +1095,20 @@ export function joinLinesIntoParagraphs(
         // by artifact detection but extracted first due to PDF internal ordering).
         let blockIsReadingOrderAnomaly = false;
 
-        // Find the last "normal" block to compare against
+        // Find the last "normal" block with a valid column index to compare against
         // Skip blocks in the bottom 15% of the page (likely footers/page numbers)
         const bottomZoneThreshold = page.height * 0.85;
         let prevNormalBlock: (typeof blockData)[number] | undefined;
         for (let i = blockData.length - 1; i >= 0; i--) {
           const isInBottomZone = blockData[i].bbox.y > bottomZoneThreshold;
-          if (blockData[i].sectionType === "normal" && !isInBottomZone) {
+          const hasValidColumn = blockData[i].columnIndex !== -1;
+          if (blockData[i].sectionType === "normal" && !isInBottomZone && hasValidColumn) {
             prevNormalBlock = blockData[i];
             break;
           }
         }
 
-        if (prevNormalBlock) {
+        if (prevNormalBlock && columnIndex !== -1) {
           const currentY = block.bbox.y;
           const prevY = prevNormalBlock.bbox.y;
 
@@ -908,15 +1116,13 @@ export function joinLinesIntoParagraphs(
           if (currentY < prevY) {
             const prevColumnIndex = prevNormalBlock.columnIndex;
 
-            // Both blocks must be aligned with columns for this check to apply
-            if (columnIndex !== -1 && prevColumnIndex !== -1) {
-              // If current column is same or to the left of previous column, it's an anomaly
-              if (columnIndex <= prevColumnIndex) {
-                blockIsReadingOrderAnomaly = true;
-              }
+            // If current column is same or to the left of previous column, it's an anomaly
+            if (columnIndex <= prevColumnIndex) {
+              blockIsReadingOrderAnomaly = true;
             }
           }
         }
+
 
         // Violation zone tracking:
         // When a reading order violation is detected, establish a "zone" that captures
@@ -990,15 +1196,24 @@ export function joinLinesIntoParagraphs(
         // NOTE: Heading detection is now done post-hoc on joined text via detectHeadingsFromText
         // in joinPagesWithHyphenHandling. Block-level heading detection has been removed.
 
-        // Calculate anomaly score (first pass, no adjacency info yet)
+        // Calculate anomaly score (first pass, no adjacency/isolation info yet)
+        // Isolation metrics will be calculated in second pass when we have all blocks
         const anomalyScore = calculateAnomalyScore(blockText, {
           distanceToColumn,
           hasReadingOrderViolation: blockIsReadingOrderAnomaly,
           adjacentAnomalies: 0, // Will be updated in second pass
           inViolationZone,
+          verticalGapBefore: 0, // Will be updated in second pass
+          verticalGapAfter: 0,  // Will be updated in second pass
+          avgFontSize: opts.bodyFontSize,
+          textLengthRatio: 1,   // Will be updated in second pass
+          blockFontSize: avgFontSize, // Block's weighted average font size
         });
 
-        if (artifactType) {
+        if (block.isVertical) {
+          // Vertical/rotated text (detected via bbox h/w ratio) - treat as anomaly
+          sectionType = "anomaly";
+        } else if (artifactType) {
           // Artifact types: 'header' | 'footer' | 'page_number'
           sectionType = artifactType;
         } else if (blockIsAuthor) {
@@ -1051,15 +1266,29 @@ export function joinLinesIntoParagraphs(
         // Skip heading detection for anomaly/artifact blocks to avoid overlapping highlights
         // textPosition is 0 here - will be adjusted when blocks are joined
         // Pass PDF outline for bonus scoring on outline matches
+        const nextBlock = page.blocks[blockIndex + 1] ?? null;
         const headingCandidate = sectionType === "normal"
           ? detectBlockHeadingCandidate(
               block,
               prevBlockForHeading,
+              nextBlock,
               opts.bodyFontSize,
               0, // Position will be adjusted during page joining
               pdfOutline
             )
           : null;
+
+        // Fix heading textEnd using actual processed text positions from fontRanges
+        // This ensures the heading end position matches the actual text, not the trimmed version
+        if (headingCandidate && processedResult.fontRanges.length > 0) {
+          const headingLineCount = headingCandidate.lineCount;
+          // Get the end position of the last heading line from fontRanges
+          const lastHeadingLineIndex = Math.min(headingLineCount, processedResult.fontRanges.length) - 1;
+          if (lastHeadingLineIndex >= 0) {
+            const actualTextEnd = processedResult.fontRanges[lastHeadingLineIndex].end;
+            headingCandidate.textEnd = actualTextEnd;
+          }
+        }
 
         blockData.push({
           text: blockText,
@@ -1115,44 +1344,68 @@ export function joinLinesIntoParagraphs(
       }
     }
 
-    // Second pass: Re-evaluate normal blocks with adjacency context
-    // Short normal blocks next to anomalies may need to be flagged as anomalies too
+    // Second pass: Re-evaluate normal blocks with adjacency and isolation context
+    // Now that we have all blocks, we can calculate isolation metrics
     for (let i = 0; i < blockData.length; i++) {
       const block = blockData[i];
       if (block.sectionType === "normal") {
         const adjacentAnomalies = countAdjacentAnomalies(blockData, i);
-        if (adjacentAnomalies > 0) {
-          // Recalculate score with adjacency info
-          const newScore = calculateAnomalyScore(block.text, {
-            distanceToColumn: block.distanceToColumn,
-            hasReadingOrderViolation: block.hasReadingOrderViolation,
-            adjacentAnomalies,
-            inViolationZone: block.inViolationZone,
-          });
-          if (newScore.total >= ANOMALY_THRESHOLD) {
-            block.sectionType = "anomaly";
-          }
+        const isolationMetrics = calculateIsolationMetrics(blockData, i);
+
+        // Recalculate score with full context (adjacency + isolation)
+        const newScore = calculateAnomalyScore(block.text, {
+          distanceToColumn: block.distanceToColumn,
+          hasReadingOrderViolation: block.hasReadingOrderViolation,
+          adjacentAnomalies,
+          inViolationZone: block.inViolationZone,
+          verticalGapBefore: isolationMetrics.verticalGapBefore,
+          verticalGapAfter: isolationMetrics.verticalGapAfter,
+          avgFontSize: opts.bodyFontSize,
+          textLengthRatio: isolationMetrics.textLengthRatio,
+          blockFontSize: block.fontSize,
+        });
+        if (newScore.total >= ANOMALY_THRESHOLD) {
+          block.sectionType = "anomaly";
         }
       }
     }
 
-    // Footnote detection: Update section types for footnotes
-    // Footnotes must be: smaller font AND at bottom of page
+    // Footnote detection: Bottom-up approach
+    // Start from the last block and work upward, marking blocks as footnotes
+    // while they have smaller font. Stop when we hit body-sized text.
     const footnoteThreshold = averageFontSize * 0.85;
-    const bottomZone = page.height * 0.75; // Bottom 25% of page
-    for (let i = 0; i < blockData.length; i++) {
+
+    for (let i = blockData.length - 1; i >= 0; i--) {
       const currentBlockData = blockData[i];
 
-      // If block has smaller font AND is at bottom of page, mark as footnote
-      // (but only if not already marked as legend/anomaly)
+      // Debug: targeted logging for footnote detection
+      const shouldDebugFootnote =
+        DEBUG_FOOTNOTE &&
+        DEBUG_FOOTNOTE_PATTERN &&
+        currentBlockData.text.toLowerCase().includes(DEBUG_FOOTNOTE_PATTERN.toLowerCase());
+
       const isFootnoteSize = currentBlockData.fontSize < footnoteThreshold;
-      const isAtBottom = currentBlockData.bbox.y > bottomZone;
-      if (
-        isFootnoteSize &&
-        isAtBottom &&
-        currentBlockData.sectionType === "normal"
-      ) {
+
+      if (shouldDebugFootnote) {
+        console.log(`[FootnoteDebug] Block: "${currentBlockData.text.slice(0, 60)}..."`);
+        console.log(`  fontSize: ${currentBlockData.fontSize.toFixed(1)}, avgFontSize: ${averageFontSize.toFixed(1)}`);
+        console.log(`  footnoteThreshold: ${footnoteThreshold.toFixed(1)} (avgFontSize * 0.85)`);
+        console.log(`  isFootnoteSize: ${isFootnoteSize} (fontSize < threshold)`);
+        console.log(`  sectionType: ${currentBlockData.sectionType}`);
+        console.log(`  result: ${isFootnoteSize && currentBlockData.sectionType === "normal" ? "FOOTNOTE" : "NOT FOOTNOTE (stopping scan)"}`);
+      }
+
+      // Skip blocks already marked as special (legend, anomaly, etc.)
+      if (currentBlockData.sectionType !== "normal") {
+        continue;
+      }
+
+      // If block has footnote-sized font, mark it as footnote
+      if (isFootnoteSize) {
         currentBlockData.sectionType = "footnote";
+      } else {
+        // Hit body-sized text - stop scanning upward
+        break;
       }
     }
 
@@ -1462,19 +1715,29 @@ export function joinLinesIntoParagraphs(
       const isSpecialBlock = currentBlockSection !== "normal";
       const wasSpecialBlock = currentSection !== "normal";
 
-      if (shouldDebugThisBlock) {
+      if (shouldDebugThisBlock || shouldDebugBlockJoin) {
+        console.log(`[BlockJoinAnalysis] Block ${i}:`);
         console.log(
-          `  isHeadingToBody: ${isHeadingToBody}, isBodyToHeading: ${isBodyToHeading}`
+          `  isHeadingToBody: ${isHeadingToBody} (boundaryFontSizeDiff=${boundaryFontSizeDiff.toFixed(1)}, prevLastBold=${prevBlockData.lastLineBold}, currFirstBold=${currentBlockData.firstLineBold})`
         );
         console.log(
-          `  isSpecialBlock: ${isSpecialBlock}, wasSpecialBlock: ${wasSpecialBlock}`
+          `  isBodyToHeading: ${isBodyToHeading} (strongSignals=${strongSignals}, weakSignals=${weakSignals}, total=${totalSignals})`
         );
         console.log(`  signals: [${signals.join(", ")}]`);
         console.log(
-          `  prevBlock fontSize: ${prevBlockData.fontSize}, isBold: ${prevBlockData.isBold}`
+          `  isSpecialBlock: ${isSpecialBlock}, wasSpecialBlock: ${wasSpecialBlock}, sectionChanged: ${sectionChanged}`
         );
         console.log(
-          `  currentBlock fontSize: ${currentBlockData.fontSize}, isBold: ${currentBlockData.isBold}`
+          `  prevBlock: fontSize=${prevBlockData.fontSize.toFixed(1)}, isBold=${prevBlockData.isBold}, lastLineFontSize=${prevBlockData.lastLineFontSize.toFixed(1)}`
+        );
+        console.log(
+          `  currBlock: fontSize=${currentBlockData.fontSize.toFixed(1)}, isBold=${currentBlockData.isBold}, firstLineFontSize=${currentBlockData.firstLineFontSize.toFixed(1)}`
+        );
+        console.log(
+          `  verticalGap: ${verticalGap.toFixed(1)}px (threshold: ${(fontSize * 0.7).toFixed(1)}px)`
+        );
+        console.log(
+          `  blocksOnSameRow: ${blocksOnSameRow}, yDiff: ${yDiff.toFixed(1)}px`
         );
       }
 
@@ -1657,24 +1920,38 @@ export function joinLinesIntoParagraphs(
 
       // Check if blocks should be joined (sentence continues across columns/after artifacts)
       const prevContinues = blockContinuesToNext(prevBlockText);
+      const currentContinuesFromPrev = blockContinuesFromPrevious(currentBlockText);
+
+      // Check if fonts match (same section) - required for joining based on prevContinues
+      // Different fonts indicate section change (e.g., keywords → body text)
+      const fontsMatch = Math.abs(prevBlockData.lastLineFontSize - currentBlockData.firstLineFontSize) < 0.5 &&
+        prevBlockData.lastLineBold === currentBlockData.firstLineBold;
+
+      // Determine if we should join:
+      // - If fonts match: use either signal (prevContinues OR currentContinuesFromPrev)
+      // - If fonts don't match: only join if current starts lowercase (strong continuation signal)
+      const shouldJoin = fontsMatch
+        ? (prevContinues || currentContinuesFromPrev)
+        : currentContinuesFromPrev;
 
       if (shouldDebugBlockJoin) {
-        console.log(`  prevContinues: ${prevContinues}`);
+        console.log(`  prevContinues: ${prevContinues}, currentContinuesFromPrev: ${currentContinuesFromPrev}`);
+        console.log(`  fontsMatch: ${fontsMatch} (prev: ${prevBlockData.lastLineFontSize}/${prevBlockData.lastLineBold ? 'bold' : 'normal'}, curr: ${currentBlockData.firstLineFontSize}/${currentBlockData.firstLineBold ? 'bold' : 'normal'})`);
         console.log(
           `  isHeadingToBody: ${isHeadingToBody}, isBodyToHeading: ${isBodyToHeading}`
         );
         console.log(
           `  Decision: ${
-            prevContinues && !isHeadingToBody && !isBodyToHeading
+            shouldJoin && !isHeadingToBody && !isBodyToHeading
               ? "JOIN with space"
               : "SEPARATE with \\n\\n"
           }`
         );
       }
 
-      // Join if previous block ends mid-sentence (without punctuation)
+      // Join based on continuation signals, but require font match for weaker signals
       // BUT NOT if it's a heading transition (either direction)
-      if (prevContinues && !isHeadingToBody && !isBodyToHeading) {
+      if (shouldJoin && !isHeadingToBody && !isBodyToHeading) {
         // Join with space - sentence continues across blocks/columns
         const trimmedLength = result.trimEnd().length;
         const blockOffsetSpace = trimmedLength + 1; // +1 for space
@@ -1731,18 +2008,18 @@ export function joinLinesIntoParagraphs(
             `  prevContinues=${prevContinues} isHeadingToBody=${isHeadingToBody} isBodyToHeading=${isBodyToHeading}`
           );
         }
-        if (shouldDebugBlock) {
+        if (shouldDebugBlock || shouldDebugBlockJoin) {
           console.log(
-            `[BlockBreakDebug] Double newline BEFORE: "${currentBlockText.slice(
-              0,
-              60
-            )}..."`
+            `[BlockSeparation] Adding \\n\\n between blocks:`
           );
           console.log(
-            `  prevBlockText ends with: "${prevBlockText.slice(-60)}"`
+            `  prevBlockText ends with: "${prevBlockText.slice(-60).replace(/\n/g, "\\n")}"`
           );
           console.log(
-            `  prevContinues=${prevContinues}, isHeadingToBody=${isHeadingToBody}, isBodyToHeading=${isBodyToHeading}`
+            `  currBlockText starts with: "${currentBlockText.slice(0, 60).replace(/\n/g, "\\n")}"`
+          );
+          console.log(
+            `  REASON: prevContinues=${prevContinues}, isHeadingToBody=${isHeadingToBody}, isBodyToHeading=${isBodyToHeading}`
           );
         }
         const blockOffsetNormal = result.length + 2; // +2 for \n\n

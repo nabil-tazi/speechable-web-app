@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  checkCreditsForRequest,
+  deductCreditsAfterOperation,
+  CHATTERBOX_CHARACTERS_PER_CREDIT,
+} from "@/app/api/lib/credits-middleware";
 
 /**
  * Voice ID mapping from Kokoro voice names to cloned Chatterbox voice IDs.
@@ -62,6 +67,15 @@ export async function POST(req: NextRequest) {
       { error: "Missing or empty input text" },
       { status: 400 }
     );
+  }
+
+  // Check credits before processing (Chatterbox: 1 credit = 1000 chars)
+  const creditCheck = await checkCreditsForRequest({
+    textLength: input.length,
+    charactersPerCredit: CHATTERBOX_CHARACTERS_PER_CREDIT,
+  });
+  if (!creditCheck.success) {
+    return creditCheck.response;
   }
 
   const apiKey = process.env.DEEPINFRA_API_KEY;
@@ -128,11 +142,20 @@ export async function POST(req: NextRequest) {
       `[deepinfra-chatterbox] Streaming response for voice ${voice} (id: ${voiceId}), cfg=${cfg}, exaggeration=${exaggeration}`
     );
 
+    // Deduct credits after successful API response (Chatterbox: 1 credit = 1000 chars)
+    const creditResult = await deductCreditsAfterOperation(
+      creditCheck.userId,
+      input.length,
+      CHATTERBOX_CHARACTERS_PER_CREDIT
+    );
+
     return new NextResponse(response.body, {
       status: 200,
       headers: {
         "Content-Type": contentType,
         "X-Generation-Time-Ms": (Date.now() - startTime).toString(),
+        "X-Credits-Used": (creditResult?.creditsUsed ?? 0).toString(),
+        "X-Credits-Remaining": (creditResult?.creditsRemaining ?? 0).toString(),
       },
     });
   } catch (error) {
