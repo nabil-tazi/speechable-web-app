@@ -290,7 +290,16 @@ export function TTSProvider({
   useEffect(() => {
     const { kokoro, chatterbox } = state.cloudHealth;
     const ecoAvailable = state.capabilityStatus === "available";
-    const { voiceQuality, ecoDisabled } = state;
+    const { voiceQuality, ecoDisabled, voiceConfig } = state;
+
+    // Check if any selected voice is non-English (eco mode only supports English voices)
+    // English voices start with 'a' (American) or 'b' (British)
+    const hasNonEnglishVoice = Object.values(voiceConfig.voiceMap).some(
+      (voiceId) => !voiceId.startsWith("a") && !voiceId.startsWith("b")
+    );
+
+    // Eco is only viable if available AND all voices are English
+    const ecoViable = ecoAvailable && !hasNonEnglishVoice;
 
     let newMode: "eco" | "standard" | "expressive" | null = null;
 
@@ -303,7 +312,7 @@ export function TTSProvider({
         return;
       }
       // If chatterbox is down, fall back to standard behavior
-      else if (!ecoDisabled && ecoAvailable) {
+      else if (!ecoDisabled && ecoViable) {
         newMode = "eco";
       } else if (kokoro === "ok") {
         newMode = "standard";
@@ -312,7 +321,7 @@ export function TTSProvider({
       }
     } else {
       // Standard quality: use eco if available and not disabled, else cloud
-      if (!ecoDisabled && ecoAvailable) {
+      if (!ecoDisabled && ecoViable) {
         newMode = "eco";
       } else if (kokoro === "ok") {
         newMode = "standard";
@@ -329,7 +338,7 @@ export function TTSProvider({
     if (newMode !== state.ttsMode) {
       dispatch({ type: "SET_TTS_MODE", mode: newMode });
     }
-  }, [state.cloudHealth, state.capabilityStatus, state.voiceQuality, state.ecoDisabled, state.ttsMode]);
+  }, [state.cloudHealth, state.capabilityStatus, state.voiceQuality, state.ecoDisabled, state.ttsMode, state.voiceConfig.voiceMap]);
 
   // Context value
   const value = useMemo<TTSContextValue>(
