@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Readability } from "@mozilla/readability";
-import { parseHTML } from "linkedom";
+import { DOMParser } from "linkedom";
 import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import sharp from "sharp";
@@ -74,13 +74,20 @@ async function captureScreenshot(url: string): Promise<string | null> {
 }
 
 function parseHtmlToSections(html: string): { sections: ProcessedSection[] } {
-  const { document: doc } = parseHTML(html);
+  const parser = new DOMParser();
+  // Wrap in full HTML structure to ensure body exists
+  const wrappedHtml = `<!DOCTYPE html><html><body>${html}</body></html>`;
+  const doc = parser.parseFromString(wrappedHtml, "text/html");
   const sections: ProcessedSection[] = [];
   let currentSection: ProcessedSection | null = null;
 
   // Query block-level elements in document order
+  const body = doc.body || doc.querySelector("body");
+  if (!body) {
+    return { sections: [] };
+  }
   const elements = Array.from(
-    doc.body.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li, blockquote, div")
+    body.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li, blockquote, div")
   );
 
   for (const el of elements) {
@@ -163,15 +170,19 @@ export async function POST(request: Request) {
     const html = await response.text();
 
     // Parse with linkedom and extract with Readability
-    const { document } = parseHTML(html);
-    // Set the document URL for Readability
-    if (document.defaultView) {
-      Object.defineProperty(document.defaultView, "location", {
-        value: { href: url },
-        writable: false,
-      });
-    }
-    const reader = new Readability(document as unknown as Document);
+    const parser = new DOMParser();
+    const document = parser.parseFromString(html, "text/html");
+
+    // Readability modifies the DOM, so we need to clone it
+    const docClone = document.cloneNode(true) as typeof document;
+
+    // Set up the document URL for Readability (it needs documentURI)
+    Object.defineProperty(docClone, "documentURI", {
+      value: url,
+      writable: false,
+    });
+
+    const reader = new Readability(docClone as unknown as Document);
     const article = reader.parse();
 
     if (!article || !article.content) {
