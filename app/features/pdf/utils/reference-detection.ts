@@ -65,6 +65,10 @@ const REFERENCE_PATTERNS = [
   // Author year: page (Chicago humanities style): (Sontag 1977: 3), (Sontag 2003: 110–13)
   /\(\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]+\s+(?:19|20)\d{2}\s*:\s*\d+(?:\s*[-–]\s*\d+)?\s*\)/g,
 
+  // Author year, page (comma separator): (Binns 1968, 279), (Smith 2001, 45–50)
+  // Also handles multiple authors: (Nimis and Nur Goni 2018, 284–85)
+  /\(\s*[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ''\-.]+(?:\s+(?:and|&)\s+[A-Z][a-zA-ZÀ-ÖØ-öø-ÿ''\-.\s]+)?\s+(?:19|20)\d{2}\s*,\s*\d+(?:\s*[-–]\s*\d+)?\s*\)/g,
+
   // Page number(s) only: (6), (23), (127), (92–93), (87–88), (147–51)
   // Matches 1-3 digit numbers or ranges in parentheses (common for page references)
   /\(\s*\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*\)/g,
