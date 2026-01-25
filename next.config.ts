@@ -18,8 +18,8 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // Exclude packages that need native binaries from server-side bundling
-  serverExternalPackages: ["mupdf", "@sparticuz/chromium", "puppeteer-core"],
+  // Exclude packages that need native binaries or have ESM/CJS issues from bundling
+  serverExternalPackages: ["mupdf", "@sparticuz/chromium", "puppeteer-core", "jsdom"],
 
   // Empty turbopack config to silence the warning
   turbopack: {},
