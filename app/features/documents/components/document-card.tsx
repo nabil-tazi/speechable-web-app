@@ -347,7 +347,7 @@ export function DocumentCard({
           if (!open) justClosedDialogRef.current = true;
           setIsDeleteDialogOpen(open);
         }}>
-          <AlertDialogContent onClick={(e) => e.stopPropagation()} onPointerDownOutside={(e) => e.stopPropagation()}>
+          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete document?</AlertDialogTitle>
               <AlertDialogDescription>
