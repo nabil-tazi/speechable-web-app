@@ -54,17 +54,28 @@ export function BlockComponent({
   const selectionRangeRef = useRef<{ start: number; end: number } | null>(null);
   const isDraggingRef = useRef(false);
   const dragAnchorOffsetRef = useRef<number | null>(null);
-  const pendingSelectionRef = useRef<{ anchorOffset: number; mouseX: number; mouseY: number } | null>(null);
+  const pendingSelectionRef = useRef<{
+    anchorOffset: number;
+    mouseX: number;
+    mouseY: number;
+  } | null>(null);
   const crossBlockDragActiveRef = useRef(false);
-  const savedAnchorPositionRef = useRef<{ node: Node; offset: number } | null>(null);
+  const savedAnchorPositionRef = useRef<{ node: Node; offset: number } | null>(
+    null,
+  );
 
   // Local state
   const [isEditing, setIsEditing] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showPendingDialog, setShowPendingDialog] = useState(false);
-  const [buttonsPosition, setButtonsPosition] = useState<{ top: number } | null>(null);
-  const [customSelection, setCustomSelection] = useState<{ start: number; end: number } | null>(null);
+  const [buttonsPosition, setButtonsPosition] = useState<{
+    top: number;
+  } | null>(null);
+  const [customSelection, setCustomSelection] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
 
   // Scroll container hook
   const {
@@ -92,7 +103,8 @@ export function BlockComponent({
   });
 
   // Cursor position hook
-  const { getCursorPosition, isCursorAtEnd, setSelectionRange } = useCursorPosition(contentRef);
+  const { getCursorPosition, isCursorAtEnd, setSelectionRange } =
+    useCursorPosition(contentRef);
 
   // Text selection hook
   const { selectionMenu, setSelectionMenu } = useTextSelection({
@@ -156,7 +168,7 @@ export function BlockComponent({
     (newReaderId: string) => {
       updateBlock(block.id, { reader_id: newReaderId });
     },
-    [updateBlock, block.id]
+    [updateBlock, block.id],
   );
 
   const handleBlur = () => {
@@ -169,7 +181,9 @@ export function BlockComponent({
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      const floatingMenu = document.querySelector('[data-floating-menu="true"]');
+      const floatingMenu = document.querySelector(
+        '[data-floating-menu="true"]',
+      );
       const alertDialog = document.querySelector('[role="alertdialog"]');
 
       if (floatingMenu?.contains(target) || alertDialog?.contains(target)) {
@@ -186,7 +200,8 @@ export function BlockComponent({
     };
 
     document.addEventListener("mousedown", handleClickOutside, true);
-    return () => document.removeEventListener("mousedown", handleClickOutside, true);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside, true);
   }, [pendingReplacement]);
 
   // Update buttons position when pending replacement changes
@@ -212,7 +227,10 @@ export function BlockComponent({
       contentRef.current.focus({ preventScroll: true });
 
       if (selectionRangeRef.current !== null) {
-        setSelectionRange(selectionRangeRef.current.start, selectionRangeRef.current.end);
+        setSelectionRange(
+          selectionRangeRef.current.start,
+          selectionRangeRef.current.end,
+        );
         selectionRangeRef.current = null;
       }
     }
@@ -237,7 +255,10 @@ export function BlockComponent({
       }
 
       lastSyncedContentRef.current = block.content;
-      selectionRangeRef.current = { start: cursorPosition, end: cursorPosition };
+      selectionRangeRef.current = {
+        start: cursorPosition,
+        end: cursorPosition,
+      };
       setIsEditing(true);
       onSelect();
     }
@@ -248,14 +269,23 @@ export function BlockComponent({
   useEffect(() => {
     if (isEditing && contentRef.current) {
       const domContent = contentRef.current.innerText;
-      if (block.content !== lastSyncedContentRef.current && block.content !== domContent) {
+      if (
+        block.content !== lastSyncedContentRef.current &&
+        block.content !== domContent
+      ) {
         const cursorPos = getCursorPosition();
         contentRef.current.innerText = block.content;
         setSelectionRange(Math.min(cursorPos, block.content.length));
       }
       lastSyncedContentRef.current = block.content;
     }
-  }, [block.content, isEditing, getCursorPosition, setSelectionRange, lastSyncedContentRef]);
+  }, [
+    block.content,
+    isEditing,
+    getCursorPosition,
+    setSelectionRange,
+    lastSyncedContentRef,
+  ]);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -283,7 +313,10 @@ export function BlockComponent({
       // Capture the anchor offset based on where the user clicked (not the current caret position)
       if (contentRef.current) {
         const caretRange = document.caretRangeFromPoint(e.clientX, e.clientY);
-        if (caretRange && contentRef.current.contains(caretRange.startContainer)) {
+        if (
+          caretRange &&
+          contentRef.current.contains(caretRange.startContainer)
+        ) {
           const preRange = document.createRange();
           preRange.selectNodeContents(contentRef.current);
           preRange.setEnd(caretRange.startContainer, caretRange.startOffset);
@@ -343,16 +376,24 @@ export function BlockComponent({
 
   // Restore selection after exiting edit mode (when DOM has updated)
   useEffect(() => {
-    if (isEditing || !pendingSelectionRef.current || !contentRef.current) return;
+    if (isEditing || !pendingSelectionRef.current || !contentRef.current)
+      return;
 
     const { anchorOffset, mouseX, mouseY } = pendingSelectionRef.current;
     pendingSelectionRef.current = null;
 
     // Find the text node and position for the anchor
-    const findTextPosition = (element: Node, targetOffset: number): { node: Node; offset: number } | null => {
+    const findTextPosition = (
+      element: Node,
+      targetOffset: number,
+    ): { node: Node; offset: number } | null => {
       let currentOffset = 0;
 
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        null,
+      );
       let node: Text | null;
 
       while ((node = walker.nextNode() as Text | null)) {
@@ -365,7 +406,7 @@ export function BlockComponent({
 
       // If we didn't find it, return the last position
       const lastNode = walker.currentNode || element;
-      return { node: lastNode, offset: (lastNode.textContent?.length || 0) };
+      return { node: lastNode, offset: lastNode.textContent?.length || 0 };
     };
 
     // Find anchor position in the (now non-contentEditable) block
@@ -380,7 +421,10 @@ export function BlockComponent({
     const isWithinBlock = (node: Node): boolean => {
       let current: Node | null = node;
       while (current && current !== document.body) {
-        if (current instanceof HTMLElement && current.hasAttribute("data-block-id")) {
+        if (
+          current instanceof HTMLElement &&
+          current.hasAttribute("data-block-id")
+        ) {
           return true;
         }
         current = current.parentNode;
@@ -406,7 +450,7 @@ export function BlockComponent({
           anchor.node,
           anchor.offset,
           caretRange.startContainer,
-          caretRange.startOffset
+          caretRange.startOffset,
         );
       }
     };
@@ -492,21 +536,18 @@ export function BlockComponent({
     <div
       ref={blockContainerRef}
       data-block-id={block.id}
-      className={cn(
-        "group relative flex items-start gap-2 py-1 px-2 rounded-lg transition-colors",
-        (isEditing || isMenuOpen) && "bg-gray-50",
-        isEditMode && !isEditing && !isMenuOpen && "hover:bg-gray-50"
-      )}
+      className="group relative flex items-start gap-2 py-1 px-2 rounded-lg"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Reader selector */}
-      {isEditMode && isConversation && (
-        <div className="absolute left-2 top-1">
+      {/* Reader selector - positioned outside the block for conversation mode */}
+      {isConversation && (
+        <div className="absolute -left-0.5 top-1 z-10">
           <ReaderSelector
             readerId={block.reader_id}
             onChange={handleReaderChange}
-            visible={isHovered || isSelected || isEditing || isMenuOpen}
+            visible={true}
+            readOnly={!isEditMode}
           />
         </div>
       )}
@@ -527,57 +568,64 @@ export function BlockComponent({
         )}
 
         {/* Floating menu - hide when cross-block selection is active */}
-        {isEditMode && !crossBlockSelection && (selectionMenu.visible || pendingReplacement || processingAction) && (
-          <FloatingMenu
-            selectionMenu={selectionMenu}
-            pendingReplacement={pendingReplacement}
-            processingAction={processingAction}
-            isScrolledAway={isScrolledAway}
-            blockType={block.type}
-            keepMenuVisibleRef={keepMenuVisibleRef}
-            onCustomSelectionChange={setCustomSelection}
-            onTypeChange={(type, selectionRange) => {
-              // Clear custom selection after action
-              setCustomSelection(null);
-              const content = block.content;
-              const start = selectionRange?.start;
-              const end = selectionRange?.end;
+        {isEditMode &&
+          !crossBlockSelection &&
+          (selectionMenu.visible || pendingReplacement || processingAction) && (
+            <FloatingMenu
+              selectionMenu={selectionMenu}
+              pendingReplacement={pendingReplacement}
+              processingAction={processingAction}
+              isScrolledAway={isScrolledAway}
+              blockType={block.type}
+              keepMenuVisibleRef={keepMenuVisibleRef}
+              onCustomSelectionChange={setCustomSelection}
+              onTypeChange={(type, selectionRange) => {
+                // Clear custom selection after action
+                setCustomSelection(null);
+                const content = block.content;
+                const start = selectionRange?.start;
+                const end = selectionRange?.end;
 
-              // If no selection range or selection covers entire block, just change type
-              if (start === undefined || end === undefined || (start === 0 && end >= content.length)) {
-                updateBlock(block.id, { type });
-                return;
-              }
+                // If no selection range or selection covers entire block, just change type
+                if (
+                  start === undefined ||
+                  end === undefined ||
+                  (start === 0 && end >= content.length)
+                ) {
+                  updateBlock(block.id, { type });
+                  return;
+                }
 
-              const beforeText = content.slice(0, start);
-              const selectedText = content.slice(start, end);
-              const afterText = content.slice(end);
+                const beforeText = content.slice(0, start);
+                const selectedText = content.slice(start, end);
+                const afterText = content.slice(end);
 
-              // Build segments array based on selection position
-              const segments: Array<{ content: string; type: typeof type }> = [];
+                // Build segments array based on selection position
+                const segments: Array<{ content: string; type: typeof type }> =
+                  [];
 
-              if (beforeText) {
-                segments.push({ content: beforeText, type: block.type });
-              }
-              segments.push({ content: selectedText, type });
-              if (afterText) {
-                segments.push({ content: afterText, type: block.type });
-              }
+                if (beforeText) {
+                  segments.push({ content: beforeText, type: block.type });
+                }
+                segments.push({ content: selectedText, type });
+                if (afterText) {
+                  segments.push({ content: afterText, type: block.type });
+                }
 
-              dispatch({
-                type: "SPLIT_BLOCK_WITH_TYPES",
-                blockId: block.id,
-                segments,
-              });
-            }}
-            onSelectionAction={handleSelectionAction}
-            onAcceptReplacement={handleAcceptReplacement}
-            onDiscardReplacement={handleDiscardReplacement}
-            onTryAgain={handleTryAgain}
-            onInsertBelow={handleInsertBelow}
-            onScrollToTarget={scrollToTarget}
-          />
-        )}
+                dispatch({
+                  type: "SPLIT_BLOCK_WITH_TYPES",
+                  blockId: block.id,
+                  segments,
+                });
+              }}
+              onSelectionAction={handleSelectionAction}
+              onAcceptReplacement={handleAcceptReplacement}
+              onDiscardReplacement={handleDiscardReplacement}
+              onTryAgain={handleTryAgain}
+              onInsertBelow={handleInsertBelow}
+              onScrollToTarget={scrollToTarget}
+            />
+          )}
 
         {/* Pending replacement preview (single-block) */}
         {pendingReplacement && (
@@ -588,6 +636,7 @@ export function BlockComponent({
             newTextRef={newTextRef}
             scrollTargetRef={scrollTargetRef}
             getBlockStyles={getBlockStyles}
+            isConversation={isConversation}
           />
         )}
 
@@ -596,8 +645,8 @@ export function BlockComponent({
           <div
             className={cn(
               "leading-relaxed text-justify whitespace-pre-wrap",
-              block.type === "text" && "indent-8",
-              getBlockStyles()
+              block.type === "text" && !isConversation && "indent-8",
+              getBlockStyles(),
             )}
           >
             {block.content.slice(0, crossBlockReplacement.startOffset)}
@@ -638,15 +687,20 @@ export function BlockComponent({
               // Only start editing on click if no text is selected (not a selection drag)
               const selection = window.getSelection();
               const hasSelection = selection && !selection.isCollapsed;
-              if (isEditMode && !isEditing && !pendingReplacement && !hasSelection) {
+              if (
+                isEditMode &&
+                !isEditing &&
+                !pendingReplacement &&
+                !hasSelection
+              ) {
                 handleStartEditing(e);
               }
             }}
             className={cn(
               "leading-relaxed text-justify whitespace-pre-wrap outline-none",
-              block.type === "text" && "indent-8",
+              block.type === "text" && !isConversation && "indent-8",
               isEditMode && "cursor-text",
-              getBlockStyles()
+              getBlockStyles(),
             )}
           >
             {isEditing
@@ -654,7 +708,11 @@ export function BlockComponent({
               : (() => {
                   if (!block.content) {
                     if (isEditMode) {
-                      return <span className="text-gray-400">{getPlaceholder()}</span>;
+                      return (
+                        <span className="text-gray-400">
+                          {getPlaceholder()}
+                        </span>
+                      );
                     }
                     return null;
                   }
@@ -697,7 +755,7 @@ export function BlockComponent({
         <div
           className={cn(
             "absolute right-2 top-1 transition-opacity",
-            isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           )}
         >
           <BlockDropdownMenu

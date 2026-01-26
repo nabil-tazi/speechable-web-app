@@ -8,23 +8,51 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ReaderSelectorProps {
   readerId: string;
-  onChange: (readerId: string) => void;
+  onChange?: (readerId: string) => void;
   visible: boolean; // Controlled by parent (hover or selected state)
+  readOnly?: boolean; // If true, just show the badge without popover
 }
 
-export function ReaderSelector({ readerId, onChange, visible }: ReaderSelectorProps) {
+export function ReaderSelector({ readerId, onChange, visible, readOnly = false }: ReaderSelectorProps) {
   const [open, setOpen] = useState(false);
 
   const currentReader =
     CONVERSATION_READERS.find((r) => r.id === readerId) || CONVERSATION_READERS[0];
 
   const handleSelect = (newReaderId: string) => {
-    onChange(newReaderId);
+    onChange?.(newReaderId);
     setOpen(false);
   };
+
+  // Read-only mode: just show the badge with hover effect and tooltip
+  if (readOnly) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={cn(
+              "px-1.5 py-0.5 rounded text-xs font-medium transition-all cursor-default",
+              "bg-gray-200 text-gray-700 hover:bg-gray-300",
+              visible ? "opacity-100" : "opacity-0"
+            )}
+          >
+            {currentReader.shortLabel}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" sideOffset={4}>
+          {currentReader.label}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

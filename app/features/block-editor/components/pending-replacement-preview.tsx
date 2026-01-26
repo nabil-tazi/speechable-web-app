@@ -11,6 +11,7 @@ interface PendingReplacementPreviewProps {
   newTextRef: React.RefObject<HTMLSpanElement | null>;
   scrollTargetRef: React.RefObject<HTMLDivElement | null>;
   getBlockStyles: () => string;
+  isConversation?: boolean;
 }
 
 /**
@@ -24,6 +25,7 @@ export function PendingReplacementPreview({
   newTextRef,
   scrollTargetRef,
   getBlockStyles,
+  isConversation = false,
 }: PendingReplacementPreviewProps) {
   // Use fullContent if available (for selections), otherwise fall back to blockContent
   const content = pendingReplacement.fullContent || blockContent;
@@ -105,7 +107,7 @@ export function PendingReplacementPreview({
       ref={scrollTargetRef}
       className={cn(
         "leading-relaxed text-justify whitespace-pre-wrap",
-        blockType === "text" && "indent-8",
+        blockType === "text" && !isConversation && "indent-8",
         getBlockStyles()
       )}
     >
