@@ -1,11 +1,21 @@
 import { useCallback, useState } from "react";
+import type { Block } from "@/app/features/documents/types";
 import type { ActionType, CrossBlockSelection, EditorAction } from "../types";
 
-export interface CrossBlockPendingReplacement {
+// Per-block replacement info
+export interface BlockReplacement {
+  blockId: string;
   originalText: string;
   newText: string;
+  // For start/end blocks, we need to know where to splice
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface CrossBlockPendingReplacement {
   action: ActionType;
   selection: CrossBlockSelection;
+  blockReplacements: BlockReplacement[];
 }
 
 export interface InsufficientCreditsInfo {
@@ -15,6 +25,7 @@ export interface InsufficientCreditsInfo {
 }
 
 interface UseCrossBlockAIActionsOptions {
+  blocks: Block[];
   crossBlockSelection: CrossBlockSelection | null;
   dispatch: React.Dispatch<EditorAction>;
   onCreditsUpdated?: (newCredits: number) => void;
@@ -34,8 +45,10 @@ interface UseCrossBlockAIActionsReturn {
 
 /**
  * Hook for managing AI text actions on cross-block selections.
+ * Processes each block separately and applies replacements per-block.
  */
 export function useCrossBlockAIActions({
+  blocks,
   crossBlockSelection,
   dispatch,
   onCreditsUpdated,
@@ -91,13 +104,55 @@ export function useCrossBlockAIActions({
     [onCreditsUpdated]
   );
 
-  // Handle AI action for cross-block selection
+  // Get the selected text portion for a specific block
+  const getBlockSelectedText = useCallback(
+    (blockId: string): { text: string; startOffset: number; endOffset: number } | null => {
+      if (!crossBlockSelection) return null;
+
+      const { startBlockId, endBlockId, startOffset, endOffset, selectedBlockIds } = crossBlockSelection;
+      const block = blocks.find((b) => b.id === blockId);
+      if (!block) return null;
+
+      const blockIndex = selectedBlockIds.indexOf(blockId);
+      if (blockIndex === -1) return null;
+
+      const isStartBlock = blockId === startBlockId;
+      const isEndBlock = blockId === endBlockId;
+
+      let textStartOffset: number;
+      let textEndOffset: number;
+
+      if (isStartBlock && isEndBlock) {
+        // Selection is within a single block (shouldn't happen for cross-block, but handle it)
+        textStartOffset = startOffset;
+        textEndOffset = endOffset;
+      } else if (isStartBlock) {
+        // First block: from startOffset to end of content
+        textStartOffset = startOffset;
+        textEndOffset = block.content.length;
+      } else if (isEndBlock) {
+        // Last block: from start to endOffset
+        textStartOffset = 0;
+        textEndOffset = endOffset;
+      } else {
+        // Middle block: entire content
+        textStartOffset = 0;
+        textEndOffset = block.content.length;
+      }
+
+      const text = block.content.slice(textStartOffset, textEndOffset);
+      return { text, startOffset: textStartOffset, endOffset: textEndOffset };
+    },
+    [blocks, crossBlockSelection]
+  );
+
+  // Handle AI action for cross-block selection - process each block separately
   const handleCrossBlockAction = useCallback(
     async (action: ActionType) => {
       if (!crossBlockSelection || processingAction) return;
 
-      const selectedText = crossBlockSelection.selectedText;
-      if (!selectedText.trim()) return;
+      const { selectedBlockIds } = crossBlockSelection;
+      if (selectedBlockIds.length === 0) return;
 
       setProcessingAction(action);
 
@@ -108,42 +163,109 @@ export function useCrossBlockAIActions({
           ? "summarize"
           : "fix-spelling";
 
-      const result = await callTextApi(endpoint, selectedText);
+      // Process each block in parallel
+      const replacementPromises = selectedBlockIds.map(async (blockId): Promise<BlockReplacement | null> => {
+        const selectedInfo = getBlockSelectedText(blockId);
+        if (!selectedInfo || !selectedInfo.text.trim()) return null;
 
-      if (result) {
-        // Check if there are no changes (for fix-spelling)
-        if (action === "fix-spelling" && result.trim() === selectedText.trim()) {
-          setNoChangesMessage("No spelling errors found");
-          setTimeout(() => setNoChangesMessage(null), 2000);
-        } else {
-          setPendingReplacement({
-            originalText: selectedText,
-            newText: result,
-            action,
-            selection: crossBlockSelection,
-          });
+        const block = blocks.find((b) => b.id === blockId);
+        const isHeading = block?.type?.startsWith("heading");
+
+        // Skip API call for headings (except fix-spelling) - return original text unchanged
+        if (isHeading && action !== "fix-spelling") {
+          return {
+            blockId,
+            originalText: selectedInfo.text,
+            newText: selectedInfo.text, // Keep original
+            startOffset: selectedInfo.startOffset,
+            endOffset: selectedInfo.endOffset,
+          };
         }
+
+        const result = await callTextApi(endpoint, selectedInfo.text);
+        if (!result) return null;
+
+        return {
+          blockId,
+          originalText: selectedInfo.text,
+          newText: result,
+          startOffset: selectedInfo.startOffset,
+          endOffset: selectedInfo.endOffset,
+        };
+      });
+
+      const results = await Promise.all(replacementPromises);
+      const validReplacements = results.filter((r): r is BlockReplacement => r !== null);
+
+      // Filter out blocks with no changes (e.g., headings that were skipped)
+      const changedReplacements = validReplacements.filter(
+        (r) => r.newText.trim() !== r.originalText.trim()
+      );
+
+      if (changedReplacements.length > 0) {
+        setPendingReplacement({
+          action,
+          selection: crossBlockSelection,
+          blockReplacements: changedReplacements,
+        });
+        // Clear browser selection after DOM updates to diff view
+        setTimeout(() => {
+          window.getSelection()?.removeAllRanges();
+        }, 0);
+      } else if (validReplacements.length > 0 && action === "fix-spelling") {
+        // All blocks had no spelling errors
+        setNoChangesMessage("No spelling errors found");
+        setTimeout(() => setNoChangesMessage(null), 2000);
       }
 
       setProcessingAction(null);
     },
-    [crossBlockSelection, processingAction, callTextApi]
+    [blocks, crossBlockSelection, processingAction, callTextApi, getBlockSelectedText]
   );
 
-  // Accept the pending replacement
+  // Accept the pending replacement - apply all block replacements in a single batch
   const handleAcceptReplacement = useCallback(() => {
     if (!pendingReplacement) return;
 
-    dispatch({
-      type: "REPLACE_CROSS_BLOCK_SELECTION",
-      newText: pendingReplacement.newText,
-    });
+    const { blockReplacements } = pendingReplacement;
 
-    // Clear browser selection
-    window.getSelection()?.removeAllRanges();
+    // Build batch updates for all blocks
+    const batchUpdates: Array<{ blockId: string; updates: { content: string } }> = [];
+
+    for (const replacement of blockReplacements) {
+      const block = blocks.find((b) => b.id === replacement.blockId);
+      if (!block) continue;
+
+      // Splice the new text into the block content
+      const newContent =
+        block.content.slice(0, replacement.startOffset) +
+        replacement.newText +
+        block.content.slice(replacement.endOffset);
+
+      batchUpdates.push({
+        blockId: replacement.blockId,
+        updates: { content: newContent },
+      });
+    }
+
+    // Apply all updates in a single action (single undo step)
+    if (batchUpdates.length > 0) {
+      dispatch({
+        type: "UPDATE_BLOCKS_BATCH",
+        updates: batchUpdates,
+      });
+    }
+
+    // Clear cross-block selection
+    dispatch({ type: "SET_CROSS_BLOCK_SELECTION", selection: null });
 
     setPendingReplacement(null);
-  }, [pendingReplacement, dispatch]);
+
+    // Clear browser selection after DOM updates (setTimeout ensures it runs after React re-render)
+    setTimeout(() => {
+      window.getSelection()?.removeAllRanges();
+    }, 0);
+  }, [pendingReplacement, blocks, dispatch]);
 
   // Discard the pending replacement
   const handleDiscardReplacement = useCallback(() => {
@@ -158,7 +280,7 @@ export function useCrossBlockAIActions({
   const handleTryAgain = useCallback(async () => {
     if (!pendingReplacement) return;
 
-    const { action, originalText, selection } = pendingReplacement;
+    const { action, selection, blockReplacements } = pendingReplacement;
     setPendingReplacement(null);
     setProcessingAction(action);
 
@@ -169,18 +291,32 @@ export function useCrossBlockAIActions({
         ? "summarize"
         : "fix-spelling";
 
-    const result = await callTextApi(endpoint, originalText);
+    // Re-process each block
+    const replacementPromises = blockReplacements.map(async (prevReplacement): Promise<BlockReplacement | null> => {
+      const result = await callTextApi(endpoint, prevReplacement.originalText);
+      if (!result) return null;
 
-    if (result) {
-      if (action === "fix-spelling" && result.trim() === originalText.trim()) {
+      return {
+        ...prevReplacement,
+        newText: result,
+      };
+    });
+
+    const results = await Promise.all(replacementPromises);
+    const validReplacements = results.filter((r): r is BlockReplacement => r !== null);
+
+    if (validReplacements.length > 0) {
+      const allNoChanges = action === "fix-spelling" &&
+        validReplacements.every((r) => r.newText.trim() === r.originalText.trim());
+
+      if (allNoChanges) {
         setNoChangesMessage("No spelling errors found");
         setTimeout(() => setNoChangesMessage(null), 2000);
       } else {
         setPendingReplacement({
-          originalText,
-          newText: result,
           action,
           selection,
+          blockReplacements: validReplacements,
         });
       }
     }

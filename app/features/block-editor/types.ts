@@ -36,6 +36,7 @@ export interface EditorState {
 export type EditorAction =
   | { type: "SET_BLOCKS"; blocks: Block[] }
   | { type: "UPDATE_BLOCK"; blockId: string; updates: Partial<Block> }
+  | { type: "UPDATE_BLOCKS_BATCH"; updates: Array<{ blockId: string; updates: Partial<Block> }> }
   | { type: "ADD_BLOCK"; block: BlockInput; afterBlockId?: string; focus?: boolean }
   | { type: "DELETE_BLOCK"; blockId: string }
   | { type: "MOVE_BLOCK"; blockId: string; newOrder: number }
@@ -92,6 +93,15 @@ export interface PendingReplacement {
   fullContent?: string; // Store the full block content at time of selection to avoid sync issues
 }
 
+// Cross-block replacement for a specific block
+export interface CrossBlockReplacement {
+  originalText: string;
+  newText: string;
+  startOffset: number;
+  endOffset: number;
+  action: ActionType;
+}
+
 // Props for the main BlockComponent
 export interface BlockComponentProps {
   block: Block;
@@ -103,6 +113,7 @@ export interface BlockComponentProps {
   currentPlayingIndex: number; // Global index of currently playing sentence
   isPlaybackOn: boolean;
   crossBlockSelection: CrossBlockSelection | null; // Cross-block selection state
+  crossBlockReplacement?: CrossBlockReplacement | null; // This block's portion of cross-block AI replacement
   onSelect: () => void;
   onFocus: () => void;
   onSentenceClick: (globalIndex: number) => void;

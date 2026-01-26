@@ -45,7 +45,7 @@ const MENU_HEIGHT = 50; // Approximate height of the menu
 const VIEWPORT_PADDING = 60; // Padding from viewport edges
 
 interface EditorFloatingMenuProps {
-  crossBlockSelection: CrossBlockSelection;
+  crossBlockSelection: CrossBlockSelection | null;
   pendingReplacement: CrossBlockPendingReplacement | null;
   processingAction: ActionType | null;
   noChangesMessage: string | null;
@@ -71,7 +71,11 @@ export function EditorFloatingMenu({
   onTryAgain,
   onTypeChange,
 }: EditorFloatingMenuProps) {
-  const { anchorPosition, selectedText } = crossBlockSelection;
+  // Use current selection or fall back to selection stored in pending replacement
+  const selection = crossBlockSelection || pendingReplacement?.selection;
+  if (!selection) return null;
+
+  const { anchorPosition, selectedText } = selection;
 
   // Clamp position to keep menu visible in viewport
   const clampedPosition = useMemo(() => {
@@ -178,7 +182,11 @@ export function EditorFloatingMenu({
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>
-                      {estimateCredits(pendingReplacement?.originalText || "")}{" "}
+                      {estimateCredits(
+                        pendingReplacement?.blockReplacements
+                          .map((r) => r.originalText)
+                          .join("") || ""
+                      )}{" "}
                       credits
                     </p>
                   </TooltipContent>

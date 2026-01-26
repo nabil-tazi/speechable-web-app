@@ -12,6 +12,7 @@ import { SentenceRenderer } from "./sentence-renderer";
 import { FloatingMenu } from "./floating-menu";
 import { BlockDropdownMenu } from "./block-dropdown-menu";
 import { PendingReplacementPreview } from "./pending-replacement-preview";
+import { DiffRenderer } from "./diff-renderer";
 import { PendingEditDialog } from "./pending-edit-dialog";
 import InsufficientCreditsDialog from "@/app/features/credits/components/insufficient-credits-dialog";
 
@@ -36,6 +37,7 @@ export function BlockComponent({
   currentPlayingIndex,
   isPlaybackOn,
   crossBlockSelection,
+  crossBlockReplacement,
   onSelect,
   onFocus,
   onSentenceClick,
@@ -127,6 +129,7 @@ export function BlockComponent({
     lastSyncedContentRef,
     getScrollContainer,
     originalScrollPosRef,
+    selectionMenu,
     setSelectionMenu,
     setIsEditing,
     onCreditsUpdated: updateCredits,
@@ -576,7 +579,7 @@ export function BlockComponent({
           />
         )}
 
-        {/* Pending replacement preview */}
+        {/* Pending replacement preview (single-block) */}
         {pendingReplacement && (
           <PendingReplacementPreview
             pendingReplacement={pendingReplacement}
@@ -588,8 +591,40 @@ export function BlockComponent({
           />
         )}
 
+        {/* Cross-block replacement preview */}
+        {!pendingReplacement && crossBlockReplacement && (
+          <div
+            className={cn(
+              "leading-relaxed text-justify whitespace-pre-wrap",
+              block.type === "text" && "indent-8",
+              getBlockStyles()
+            )}
+          >
+            {block.content.slice(0, crossBlockReplacement.startOffset)}
+            {crossBlockReplacement.action === "fix-spelling" ? (
+              // For fix-spelling, use DiffRenderer
+              <DiffRenderer
+                original={crossBlockReplacement.originalText}
+                updated={crossBlockReplacement.newText}
+                newTextRef={newTextRef}
+              />
+            ) : (
+              // For other actions, show strikethrough + new text
+              <>
+                <span className="line-through opacity-50">
+                  {crossBlockReplacement.originalText}
+                </span>
+                <span ref={newTextRef} className="bg-blue-100">
+                  {crossBlockReplacement.newText}
+                </span>
+              </>
+            )}
+            {block.content.slice(crossBlockReplacement.endOffset)}
+          </div>
+        )}
+
         {/* Normal content display */}
-        {!pendingReplacement && (
+        {!pendingReplacement && !crossBlockReplacement && (
           <div
             ref={contentRef}
             data-block-content="true"

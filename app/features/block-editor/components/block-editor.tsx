@@ -67,6 +67,7 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
     handleTryAgain: handleCrossBlockTryAgain,
     clearInsufficientCreditsInfo,
   } = useCrossBlockAIActions({
+    blocks: state.blocks,
     crossBlockSelection,
     dispatch,
     onCreditsUpdated: updateCredits,
@@ -205,6 +206,21 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
               ? sentencesBySegment.get(segmentIndex) || []
               : [];
             const hasPlayingSentence = segmentIndex === playingSegmentIndex;
+
+            // Get this block's cross-block replacement if it exists
+            const blockReplacement = crossBlockPendingReplacement?.blockReplacements.find(
+              (r) => r.blockId === block.id
+            );
+            const crossBlockReplacement = blockReplacement && crossBlockPendingReplacement
+              ? {
+                  originalText: blockReplacement.originalText,
+                  newText: blockReplacement.newText,
+                  startOffset: blockReplacement.startOffset,
+                  endOffset: blockReplacement.endOffset,
+                  action: crossBlockPendingReplacement.action,
+                }
+              : null;
+
             return (
               <div
                 key={block.id}
@@ -220,6 +236,7 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
                   currentPlayingIndex={currentIndex}
                   isPlaybackOn={isPlaybackOn}
                   crossBlockSelection={crossBlockSelection}
+                  crossBlockReplacement={crossBlockReplacement}
                   onSelect={() => handleSelectBlock(block.id)}
                   onFocus={() => handleFocusBlock(block.id)}
                   onSentenceClick={handleSentenceClick}
@@ -268,9 +285,9 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
       </div>
 
       {/* Editor-level floating menu for cross-block selection */}
-      {isEditMode && crossBlockSelection && (
+      {isEditMode && (crossBlockSelection || crossBlockPendingReplacement) && (
         <EditorFloatingMenu
-          crossBlockSelection={crossBlockSelection}
+          crossBlockSelection={crossBlockSelection || crossBlockPendingReplacement?.selection || null}
           pendingReplacement={crossBlockPendingReplacement}
           processingAction={crossBlockProcessingAction}
           noChangesMessage={crossBlockNoChangesMessage}

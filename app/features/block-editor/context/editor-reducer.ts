@@ -52,6 +52,30 @@ export function editorReducer(
       return pushToHistory(state, newBlocks, `Update block ${action.blockId}`);
     }
 
+    case "UPDATE_BLOCKS_BATCH": {
+      const now = new Date().toISOString();
+      let newBlocks = [...state.blocks];
+
+      for (const update of action.updates) {
+        const blockIndex = newBlocks.findIndex((b) => b.id === update.blockId);
+        if (blockIndex === -1) continue;
+
+        const oldBlock = newBlocks[blockIndex];
+        const contentChanged =
+          update.updates.content !== undefined &&
+          update.updates.content !== oldBlock.content;
+
+        newBlocks[blockIndex] = {
+          ...oldBlock,
+          ...update.updates,
+          updated_at: now,
+          audio_stale: contentChanged ? true : oldBlock.audio_stale,
+        };
+      }
+
+      return pushToHistory(state, newBlocks, `Update ${action.updates.length} blocks`);
+    }
+
     case "ADD_BLOCK": {
       const now = new Date().toISOString();
       const newBlock: Block = {
