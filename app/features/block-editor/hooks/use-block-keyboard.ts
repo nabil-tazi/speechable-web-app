@@ -89,6 +89,14 @@ export function useBlockKeyboard({
       }
 
       if (e.key === "Backspace") {
+        // Check if there's an active selection - if so, let browser handle deletion
+        const selection = window.getSelection();
+        const hasSelection = selection && !selection.isCollapsed;
+        if (hasSelection) {
+          // Let browser delete the selected text
+          return;
+        }
+
         const cursorPos = getCursorPosition();
         const currentContent = contentRef.current
           ? getTextContent(contentRef.current)
@@ -118,7 +126,7 @@ export function useBlockKeyboard({
           return;
         }
 
-        // Merge with previous block when cursor is at the beginning
+        // Merge with previous block when cursor is at the beginning (no selection)
         if (cursorPos === 0) {
           e.preventDefault();
 
@@ -153,6 +161,14 @@ export function useBlockKeyboard({
       }
 
       if (e.key === "Delete") {
+        // Check if there's an active selection - if so, let browser handle deletion
+        const selection = window.getSelection();
+        const hasSelection = selection && !selection.isCollapsed;
+        if (hasSelection) {
+          // Let browser delete the selected text
+          return;
+        }
+
         const currentContent = contentRef.current
           ? getTextContent(contentRef.current)
           : "";

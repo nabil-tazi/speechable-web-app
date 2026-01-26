@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import type { SelectionMenu } from "../types";
+import type { SelectionMenu, CrossBlockSelection } from "../types";
 
 interface UseTextSelectionOptions {
   contentRef: React.RefObject<HTMLDivElement | null>;
   isEditMode: boolean;
   keepMenuVisibleRef: React.MutableRefObject<boolean>;
   onScrollPositionCapture: () => void;
+  crossBlockSelection?: CrossBlockSelection | null;
 }
 
 interface UseTextSelectionReturn {
@@ -21,6 +22,7 @@ export function useTextSelection({
   isEditMode,
   keepMenuVisibleRef,
   onScrollPositionCapture,
+  crossBlockSelection,
 }: UseTextSelectionOptions): UseTextSelectionReturn {
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenu>({
     visible: false,
@@ -44,6 +46,12 @@ export function useTextSelection({
 
       // Reset keep-visible flag when user clicks elsewhere
       keepMenuVisibleRef.current = false;
+
+      // Hide per-block menu if cross-block selection is active
+      if (crossBlockSelection) {
+        setSelectionMenu((prev) => ({ ...prev, visible: false }));
+        return;
+      }
 
       if (!selection || selection.isCollapsed || !contentRef.current) {
         setSelectionMenu((prev) => ({ ...prev, visible: false }));
@@ -70,6 +78,17 @@ export function useTextSelection({
       // Save scroll position for scroll-to-target button
       onScrollPositionCapture();
 
+      // Calculate character offsets within the block content
+      const startRange = document.createRange();
+      startRange.selectNodeContents(contentRef.current);
+      startRange.setEnd(range.startContainer, range.startOffset);
+      const selectionStart = startRange.toString().length;
+
+      const endRange = document.createRange();
+      endRange.selectNodeContents(contentRef.current);
+      endRange.setEnd(range.endContainer, range.endOffset);
+      const selectionEnd = endRange.toString().length;
+
       const relativeX = rect.left + rect.width / 2 - contentRect.left;
       const relativeY = rect.top - contentRect.top - 8;
       setSelectionMenu({
@@ -79,12 +98,14 @@ export function useTextSelection({
         text: selectedText,
         fixedX: rect.left + rect.width / 2,
         fixedY: rect.top - 8,
+        selectionStart,
+        selectionEnd,
       });
     };
 
     // Hide menu when selection changes (e.g., clicking elsewhere)
     const handleSelectionChange = () => {
-      // Don't hide if we're in the middle of scrolling to target
+      // Don't hide if interacting with the floating menu
       if (keepMenuVisibleRef.current) return;
 
       const selection = window.getSelection();
@@ -113,7 +134,7 @@ export function useTextSelection({
       document.removeEventListener("selectionchange", handleSelectionChange);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [isEditMode, contentRef, keepMenuVisibleRef, onScrollPositionCapture]);
+  }, [isEditMode, contentRef, keepMenuVisibleRef, onScrollPositionCapture, crossBlockSelection]);
 
   return {
     selectionMenu,

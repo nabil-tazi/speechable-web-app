@@ -4,3 +4,6 @@ export { useContentEditing } from "./use-content-editing";
 export { useTextSelection } from "./use-text-selection";
 export { useAITextActions } from "./use-ai-text-actions";
 export { useBlockKeyboard } from "./use-block-keyboard";
+export { useCrossBlockSelection } from "./use-cross-block-selection";
+export { useCrossBlockKeyboard } from "./use-cross-block-keyboard";
+export { useCrossBlockAIActions } from "./use-cross-block-ai-actions";
