@@ -112,18 +112,22 @@ export default function CreditDisplay({ className = "" }: CreditDisplayProps) {
 
   const safeAllowance = monthlyAllowance || 10; // Default to 10 if not set
   const percentRemaining = (credits / safeAllowance) * 100;
-  const isLow = credits < safeAllowance * 0.2; // Less than 20% remaining
+  const isVeryLow = percentRemaining < 10; // Less than 10% remaining
+  const isLow = percentRemaining < 25; // Less than 25% remaining
+
+  // Text color based on credit level: normal → orange → red
+  const creditTextColor = isVeryLow
+    ? "text-red-500"
+    : isLow
+    ? "text-amber-500"
+    : "text-gray-400";
 
   return (
     <div className={`group relative ${className}`}>
       <div
-        className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-sm ${
-          isLow
-            ? "bg-red-500/10 text-red-400"
-            : "bg-white/5 text-gray-400 hover:bg-white/10"
-        } transition-colors cursor-default`}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md text-sm bg-white/5 hover:bg-white/10 transition-colors cursor-default"
       >
-        <span className="font-medium">
+        <span className={`font-medium ${creditTextColor}`}>
           <SlideNumber value={credits} decimals={1} />
         </span>
         <span className="text-gray-500">credits</span>
@@ -134,7 +138,9 @@ export default function CreditDisplay({ className = "" }: CreditDisplayProps) {
         <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-56">
           {/* Credits remaining */}
           <div className="flex items-baseline justify-between mb-1">
-            <span className={`text-base font-semibold ${isLow ? "text-red-500" : "text-brand-primary-light"}`}>
+            <span className={`text-base font-semibold ${
+              isVeryLow ? "text-red-500" : isLow ? "text-amber-500" : "text-brand-primary-light"
+            }`}>
               {credits.toFixed(2)}
             </span>
             <span className="text-gray-400 text-xs">
@@ -146,7 +152,7 @@ export default function CreditDisplay({ className = "" }: CreditDisplayProps) {
           <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
-                isLow ? "bg-red-500" : "bg-brand-primary-light"
+                isVeryLow ? "bg-red-500" : isLow ? "bg-amber-500" : "bg-brand-primary-light"
               }`}
               style={{ width: `${Math.min(100, Math.max(0, percentRemaining))}%` }}
             />
@@ -162,7 +168,7 @@ export default function CreditDisplay({ className = "" }: CreditDisplayProps) {
             href="/plans"
             className="mt-3 block w-full text-center py-2 px-4 bg-brand-primary-dark hover:bg-brand-primary text-white text-sm font-medium rounded-lg transition-colors"
           >
-            View Plans
+            Get more credits
           </a>
         </div>
       </div>
