@@ -162,7 +162,15 @@ interface HeadingNode {
 }
 
 // Outline Button - shows document headings on hover, click to toggle disabled
-function OutlineButton() {
+function OutlineButton({
+  className,
+  popoverSide = "bottom",
+  popoverAlign = "start",
+}: {
+  className?: string;
+  popoverSide?: "bottom" | "right" | "left" | "top";
+  popoverAlign?: "start" | "center" | "end";
+} = {}) {
   const { blocks, toggleBlockDisabled } = useEditor();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -446,7 +454,7 @@ function OutlineButton() {
                 />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="left">
+            <TooltipContent side="right">
               {isEffectiveHoveredDisabled ? (
                 <p className="line-through text-muted-foreground">
                   {formatDuration(totalCharCount)}
@@ -474,7 +482,7 @@ function OutlineButton() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 hover:bg-gray-200"
+          className={cn("h-8 w-8 hover:bg-gray-200", className)}
           title="Document outline"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -483,8 +491,8 @@ function OutlineButton() {
         </Button>
       </HoverCardTrigger>
       <HoverCardContent
-        side="bottom"
-        align="start"
+        side={popoverSide}
+        align={popoverAlign}
         className="w-96 p-2"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -832,8 +840,8 @@ function VersionTabsWithScroll({
   );
 }
 
-// Document Title Popover - centered title button with document info on hover
-function DocumentTitlePopover({
+// Version Selector Popover - shows version name with dropdown for version switching
+function VersionSelectorPopover({
   document,
   versions,
   activeVersionId,
@@ -891,21 +899,14 @@ function DocumentTitlePopover({
     <HoverCard open={isOpen}>
       <HoverCardTrigger asChild>
         <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors max-w-[500px]"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <ScrollingText
-            text={document.title}
-            className="text-sm font-medium max-w-[280px]"
-            onHoverOnly
-            isActive={isOpen}
-          />
-          <span className="text-muted-foreground flex-shrink-0">·</span>
-          <span className="text-sm text-muted-foreground flex-shrink-0">
+          <span className="text-sm text-gray-700">
             {activeVersionName}
           </span>
-          <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <ChevronDown className="h-4 w-4 text-gray-700" />
         </button>
       </HoverCardTrigger>
       <HoverCardContent
@@ -1241,42 +1242,42 @@ function DocumentTextView() {
                   {/* Vertical Separator */}
                   <Separator orientation="vertical" className="h-5 mx-1" />
 
-                  {/* Outline Button */}
-                  <OutlineButton />
-
-                  {/* Edit Button (read mode only) */}
-                  {!isEditMode && <EditButton isActive={false} setIsEditMode={setIsEditMode} />}
+                  {/* Document Title */}
+                  {/* <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleToggleStar}
+                    className="h-8 w-8 hover:bg-gray-200"
+                    title={
+                      isStarred
+                        ? "Remove from favorites"
+                        : "Add to favorites"
+                    }
+                  >
+                    <Bookmark
+                      className={`h-4 w-4 ${
+                        isStarred ? "fill-current" : ""
+                      }`}
+                    />
+                  </Button> */}
+                  <span className="text-sm font-medium truncate max-w-[300px]" title={document.title}>
+                    {document.title}
+                  </span>
 
                   {/* Save Indicator */}
                   <SaveIndicator />
                 </div>
 
-                {/* Center section - Bookmark + Document Title with Popover */}
+                {/* Center section - Edit Button + Version Selector */}
                 <div className="flex-shrink-0 flex items-center gap-1">
                   {isEditMode ? (
                     /* Edit mode: Show version name input */
                     <VersionNameInput />
                   ) : (
-                    /* Read mode: Bookmark + title popover */
+                    /* Read mode: Edit button + version popover */
                     <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleToggleStar}
-                        className="h-8 w-8 hover:bg-gray-200"
-                        title={
-                          isStarred
-                            ? "Remove from favorites"
-                            : "Add to favorites"
-                        }
-                      >
-                        <Bookmark
-                          className={`h-4 w-4 ${
-                            isStarred ? "fill-current" : ""
-                          }`}
-                        />
-                      </Button>
-                      <DocumentTitlePopover
+                      <EditButton isActive={false} setIsEditMode={setIsEditMode} />
+                      <VersionSelectorPopover
                         document={document}
                         versions={sortedVersions}
                         activeVersionId={activeVersionId}
@@ -1313,6 +1314,15 @@ function DocumentTextView() {
             <BlockEditor
               isEditMode={isEditMode}
               isConversation={activeVersion?.processing_type === "3"}
+            />
+          </div>
+
+          {/* Fixed Outline Button - left side, vertically centered */}
+          <div className="fixed left-4 top-1/2 -translate-y-1/2 z-40">
+            <OutlineButton
+              className="bg-white shadow-md border border-gray-200 hover:bg-gray-100"
+              popoverSide="right"
+              popoverAlign="center"
             />
           </div>
 

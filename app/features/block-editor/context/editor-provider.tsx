@@ -68,6 +68,12 @@ export function EditorProvider({
   const [versionName, setVersionName] = useState(initialVersionName);
   const initialVersionNameRef = useRef(initialVersionName);
 
+  // Sync version name when initialVersionName changes (e.g., switching versions)
+  useEffect(() => {
+    setVersionName(initialVersionName);
+    initialVersionNameRef.current = initialVersionName;
+  }, [initialVersionName]);
+
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const blocksRef = useRef(state.blocks);
   const initialBlocksRef = useRef(initialBlocks);
