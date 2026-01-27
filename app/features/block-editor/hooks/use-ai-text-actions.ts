@@ -19,6 +19,7 @@ interface UseAITextActionsOptions {
   lastSyncedContentRef: React.MutableRefObject<string>;
   getScrollContainer: () => HTMLElement | null;
   originalScrollPosRef: React.MutableRefObject<number>;
+  selectionMenu: SelectionMenu;
   setSelectionMenu: React.Dispatch<React.SetStateAction<SelectionMenu>>;
   setIsEditing: (editing: boolean) => void;
   onCreditsUpdated?: (newCredits: number) => void;
@@ -52,6 +53,7 @@ export function useAITextActions({
   lastSyncedContentRef,
   getScrollContainer,
   originalScrollPosRef,
+  selectionMenu,
   setSelectionMenu,
   setIsEditing,
   onCreditsUpdated,
@@ -112,11 +114,43 @@ export function useAITextActions({
     async (action: ActionType) => {
       if (!contentRef.current || processingAction) return;
 
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
+      // Try to get selection from native browser selection first
+      const nativeSelection = window.getSelection();
+      let selectedText: string;
+      let rawSelectedText: string;
+      let selectionStart: number;
+      let selectionEnd: number;
 
-      const rawSelectedText = selection.toString();
-      const selectedText = rawSelectedText.trim();
+      const hasNativeSelection = nativeSelection &&
+        nativeSelection.rangeCount > 0 &&
+        nativeSelection.toString().trim();
+
+      if (hasNativeSelection) {
+        // Use native selection
+        rawSelectedText = nativeSelection.toString();
+        selectedText = rawSelectedText.trim();
+
+        const range = nativeSelection.getRangeAt(0);
+        const preRange = range.cloneRange();
+        preRange.selectNodeContents(contentRef.current);
+        preRange.setEnd(range.startContainer, range.startOffset);
+        selectionStart = preRange.toString().length;
+        selectionEnd = selectionStart + rawSelectedText.length;
+      } else if (
+        selectionMenu.text &&
+        selectionMenu.selectionStart !== undefined &&
+        selectionMenu.selectionEnd !== undefined
+      ) {
+        // Fallback to stored selection data (e.g., when scrolled and selection lost)
+        selectedText = selectionMenu.text;
+        rawSelectedText = selectedText;
+        selectionStart = selectionMenu.selectionStart;
+        selectionEnd = selectionMenu.selectionEnd;
+      } else {
+        // No selection available
+        return;
+      }
+
       if (!selectedText) return;
 
       // Sync DOM content to block state before calculating positions
@@ -129,14 +163,6 @@ export function useAITextActions({
       // Save scroll position for scroll-to-target button
       const container = getScrollContainer();
       originalScrollPosRef.current = container?.scrollTop || 0;
-
-      // Calculate selection positions based on the synced content
-      const range = selection.getRangeAt(0);
-      const preRange = range.cloneRange();
-      preRange.selectNodeContents(contentRef.current);
-      preRange.setEnd(range.startContainer, range.startOffset);
-      const selectionStart = preRange.toString().length;
-      const selectionEnd = selectionStart + rawSelectedText.length;
 
       // Calculate trimmed positions to know exactly what text to replace
       const leadingSpaces = rawSelectedText.length - rawSelectedText.trimStart().length;
@@ -189,6 +215,7 @@ export function useAITextActions({
       contentRef,
       lastSyncedContentRef,
       originalScrollPosRef,
+      selectionMenu,
       setSelectionMenu,
       setIsEditing,
     ]

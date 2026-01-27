@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, Suspense } from "react";
+import React, { useMemo, useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, X } from "lucide-react";
 import Image from "next/image";
@@ -27,6 +27,20 @@ function LibraryContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [newDocModalOpen, setNewDocModalOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
+  // Preload doodle images for the new document modal
+  useEffect(() => {
+    const doodles = [
+      "/doodles/ReadingDoodle.svg",
+      "/doodles/UnboxingDoodle.svg",
+      "/doodles/FloatDoodle.svg",
+      "/doodles/SelfieDoodle.svg",
+    ];
+    doodles.forEach((src) => {
+      const img = new window.Image();
+      img.src = src;
+    });
+  }, []);
 
   // Handle new document button click - always open modal
   // (debug mode PDF comparison is handled inside the modal)

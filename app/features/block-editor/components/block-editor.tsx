@@ -3,6 +3,7 @@
 import React, { useCallback, useRef, useEffect, useMemo } from "react";
 import { useEditor } from "../context/editor-provider";
 import { BlockComponent } from "./block";
+import { EditorFloatingMenu } from "./editor-floating-menu";
 import { Plus, Heading1, Heading2, Heading3, Heading4, Type } from "lucide-react";
 import {
   DropdownMenu,
@@ -13,8 +14,15 @@ import {
 import { Button } from "@/components/ui/button";
 import type { BlockType } from "@/app/features/documents/types";
 import { useSentences, usePlayback } from "@/app/features/tts";
+import { useCredits } from "@/app/features/users/context";
 import { cn } from "@/lib/utils";
 import { getDisabledBlockIds } from "../utils/disabled-sections";
+import {
+  useCrossBlockSelection,
+  useCrossBlockKeyboard,
+  useCrossBlockAIActions,
+} from "../hooks";
+import InsufficientCreditsDialog from "@/app/features/credits/components/insufficient-credits-dialog";
 
 interface BlockEditorProps {
   isEditMode?: boolean;
@@ -22,7 +30,8 @@ interface BlockEditorProps {
 }
 
 export function BlockEditor({ isEditMode = false, isConversation = false }: BlockEditorProps) {
-  const { state, addBlock, dispatch } = useEditor();
+  const { state, addBlock, updateBlock, dispatch } = useEditor();
+  const { updateCredits } = useCredits();
 
   // TTS integration
   const { sentences, currentSentence, currentIndex } = useSentences();
@@ -30,6 +39,39 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
 
   // Ref for auto-scrolling to playing sentence
   const playingSentenceRef = useRef<HTMLDivElement>(null);
+
+  // Cross-block selection hook
+  const { crossBlockSelection } = useCrossBlockSelection({
+    isEditMode,
+    blocks: state.blocks,
+    dispatch,
+    crossBlockSelection: state.crossBlockSelection,
+  });
+
+  // Cross-block keyboard handling
+  useCrossBlockKeyboard({
+    isEditMode,
+    crossBlockSelection,
+    dispatch,
+  });
+
+  // Cross-block AI actions
+  const {
+    processingAction: crossBlockProcessingAction,
+    pendingReplacement: crossBlockPendingReplacement,
+    noChangesMessage: crossBlockNoChangesMessage,
+    insufficientCreditsInfo,
+    handleCrossBlockAction,
+    handleAcceptReplacement: handleCrossBlockAcceptReplacement,
+    handleDiscardReplacement: handleCrossBlockDiscardReplacement,
+    handleTryAgain: handleCrossBlockTryAgain,
+    clearInsufficientCreditsInfo,
+  } = useCrossBlockAIActions({
+    blocks: state.blocks,
+    crossBlockSelection,
+    dispatch,
+    onCreditsUpdated: updateCredits,
+  });
 
   // Get sorted blocks once (for consistent index mapping)
   const sortedBlocks = useMemo(
@@ -125,6 +167,17 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
     [playFromSentence]
   );
 
+  // Handle type change for all selected blocks in cross-block selection
+  const handleCrossBlockTypeChange = useCallback(
+    (type: BlockType) => {
+      if (!crossBlockSelection) return;
+      for (const blockId of crossBlockSelection.selectedBlockIds) {
+        updateBlock(blockId, { type });
+      }
+    },
+    [crossBlockSelection, updateBlock]
+  );
+
   // Determine which segment contains the currently playing sentence
   const playingSegmentIndex = isPlaybackOn && currentSentence
     ? currentSentence.segmentIndex
@@ -153,6 +206,21 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
               ? sentencesBySegment.get(segmentIndex) || []
               : [];
             const hasPlayingSentence = segmentIndex === playingSegmentIndex;
+
+            // Get this block's cross-block replacement if it exists
+            const blockReplacement = crossBlockPendingReplacement?.blockReplacements.find(
+              (r) => r.blockId === block.id
+            );
+            const crossBlockReplacement = blockReplacement && crossBlockPendingReplacement
+              ? {
+                  originalText: blockReplacement.originalText,
+                  newText: blockReplacement.newText,
+                  startOffset: blockReplacement.startOffset,
+                  endOffset: blockReplacement.endOffset,
+                  action: crossBlockPendingReplacement.action,
+                }
+              : null;
+
             return (
               <div
                 key={block.id}
@@ -167,6 +235,8 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
                   sentences={blockSentences}
                   currentPlayingIndex={currentIndex}
                   isPlaybackOn={isPlaybackOn}
+                  crossBlockSelection={crossBlockSelection}
+                  crossBlockReplacement={crossBlockReplacement}
                   onSelect={() => handleSelectBlock(block.id)}
                   onFocus={() => handleFocusBlock(block.id)}
                   onSentenceClick={handleSentenceClick}
@@ -213,6 +283,30 @@ export function BlockEditor({ isEditMode = false, isConversation = false }: Bloc
           )}
         </div>
       </div>
+
+      {/* Editor-level floating menu for cross-block selection */}
+      {isEditMode && (crossBlockSelection || crossBlockPendingReplacement) && (
+        <EditorFloatingMenu
+          crossBlockSelection={crossBlockSelection || crossBlockPendingReplacement?.selection || null}
+          pendingReplacement={crossBlockPendingReplacement}
+          processingAction={crossBlockProcessingAction}
+          noChangesMessage={crossBlockNoChangesMessage}
+          onAction={handleCrossBlockAction}
+          onAcceptReplacement={handleCrossBlockAcceptReplacement}
+          onDiscardReplacement={handleCrossBlockDiscardReplacement}
+          onTryAgain={handleCrossBlockTryAgain}
+          onTypeChange={handleCrossBlockTypeChange}
+        />
+      )}
+
+      {/* Insufficient credits dialog */}
+      <InsufficientCreditsDialog
+        isOpen={!!insufficientCreditsInfo}
+        onClose={clearInsufficientCreditsInfo}
+        creditsNeeded={insufficientCreditsInfo?.creditsNeeded ?? 0}
+        creditsAvailable={insufficientCreditsInfo?.creditsAvailable ?? 0}
+        nextRefillDate={insufficientCreditsInfo?.nextRefillDate ?? null}
+      />
     </div>
   );
 }

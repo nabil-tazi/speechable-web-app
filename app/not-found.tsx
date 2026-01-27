@@ -14,7 +14,7 @@ export default function NotFound() {
             alt=""
             width={280}
             height={280}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-contain animate-fade-in"
             priority
           />
         </div>

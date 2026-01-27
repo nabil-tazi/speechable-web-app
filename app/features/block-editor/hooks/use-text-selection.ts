@@ -1,16 +1,69 @@
 import { useEffect, useState } from "react";
-import type { SelectionMenu } from "../types";
+import type { SelectionMenu, CrossBlockSelection } from "../types";
 
 interface UseTextSelectionOptions {
   contentRef: React.RefObject<HTMLDivElement | null>;
   isEditMode: boolean;
   keepMenuVisibleRef: React.MutableRefObject<boolean>;
   onScrollPositionCapture: () => void;
+  crossBlockSelection?: CrossBlockSelection | null;
 }
 
 interface UseTextSelectionReturn {
   selectionMenu: SelectionMenu;
   setSelectionMenu: React.Dispatch<React.SetStateAction<SelectionMenu>>;
+}
+
+/**
+ * Calculate character offset from container start to a specific node/offset,
+ * counting <br> elements as newline characters.
+ */
+function getCharacterOffset(
+  container: Node,
+  targetNode: Node,
+  targetOffset: number
+): number {
+  let offset = 0;
+
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode: (node) => {
+        if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+        if (node.nodeName === "BR") return NodeFilter.FILTER_ACCEPT;
+        return NodeFilter.FILTER_SKIP;
+      },
+    }
+  );
+
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    if (node === targetNode) {
+      // Target is this node - add the offset within it
+      if (node.nodeType === Node.TEXT_NODE) {
+        offset += targetOffset;
+      }
+      // For BR, offset is always 0 or 1, but we've already counted it
+      return offset;
+    }
+
+    // Count this node's contribution
+    if (node.nodeType === Node.TEXT_NODE) {
+      offset += node.textContent?.length || 0;
+    } else if (node.nodeName === "BR") {
+      offset += 1; // Count BR as newline character
+    }
+
+    node = walker.nextNode();
+  }
+
+  // If target node is the container itself (cursor at element boundary)
+  if (targetNode === container) {
+    return offset;
+  }
+
+  return offset;
 }
 
 /**
@@ -21,6 +74,7 @@ export function useTextSelection({
   isEditMode,
   keepMenuVisibleRef,
   onScrollPositionCapture,
+  crossBlockSelection,
 }: UseTextSelectionOptions): UseTextSelectionReturn {
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenu>({
     visible: false,
@@ -44,6 +98,12 @@ export function useTextSelection({
 
       // Reset keep-visible flag when user clicks elsewhere
       keepMenuVisibleRef.current = false;
+
+      // Hide per-block menu if cross-block selection is active
+      if (crossBlockSelection) {
+        setSelectionMenu((prev) => ({ ...prev, visible: false }));
+        return;
+      }
 
       if (!selection || selection.isCollapsed || !contentRef.current) {
         setSelectionMenu((prev) => ({ ...prev, visible: false }));
@@ -70,6 +130,24 @@ export function useTextSelection({
       // Save scroll position for scroll-to-target button
       onScrollPositionCapture();
 
+      // Calculate character offsets within the block content
+      // Use DOM walking to properly count <br> elements as newline characters
+      const selectionStart = getCharacterOffset(
+        contentRef.current,
+        range.startContainer,
+        range.startOffset
+      );
+      const selectionEnd = getCharacterOffset(
+        contentRef.current,
+        range.endContainer,
+        range.endOffset
+      );
+
+      // If selection top is above viewport, clamp to minimum visible position
+      // Match the editor-floating-menu constants: MENU_HEIGHT (50) + VIEWPORT_PADDING (60) = 110
+      const minY = 110;
+      const menuY = Math.max(minY, rect.top - 8);
+
       const relativeX = rect.left + rect.width / 2 - contentRect.left;
       const relativeY = rect.top - contentRect.top - 8;
       setSelectionMenu({
@@ -78,13 +156,15 @@ export function useTextSelection({
         y: relativeY,
         text: selectedText,
         fixedX: rect.left + rect.width / 2,
-        fixedY: rect.top - 8,
+        fixedY: menuY,
+        selectionStart,
+        selectionEnd,
       });
     };
 
     // Hide menu when selection changes (e.g., clicking elsewhere)
     const handleSelectionChange = () => {
-      // Don't hide if we're in the middle of scrolling to target
+      // Don't hide if interacting with the floating menu
       if (keepMenuVisibleRef.current) return;
 
       const selection = window.getSelection();
@@ -113,7 +193,7 @@ export function useTextSelection({
       document.removeEventListener("selectionchange", handleSelectionChange);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [isEditMode, contentRef, keepMenuVisibleRef, onScrollPositionCapture]);
+  }, [isEditMode, contentRef, keepMenuVisibleRef, onScrollPositionCapture, crossBlockSelection]);
 
   return {
     selectionMenu,

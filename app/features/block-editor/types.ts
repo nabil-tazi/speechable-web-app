@@ -1,4 +1,4 @@
-import type { Block, BlockInput } from "@/app/features/documents/types";
+import type { Block, BlockInput, BlockType } from "@/app/features/documents/types";
 import type { Sentence } from "@/app/features/tts";
 
 // History entry for undo/redo
@@ -6,6 +6,17 @@ export interface HistoryEntry {
   blocks: Block[];
   timestamp: number;
   description: string;
+}
+
+// Cross-block selection state
+export interface CrossBlockSelection {
+  startBlockId: string;
+  endBlockId: string;
+  startOffset: number;
+  endOffset: number;
+  selectedText: string;
+  selectedBlockIds: string[]; // Ordered list of block IDs in selection
+  anchorPosition: { x: number; y: number }; // For menu positioning
 }
 
 // Editor state
@@ -18,16 +29,19 @@ export interface EditorState {
   lastSaved: Date | null;
   selectedBlockId: string | null;
   focusedBlockId: string | null;
+  crossBlockSelection: CrossBlockSelection | null;
 }
 
 // Editor actions
 export type EditorAction =
   | { type: "SET_BLOCKS"; blocks: Block[] }
   | { type: "UPDATE_BLOCK"; blockId: string; updates: Partial<Block> }
+  | { type: "UPDATE_BLOCKS_BATCH"; updates: Array<{ blockId: string; updates: Partial<Block> }> }
   | { type: "ADD_BLOCK"; block: BlockInput; afterBlockId?: string; focus?: boolean }
   | { type: "DELETE_BLOCK"; blockId: string }
   | { type: "MOVE_BLOCK"; blockId: string; newOrder: number }
   | { type: "SPLIT_BLOCK"; blockId: string; contentBefore: string; contentAfter: string }
+  | { type: "SPLIT_BLOCK_WITH_TYPES"; blockId: string; segments: Array<{ content: string; type: BlockType }> }
   | { type: "MERGE_WITH_PREVIOUS"; blockId: string }
   | { type: "UNDO" }
   | { type: "REDO" }
@@ -37,7 +51,10 @@ export type EditorAction =
   | { type: "SELECT_BLOCK"; blockId: string | null }
   | { type: "FOCUS_BLOCK"; blockId: string | null }
   | { type: "RESET_HISTORY"; blocks: Block[] }
-  | { type: "TOGGLE_BLOCK_DISABLED"; blockId: string };
+  | { type: "TOGGLE_BLOCK_DISABLED"; blockId: string }
+  | { type: "SET_CROSS_BLOCK_SELECTION"; selection: CrossBlockSelection | null }
+  | { type: "DELETE_CROSS_BLOCK_SELECTION" }
+  | { type: "REPLACE_CROSS_BLOCK_SELECTION"; newText: string };
 
 // =====================
 // Block Component Types
@@ -60,6 +77,9 @@ export interface SelectionMenu {
   text: string;
   fixedX?: number;
   fixedY?: number;
+  // Character offsets within the block content (for type change splitting)
+  selectionStart?: number;
+  selectionEnd?: number;
 }
 
 // Pending replacement state for AI actions
@@ -73,6 +93,15 @@ export interface PendingReplacement {
   fullContent?: string; // Store the full block content at time of selection to avoid sync issues
 }
 
+// Cross-block replacement for a specific block
+export interface CrossBlockReplacement {
+  originalText: string;
+  newText: string;
+  startOffset: number;
+  endOffset: number;
+  action: ActionType;
+}
+
 // Props for the main BlockComponent
 export interface BlockComponentProps {
   block: Block;
@@ -83,6 +112,8 @@ export interface BlockComponentProps {
   sentences: Sentence[]; // Sentences belonging to this block
   currentPlayingIndex: number; // Global index of currently playing sentence
   isPlaybackOn: boolean;
+  crossBlockSelection: CrossBlockSelection | null; // Cross-block selection state
+  crossBlockReplacement?: CrossBlockReplacement | null; // This block's portion of cross-block AI replacement
   onSelect: () => void;
   onFocus: () => void;
   onSentenceClick: (globalIndex: number) => void;

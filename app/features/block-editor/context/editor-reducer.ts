@@ -13,6 +13,7 @@ export const initialEditorState: EditorState = {
   lastSaved: null,
   selectedBlockId: null,
   focusedBlockId: null,
+  crossBlockSelection: null,
 };
 
 export function editorReducer(
@@ -49,6 +50,30 @@ export function editorReducer(
       newBlocks[blockIndex] = updatedBlock;
 
       return pushToHistory(state, newBlocks, `Update block ${action.blockId}`);
+    }
+
+    case "UPDATE_BLOCKS_BATCH": {
+      const now = new Date().toISOString();
+      let newBlocks = [...state.blocks];
+
+      for (const update of action.updates) {
+        const blockIndex = newBlocks.findIndex((b) => b.id === update.blockId);
+        if (blockIndex === -1) continue;
+
+        const oldBlock = newBlocks[blockIndex];
+        const contentChanged =
+          update.updates.content !== undefined &&
+          update.updates.content !== oldBlock.content;
+
+        newBlocks[blockIndex] = {
+          ...oldBlock,
+          ...update.updates,
+          updated_at: now,
+          audio_stale: contentChanged ? true : oldBlock.audio_stale,
+        };
+      }
+
+      return pushToHistory(state, newBlocks, `Update ${action.updates.length} blocks`);
     }
 
     case "ADD_BLOCK": {
@@ -182,6 +207,60 @@ export function editorReducer(
       };
     }
 
+    case "SPLIT_BLOCK_WITH_TYPES": {
+      const blockIndex = state.blocks.findIndex((b) => b.id === action.blockId);
+      if (blockIndex === -1) return state;
+
+      const now = new Date().toISOString();
+      const originalBlock = state.blocks[blockIndex];
+      const sortedBlocks = [...state.blocks].sort((a, b) => a.order - b.order);
+      const sortedIndex = sortedBlocks.findIndex((b) => b.id === action.blockId);
+
+      // Filter out empty segments
+      const validSegments = action.segments.filter((s) => s.content.trim());
+      if (validSegments.length === 0) return state;
+
+      // Create blocks from segments
+      const newBlocksFromSegments: Block[] = validSegments.map((segment, index) => {
+        if (index === 0) {
+          // First segment replaces the original block
+          return {
+            ...originalBlock,
+            content: segment.content,
+            type: segment.type,
+            updated_at: now,
+            audio_stale: true,
+          };
+        }
+        // Subsequent segments are new blocks
+        return {
+          id: uuidv4(),
+          type: segment.type,
+          content: segment.content,
+          reader_id: originalBlock.reader_id,
+          order: 0, // Will be recalculated
+          audio_stale: true,
+          created_at: now,
+          updated_at: now,
+        };
+      });
+
+      // Build new blocks array: blocks before, new segments, blocks after
+      let newBlocks = [
+        ...sortedBlocks.slice(0, sortedIndex),
+        ...newBlocksFromSegments,
+        ...sortedBlocks.slice(sortedIndex + 1),
+      ];
+
+      // Recalculate order
+      newBlocks = newBlocks.map((block, index) => ({
+        ...block,
+        order: index,
+      }));
+
+      return pushToHistory(state, newBlocks, "Split block with types");
+    }
+
     case "MERGE_WITH_PREVIOUS": {
       const sortedBlocks = [...state.blocks].sort((a, b) => a.order - b.order);
       const currentIndex = sortedBlocks.findIndex((b) => b.id === action.blockId);
@@ -294,6 +373,109 @@ export function editorReducer(
         newBlocks,
         `Toggle disabled for block ${action.blockId}`
       );
+    }
+
+    case "SET_CROSS_BLOCK_SELECTION": {
+      return {
+        ...state,
+        crossBlockSelection: action.selection,
+        // Clear single-block focus when selecting across blocks
+        focusedBlockId: action.selection ? null : state.focusedBlockId,
+      };
+    }
+
+    case "DELETE_CROSS_BLOCK_SELECTION": {
+      const { crossBlockSelection } = state;
+      if (!crossBlockSelection) return state;
+
+      const { startBlockId, endBlockId, startOffset, endOffset, selectedBlockIds } = crossBlockSelection;
+      const sortedBlocks = [...state.blocks].sort((a, b) => a.order - b.order);
+
+      const startBlock = sortedBlocks.find((b) => b.id === startBlockId);
+      const endBlock = sortedBlocks.find((b) => b.id === endBlockId);
+
+      if (!startBlock || !endBlock) return state;
+
+      const now = new Date().toISOString();
+
+      // Merge first block's content before selection + last block's content after selection
+      const contentBefore = startBlock.content.slice(0, startOffset);
+      const contentAfter = endBlock.content.slice(endOffset);
+      const mergedContent = contentBefore + contentAfter;
+
+      // Update start block with merged content
+      const updatedStartBlock: Block = {
+        ...startBlock,
+        content: mergedContent,
+        updated_at: now,
+        audio_stale: true,
+      };
+
+      // Remove all selected blocks except the start block
+      const blocksToRemove = new Set(selectedBlockIds.filter((id) => id !== startBlockId));
+
+      let newBlocks = sortedBlocks
+        .filter((b) => !blocksToRemove.has(b.id))
+        .map((b) => (b.id === startBlockId ? updatedStartBlock : b));
+
+      // Recalculate order
+      newBlocks = newBlocks.map((block, index) => ({
+        ...block,
+        order: index,
+      }));
+
+      return {
+        ...pushToHistory(state, newBlocks, "Delete cross-block selection"),
+        crossBlockSelection: null,
+        focusedBlockId: startBlockId,
+      };
+    }
+
+    case "REPLACE_CROSS_BLOCK_SELECTION": {
+      const { crossBlockSelection } = state;
+      if (!crossBlockSelection) return state;
+
+      const { startBlockId, endBlockId, startOffset, endOffset, selectedBlockIds } = crossBlockSelection;
+      const sortedBlocks = [...state.blocks].sort((a, b) => a.order - b.order);
+
+      const startBlock = sortedBlocks.find((b) => b.id === startBlockId);
+      const endBlock = sortedBlocks.find((b) => b.id === endBlockId);
+
+      if (!startBlock || !endBlock) return state;
+
+      const now = new Date().toISOString();
+
+      // Replace selection with new text
+      const contentBefore = startBlock.content.slice(0, startOffset);
+      const contentAfter = endBlock.content.slice(endOffset);
+      const mergedContent = contentBefore + action.newText + contentAfter;
+
+      // Update start block with merged content
+      const updatedStartBlock: Block = {
+        ...startBlock,
+        content: mergedContent,
+        updated_at: now,
+        audio_stale: true,
+      };
+
+      // Remove all selected blocks except the start block
+      const blocksToRemove = new Set(selectedBlockIds.filter((id) => id !== startBlockId));
+
+      let newBlocks = sortedBlocks
+        .filter((b) => !blocksToRemove.has(b.id))
+        .map((b) => (b.id === startBlockId ? updatedStartBlock : b));
+
+      // Recalculate order
+      newBlocks = newBlocks.map((block, index) => ({
+        ...block,
+        order: index,
+      }));
+
+      return {
+        ...pushToHistory(state, newBlocks, "Replace cross-block selection"),
+        crossBlockSelection: null,
+        focusedBlockId: startBlockId,
+      };
     }
 
     default:

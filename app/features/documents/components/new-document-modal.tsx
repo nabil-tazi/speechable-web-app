@@ -882,7 +882,7 @@ export function NewDocumentModal({
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-xl h-[600px] overflow-hidden bg-gray-100 flex flex-col"
+        className="sm:max-w-xl h-[660px] overflow-hidden bg-gray-100 flex flex-col"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">New Document</DialogTitle>
@@ -928,7 +928,7 @@ export function NewDocumentModal({
                 </div>
               ) : (
                 <>
-                  <div className="flex justify-center mb-4">
+                  <div className="flex justify-center mb-4 h-[200px] items-center">
                     <Image
                       src="/doodles/ReadingDoodle.svg"
                       alt=""
@@ -982,7 +982,7 @@ export function NewDocumentModal({
 
             {/* Website URL Mode */}
             <div className="space-y-4">
-              <div className="flex justify-center mb-4">
+              <div className="flex justify-center mb-4 h-[200px] items-center">
                 <Image
                   src="/doodles/UnboxingDoodle.svg"
                   alt=""
@@ -1015,7 +1015,7 @@ export function NewDocumentModal({
 
             {/* Text Input Mode */}
             <div className="space-y-4">
-              <div className="flex justify-center mb-4">
+              <div className="flex justify-center mb-4 h-[200px] items-center">
                 <Image
                   src="/doodles/FloatDoodle.svg"
                   alt=""
@@ -1069,7 +1069,7 @@ export function NewDocumentModal({
 
             {/* Images OCR Mode */}
             <div className="space-y-4">
-              <div className="flex justify-center mb-4">
+              <div className="flex justify-center mb-4 h-[200px] items-center">
                 <Image
                   src="/doodles/SelfieDoodle.svg"
                   alt=""
