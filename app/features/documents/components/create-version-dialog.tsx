@@ -1,4 +1,4 @@
-import { Document } from "../types";
+import { Document, DocumentVersion } from "../types";
 import {
   Dialog,
   DialogClose,
@@ -9,8 +9,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
+import { useCredits } from "@/app/features/users/context";
 import { Card } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { PROCESSING_ARRAY, type ProcessingType } from "../../pdf/types";
 import {
   FileText,
@@ -21,121 +28,137 @@ import {
   X,
   Text,
   Loader2,
+  ChevronLeft,
+  Globe,
 } from "lucide-react";
 import { TransitionPanel } from "@/components/ui/transition-panel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useProcessingVersions } from "../context/processing-context";
+import { InsufficientCreditsDialog } from "./insufficient-credits-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SUPPORTED_LANGUAGES } from "@/app/features/audio/supported-languages";
+import { extractTextFromProcessedText } from "../utils";
+import { motion, AnimatePresence } from "motion/react";
 
 type Props = {
   document: Document;
-  handleCreateVersion: (processingLevel: 0 | 1 | 2 | 3) => Promise<void>;
+  existingVersions: DocumentVersion[];
   onClose: () => void;
 };
 
-// Confirmation Dialog Component
-function ConfirmationDialog({
-  isOpen,
-  onClose,
-  onConfirm,
-  selectedProcessing,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  selectedProcessing: 0 | 1 | 2 | 3;
-}) {
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create New Version</DialogTitle>
-          <DialogDescription>
-            This will create a new version of your document with{" "}
-            <span className="font-medium text-foreground">
-              {PROCESSING_ARRAY[selectedProcessing].name}
-            </span>{" "}
-            processing.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="bg-gradient-to-r from-brand-primary/5 to-brand-primary/10 rounded-lg p-4 border border-brand-primary/20">
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="font-medium text-gray-700 dark:text-gray-300">
-                Processing type:
-              </span>
-              <span className="text-brand-primary font-medium">
-                {PROCESSING_ARRAY[selectedProcessing].name}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {PROCESSING_ARRAY[selectedProcessing].description}
-            </p>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm}>Create Version</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Loading Dialog Component
-function LoadingDialog({
-  isOpen,
-  processingType,
-}: {
-  isOpen: boolean;
-  processingType: string;
-}) {
-  return (
-    <Dialog open={isOpen}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle className="sr-only">Creating Version</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col items-center justify-center py-8 gap-4">
-          <Loader2 className="h-12 w-12 animate-spin text-brand-primary" />
-          <div className="text-center">
-            <p className="text-lg font-semibold mb-1">Creating Version</p>
-            <p className="text-sm text-muted-foreground">
-              Processing your document with {processingType}...
-            </p>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+const CHARACTERS_PER_CREDIT = 10000;
 
 export function CreateVersionDialog({
   document,
-  handleCreateVersion,
+  existingVersions,
   onClose,
 }: Props) {
+  const [step, setStep] = useState<0 | 1>(0);
   const [selectedProcessing, setSelectedProcessing] = useState<0 | 1 | 2 | 3>(
     0
   );
-  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState<string>(
+    document.language || "en"
+  );
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showInsufficientCredits, setShowInsufficientCredits] = useState(false);
+  const { addProcessingVersion, processingVersions } = useProcessingVersions();
+  const { updateCredits } = useCredits();
 
-  const handleShowConfirmation = () => {
-    setShowConfirmation(true);
+  // Calculate estimated credits based on document text length
+  const estimatedCredits = useMemo(() => {
+    if (!document.processed_text) return 0;
+    const textLength = extractTextFromProcessedText(document.processed_text).length;
+    return Math.ceil((textLength / CHARACTERS_PER_CREDIT) * 10) / 10;
+  }, [document.processed_text]);
+
+  const handleContinue = () => {
+    setStep(1);
   };
 
-  const handleConfirmCreation = async () => {
-    setShowConfirmation(false);
+  const handleBack = () => {
+    setStep(0);
+  };
+
+  const handleCreateVersion = async () => {
+    setError(null);
     setIsCreating(true);
+
     try {
-      await handleCreateVersion(selectedProcessing);
-    } finally {
+      const processingTypeName = PROCESSING_ARRAY[selectedProcessing].name;
+      const existingCount = existingVersions.filter(
+        (v) => v.processing_type === selectedProcessing.toString()
+      ).length;
+      const pendingCount = processingVersions.filter(
+        (v) => v.documentId === document.id && v.processingType === processingTypeName &&
+          (v.status === "pending" || v.status === "processing")
+      ).length;
+
+      const response = await fetch("/api/generate-version", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: document.id,
+          processingLevel: selectedProcessing,
+          existingVersionCount: existingCount + pendingCount,
+          targetLanguage,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+
+        if (response.status === 402) {
+          setShowInsufficientCredits(true);
+          setIsCreating(false);
+          return;
+        }
+
+        throw new Error(errorData.error || "Failed to create version");
+      }
+
+      const data = await response.json();
+
+      if (data.newCreditBalance !== undefined) {
+        updateCredits(data.newCreditBalance);
+      }
+
+      const versionName =
+        PROCESSING_ARRAY[selectedProcessing].name +
+        (existingCount > 0 ? " " + (existingCount + 1) : "");
+
+      addProcessingVersion({
+        versionId: data.versionId,
+        documentId: document.id,
+        documentTitle: document.title,
+        documentThumbnail: document.thumbnail_path,
+        versionName,
+        processingType: PROCESSING_ARRAY[selectedProcessing].name,
+      });
+
+      onClose();
+    } catch (err) {
+      console.error("Failed to start version creation:", err);
+      setError(err instanceof Error ? err.message : "Failed to create version");
       setIsCreating(false);
     }
   };
+
+  const getCreditsText = () => {
+    if (selectedProcessing === 0) {
+      return "Create";
+    }
+    return `Create (${estimatedCredits} credits)`;
+  };
+
+  const selectedItem = PROCESSING_ARRAY[selectedProcessing];
 
   return (
     <>
@@ -145,113 +168,287 @@ export function CreateVersionDialog({
       >
         <DialogTitle className="sr-only">New version</DialogTitle>
 
-        {/* Processing Level Selection with Tabs at top */}
-        <Tabs
-          value={selectedProcessing.toString()}
-          onValueChange={(value) =>
-            setSelectedProcessing(parseInt(value) as 0 | 1 | 2 | 3)
-          }
-        >
-          <TabsList className="grid w-full grid-cols-4">
-            {PROCESSING_ARRAY.map((item, index) => (
-              <TabsTrigger
-                key={index}
-                value={index.toString()}
-                className="flex items-center gap-2 text-sm"
+        {/* Header area - Tabs or Back button */}
+        <div className="relative h-10">
+          <AnimatePresence mode="wait">
+            {step === 0 ? (
+              <motion.div
+                key="tabs"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
               >
-                {renderProcessingIcon(item, selectedProcessing === index)}
-                {item.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+                <Tabs
+                  value={selectedProcessing.toString()}
+                  onValueChange={(value) =>
+                    setSelectedProcessing(parseInt(value) as 0 | 1 | 2 | 3)
+                  }
+                >
+                  <TabsList className="grid w-full grid-cols-4">
+                    {PROCESSING_ARRAY.map((item, index) => (
+                      <TabsTrigger
+                        key={index}
+                        value={index.toString()}
+                        className="flex items-center gap-2 text-sm text-gray-500 data-[state=active]:text-gray-900"
+                      >
+                        {renderProcessingIcon(item, selectedProcessing === index)}
+                        {item.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="back"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBack}
+                  className="p-1 h-8 w-8"
+                  disabled={isCreating}
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* Content Area */}
-        <div className="flex-1 mt-4 overflow-y-auto px-1">
-          <TransitionPanel
-            activeIndex={selectedProcessing}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            variants={{
-              enter: { opacity: 0, y: -20, filter: "blur(4px)" },
-              center: { opacity: 1, y: 0, filter: "blur(0px)" },
-              exit: { opacity: 0, y: 20, filter: "blur(4px)" },
-            }}
+        <motion.div
+          className="flex-1 overflow-y-auto px-1"
+          animate={{ marginTop: step === 1 ? "-20px" : "16px" }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
+          <motion.div
+            className="px-2"
+            animate={{ paddingTop: step === 1 ? "0px" : "24px" }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
           >
-            {PROCESSING_ARRAY.map((item, index) => (
-              <div key={index} className="py-6 px-2">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1">
+            <div className="flex items-start gap-4">
+              <div className="flex-1">
+                {/* Title and description - animates when switching processing type */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`title-${selectedProcessing}`}
+                    initial={{ opacity: 0, y: -20, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: 20, filter: "blur(4px)" }}
+                    transition={{ duration: 0.2 }}
+                  >
                     <h3 className="mb-3 text-2xl font-semibold text-zinc-800 flex items-center gap-2 justify-center">
-                      {renderProcessingIcon(item)}
-                      {item.name}
+                      {renderProcessingIcon(selectedItem)}
+                      {selectedItem.name}
                     </h3>
                     <p className="text-zinc-600 leading-relaxed text-center text-md">
-                      {item.description}
+                      {selectedItem.description}
                     </p>
-                    <Card className="mx-auto mt-8 p-3 w-60 gap-2 bg-white">
-                      <div className="space-y-2">
-                        {getProcessingFeatures(item.name)
-                          .sort(
-                            (a, b) =>
-                              (b.included ? 1 : 0) - (a.included ? 1 : 0)
-                          )
-                          .map((feature, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center gap-3"
-                            >
-                              {feature.included ? (
-                                <Check className="w-4 h-4 text-gray-800 flex-shrink-0" />
-                              ) : (
-                                <X className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                              )}
-                              <span
-                                className={`text-sm ${
-                                  feature.included
-                                    ? "text-gray-800"
-                                    : "text-gray-400 line-through"
-                                }`}
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Card content - transitions between features and language */}
+                <div className="mx-auto mt-8 w-72">
+                  <AnimatePresence mode="wait">
+                    {step === 0 ? (
+                      <motion.div
+                        key={`features-${selectedProcessing}`}
+                        initial={{ opacity: 0, y: -20, filter: "blur(4px)" }}
+                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, y: 20, filter: "blur(4px)" }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <Card className="p-3 bg-white">
+                          <div className="space-y-2">
+                            {getProcessingFeatures(selectedItem.name)
+                              .sort(
+                                (a, b) =>
+                                  (b.included ? 1 : 0) - (a.included ? 1 : 0)
+                              )
+                              .map((feature, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-3"
+                                >
+                                  {feature.included ? (
+                                    <Check className="w-4 h-4 text-gray-800 flex-shrink-0" />
+                                  ) : (
+                                    <X className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                  )}
+                                  <span
+                                    className={`text-sm ${
+                                      feature.included
+                                        ? "text-gray-800"
+                                        : "text-gray-400 line-through"
+                                    }`}
+                                  >
+                                    {feature.feature}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </Card>
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="language"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.25 }}
+                      >
+                        <Card className="p-4 bg-white">
+                          <div className="space-y-4">
+                            {/* Language Selection */}
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                <Globe className="w-4 h-4" />
+                                Output Language
+                              </label>
+                              <Select
+                                value={targetLanguage}
+                                onValueChange={setTargetLanguage}
                               >
-                                {feature.feature}
-                              </span>
+                                <SelectTrigger className="w-full bg-white">
+                                  <SelectValue placeholder="Select language" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SUPPORTED_LANGUAGES.map((lang) => (
+                                    <SelectItem key={lang.code} value={lang.code}>
+                                      {lang.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-gray-500">
+                                The generated audio will be in this language
+                              </p>
                             </div>
-                          ))}
-                      </div>
-                    </Card>
-                  </div>
+
+                          </div>
+                        </Card>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
-            ))}
-          </TransitionPanel>
-        </div>
+            </div>
+          </motion.div>
+        </motion.div>
 
         {/* Footer */}
         <div className="flex justify-between pt-0 mt-auto">
-          <DialogClose asChild>
-            <Button variant="outline" className="bg-white">
-              Cancel
-            </Button>
-          </DialogClose>
+          <AnimatePresence mode="wait">
+            {step === 0 ? (
+              <motion.div
+                key="cancel"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <DialogClose asChild>
+                  <Button variant="outline" className="bg-white">
+                    Cancel
+                  </Button>
+                </DialogClose>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="back"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <Button
+                  variant="outline"
+                  className="bg-white"
+                  onClick={handleBack}
+                  disabled={isCreating}
+                >
+                  Back
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <Button
-            onClick={handleShowConfirmation}
-            className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
-          >
-            Create
-          </Button>
+          <AnimatePresence mode="wait">
+            {step === 0 ? (
+              <motion.div
+                key="continue"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <Button
+                  onClick={handleContinue}
+                  className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+                >
+                  Continue
+                </Button>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="create"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TooltipProvider delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={handleCreateVersion}
+                        className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
+                        disabled={isCreating}
+                      >
+                        {isCreating ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          "Create"
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {selectedProcessing === 0 ? "Free" : `${estimatedCredits} credits`}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </DialogContent>
 
-      <ConfirmationDialog
-        isOpen={showConfirmation}
-        onClose={() => setShowConfirmation(false)}
-        onConfirm={handleConfirmCreation}
-        selectedProcessing={selectedProcessing}
-      />
+      {/* Error Dialog */}
+      <Dialog open={error !== null} onOpenChange={() => setError(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+            <DialogDescription>{error}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setError(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <LoadingDialog
-        isOpen={isCreating}
-        processingType={PROCESSING_ARRAY[selectedProcessing].name}
+      {/* Insufficient Credits Dialog */}
+      <InsufficientCreditsDialog
+        isOpen={showInsufficientCredits}
+        onClose={() => setShowInsufficientCredits(false)}
       />
     </>
   );

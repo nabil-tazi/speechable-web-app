@@ -44,6 +44,8 @@ export interface Document {
   last_opened?: string;
 }
 
+export type VersionStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
 export interface DocumentVersion {
   id: string;
   document_id: string;
@@ -54,6 +56,11 @@ export interface DocumentVersion {
   processing_metadata?: Record<string, any>;
   created_at: string;
   updated_at?: string; // Optional, set by database trigger
+  // Streaming support fields (all optional since DB has defaults)
+  status?: VersionStatus;
+  streaming_text?: string;
+  processing_progress?: number;
+  error_message?: string;
 }
 
 export interface UserStorageUsage {

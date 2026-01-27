@@ -46,6 +46,7 @@ const AudioDispatchContext = createContext<AudioDispatch | undefined>(
   undefined
 );
 const AudioActionsContext = createContext<AudioActions | undefined>(undefined);
+const RefreshVersionsContext = createContext<(() => Promise<void>) | undefined>(undefined);
 
 // Provider Props
 interface AudioProviderProps {
@@ -166,6 +167,51 @@ export function AudioProvider({ children, documentId }: AudioProviderProps) {
     } catch (error) {
       dispatch({ type: "SET_ERROR", payload: "Failed to load audio data" });
     }
+  }
+
+  // Lightweight refresh: only re-fetch versions without triggering loading state
+  async function refreshVersions() {
+    if (!currentUserId.current) return;
+
+    const { data: versions, error } = await supabase
+      .from("document_versions")
+      .select(`
+        *,
+        audio_versions(
+          *,
+          segments:audio_segments(*)
+        )
+      `)
+      .eq("document_id", documentId);
+
+    if (error || !versions) return;
+
+    setDocument((prev) => {
+      if (!prev) return prev;
+      return { ...prev, versions: versions as any };
+    });
+
+    // Update audio state
+    const allAudioVersions: AudioVersionWithSegments[] = [];
+    const allAudioSegments: Record<string, AudioSegment[]> = {};
+
+    versions.forEach((version: any) => {
+      version.audio_versions?.forEach((audioVersion: any) => {
+        const typedAudioVersion = audioVersion as AudioVersion;
+        const typedSegments = (audioVersion.segments || []) as AudioSegment[];
+        allAudioVersions.push({ ...typedAudioVersion, segments: typedSegments });
+        if (typedSegments.length > 0) {
+          allAudioSegments[typedAudioVersion.id] = typedSegments.sort(
+            (a, b) => a.segment_number - b.segment_number
+          );
+        }
+      });
+    });
+
+    dispatch({ type: "SET_AUDIO_VERSIONS", payload: allAudioVersions });
+    Object.entries(allAudioSegments).forEach(([audioVersionId, segments]) => {
+      dispatch({ type: "SET_AUDIO_SEGMENTS", payload: { audioVersionId, segments } });
+    });
   }
 
   // Auth state change handling
@@ -324,7 +370,9 @@ export function AudioProvider({ children, documentId }: AudioProviderProps) {
     <AudioStateContext.Provider value={state}>
       <AudioDispatchContext.Provider value={dispatch}>
         <AudioActionsContext.Provider value={actions}>
-          {children}
+          <RefreshVersionsContext.Provider value={refreshVersions}>
+            {children}
+          </RefreshVersionsContext.Provider>
         </AudioActionsContext.Provider>
       </AudioDispatchContext.Provider>
     </AudioStateContext.Provider>
@@ -354,6 +402,14 @@ export function useAudioActions() {
     throw new Error("useAudioActions must be used within an AudioProvider");
   }
   return actions;
+}
+
+export function useRefreshVersions() {
+  const refresh = useContext(RefreshVersionsContext);
+  if (refresh === undefined) {
+    throw new Error("useRefreshVersions must be used within an AudioProvider");
+  }
+  return refresh;
 }
 
 // Convenience Hooks

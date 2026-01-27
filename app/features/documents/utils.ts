@@ -1,6 +1,7 @@
 // features/documents/utils.ts
 
 import type { ProcessedText } from "./types";
+import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 
 /**
  * Generate thumbnail URL from storage path (client-side utility)
@@ -70,9 +71,9 @@ export function extractTextFromProcessedText(processedText: ProcessedText): stri
 
 export function assignVoicesToReaders(
   processed_text: ProcessedText,
-  voices: string[]
+  voices: string[],
+  languageCode: string = "en"
 ): Record<string, string> {
-  console.log(processed_text);
   // Collect all unique reader_ids
   const readerIds = Array.from(
     new Set(
@@ -84,16 +85,29 @@ export function assignVoicesToReaders(
 
   const result: Record<string, string> = {};
   const usedVoices = new Set<string>();
+  const langConfig = getLanguageConfig(languageCode);
 
+  // If no custom voices provided, use language-specific defaults
+  if (!voices || voices.length === 0) {
+    if (readerIds.length === 1) {
+      result[readerIds[0]] = langConfig.singleReaderVoice;
+    } else {
+      readerIds.forEach((readerId, index) => {
+        result[readerId] = langConfig.multiReaderVoices[index % langConfig.multiReaderVoices.length];
+      });
+    }
+    return result;
+  }
+
+  // Use provided voices
   readerIds.forEach((readerId, index) => {
-    // Pick the voice at the same index if available and not already used
     const candidateVoice = voices[index];
     if (candidateVoice && !usedVoices.has(candidateVoice)) {
       result[readerId] = candidateVoice;
       usedVoices.add(candidateVoice);
     } else {
-      // Fallback to "onyx"
-      result[readerId] = "onyx";
+      // Fallback to language-specific default
+      result[readerId] = langConfig.singleReaderVoice;
     }
   });
 

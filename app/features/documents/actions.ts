@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/app/lib/supabase/server";
-import type { Block, Document, DocumentVersion, DocumentWithVersions } from "./types";
+import type { Block, Document, DocumentVersion, DocumentWithVersions, VersionStatus } from "./types";
 import { convertProcessedTextToBlocks } from "@/app/features/block-editor/utils/convert-to-blocks";
 
 // Server Action: Create a document
@@ -741,5 +741,172 @@ export async function regenerateBlocksFromProcessedTextAction(
     return { data: blocks, error: null };
   } catch (error) {
     return { data: null, error: "Failed to regenerate blocks" };
+  }
+}
+
+// Server Action: Create a pending version for streaming
+export async function createPendingVersionAction(versionData: {
+  document_id: string;
+  version_name: string;
+  processing_type: string;
+  processing_metadata?: Record<string, any>;
+}): Promise<{ data: DocumentVersion | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Check document ownership
+    const { data: document, error: docError } = await supabase
+      .from("documents")
+      .select("user_id")
+      .eq("id", versionData.document_id)
+      .single();
+
+    if (docError) {
+      return { data: null, error: "Failed to verify document ownership" };
+    }
+
+    if (!document || document.user_id !== user.id) {
+      return { data: null, error: "Document not found or access denied" };
+    }
+
+    const { data, error } = await supabase
+      .from("document_versions")
+      .insert({
+        ...versionData,
+        status: "pending",
+        streaming_text: "",
+        processing_progress: 0,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentVersion, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to create pending version" };
+  }
+}
+
+// Server Action: Update version streaming text and progress
+export async function updateVersionStreamingAction(
+  versionId: string,
+  updates: {
+    streaming_text?: string;
+    processing_progress?: number;
+    status?: VersionStatus;
+    error_message?: string;
+  }
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "User not authenticated" };
+    }
+
+    // Verify ownership through document
+    const { data: version } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        document:documents!inner(user_id)
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = version?.document as any;
+    if (!version || !doc || doc.user_id !== user.id) {
+      return { success: false, error: "Version not found or access denied" };
+    }
+
+    const { error } = await supabase
+      .from("document_versions")
+      .update(updates)
+      .eq("id", versionId);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: "Failed to update version streaming" };
+  }
+}
+
+// Server Action: Finalize version - convert streaming_text to blocks and mark completed
+export async function finalizeVersionAction(
+  versionId: string,
+  blocks: Block[]
+): Promise<{ data: DocumentVersion | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { data: null, error: "User not authenticated" };
+    }
+
+    // Verify ownership through document
+    const { data: version } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        document:documents!inner(user_id)
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = version?.document as any;
+    if (!version || !doc || doc.user_id !== user.id) {
+      return { data: null, error: "Version not found or access denied" };
+    }
+
+    const { data, error } = await supabase
+      .from("document_versions")
+      .update({
+        blocks,
+        status: "completed",
+        streaming_text: "", // Clear streaming text after conversion
+        processing_progress: 100,
+      })
+      .eq("id", versionId)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: error.message };
+    }
+
+    return { data: data as DocumentVersion, error: null };
+  } catch (error) {
+    return { data: null, error: "Failed to finalize version" };
   }
 }

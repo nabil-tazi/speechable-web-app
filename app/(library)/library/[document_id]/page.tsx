@@ -9,15 +9,15 @@ import React, {
   useRef,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAudioState, AudioProvider } from "@/app/features/audio/context";
+import { useAudioState, AudioProvider, useRefreshVersions } from "@/app/features/audio/context";
 import {
   updateDocumentLastOpenedAction,
   toggleDocumentStarredAction,
 } from "@/app/features/documents/actions";
 import { useSidebarData } from "@/app/features/sidebar/context";
+import { useProcessingVersions } from "@/app/features/documents/context/processing-context";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
-import { generateWithAi } from "@/app/features/generate-with-ai";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -1019,12 +1019,15 @@ function EditModePlaybackController({ isEditMode }: { isEditMode: boolean }) {
 function DocumentTextView() {
   const { loading, error, document } = useAudioState();
   const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
+  const [createVersionKey, setCreateVersionKey] = useState(0);
   const [isStarred, setIsStarred] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refreshRecent, refreshStarred } = useSidebarData();
+  const { processingVersions } = useProcessingVersions();
+  const refreshVersions = useRefreshVersions();
   const lastOpenedUpdated = useRef(false);
 
   // Initialize starred state from document
@@ -1033,6 +1036,22 @@ function DocumentTextView() {
       setIsStarred(document.is_starred);
     }
   }, [document?.is_starred]);
+
+  // Refresh document data when a processing version for this document completes
+  const completedVersionIds = useRef(new Set<string>());
+  useEffect(() => {
+    if (!document) return;
+    const completed = processingVersions.filter(
+      (v) => v.documentId === document.id && v.status === "completed"
+    );
+    const newlyCompleted = completed.filter(
+      (v) => !completedVersionIds.current.has(v.versionId)
+    );
+    if (newlyCompleted.length > 0) {
+      newlyCompleted.forEach((v) => completedVersionIds.current.add(v.versionId));
+      refreshVersions();
+    }
+  }, [processingVersions, document, refreshVersions]);
 
   // Sort versions by creation date (newest first)
   const sortedVersions = useMemo(() => {
@@ -1160,30 +1179,6 @@ function DocumentTextView() {
     );
   }
 
-  async function handleCreateVersion(processingLevel: 0 | 1 | 2 | 3) {
-    if (document && document.processed_text) {
-      try {
-        const result = await generateWithAi({
-          documentId: document.id,
-          existingDocumentVersions: document.versions,
-          voicesArray: [],
-          processingLevel,
-          skipAudio: true,
-          documentProcessedText: document.processed_text,
-        });
-
-        // Navigate to the new version (full page reload will close modals)
-        if (result.documentVersion?.id) {
-          window.location.href = `/library/${document.id}?version=${result.documentVersion.id}`;
-        }
-      } catch (error) {
-        console.error("Failed to create version:", error);
-      }
-    } else {
-      console.log("No processed_text available");
-    }
-  }
-
   function handleCloseCreateVersionModal() {
     setCreateVersionModalOpen(false);
   }
@@ -1283,7 +1278,7 @@ function DocumentTextView() {
                         activeVersionId={activeVersionId}
                         activeVersionName={activeVersion?.version_name || ""}
                         onVersionChange={handleVersionChange}
-                        onCreateNew={() => setCreateVersionModalOpen(true)}
+                        onCreateNew={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
                       />
                     </>
                   )}
@@ -1350,8 +1345,9 @@ function DocumentTextView() {
       </EditorProvider>
 
       <CreateVersionDialog
+        key={createVersionKey}
         document={document}
-        handleCreateVersion={handleCreateVersion}
+        existingVersions={document.versions}
         onClose={handleCloseCreateVersionModal}
       />
       <DialogTrigger className="hidden" />

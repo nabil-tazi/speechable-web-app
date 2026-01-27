@@ -1,4 +1,6 @@
 import { createClient } from "@/app/lib/supabase/server";
+import { createAdminClient } from "@/app/lib/supabase/admin";
+
 
 // Credit rate: 10,000 characters = 1 credit
 const CHARACTERS_PER_CREDIT = 10000;
@@ -88,6 +90,39 @@ export async function deductCredits(
     newBalance: Number(data.new_balance),
     errorMessage: data.error_message,
   };
+}
+
+/**
+ * Refund credits to user's balance (uses admin client, safe for background contexts)
+ */
+export async function refundCredits(
+  userId: string,
+  amount: number
+): Promise<boolean> {
+  const adminClient = createAdminClient();
+
+  const { data, error: fetchError } = await adminClient
+    .from("users")
+    .select("credits")
+    .eq("id", userId)
+    .single();
+
+  if (fetchError || !data) {
+    console.error("[credits/service] Error fetching credits for refund:", fetchError);
+    return false;
+  }
+
+  const { error } = await adminClient
+    .from("users")
+    .update({ credits: Number(data.credits) + amount })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("[credits/service] Error refunding credits:", error);
+    return false;
+  }
+
+  return true;
 }
 
 /**

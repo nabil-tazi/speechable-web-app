@@ -1,36 +1,31 @@
 /**
- * Assigns default voices based on the number of unique readers.
- * - 1 reader: Heart (female)
- * - 2 readers: George (male) + Heart (female)
- * - 3+ readers: cycles through additional voices
+ * Assigns default voices based on the number of unique readers and target language.
+ * - 1 reader: uses language-specific single reader voice
+ * - 2+ readers: cycles through language-specific multi-reader voices
  */
 
-const SINGLE_READER_VOICE = "af_heart"; // Heart - female
-
-const MULTI_READER_VOICES = [
-  "bm_george",  // George - male (primary for multi-reader)
-  "af_heart",   // Heart - female (secondary for multi-reader)
-  "af_bella",   // Bella - female
-  "am_fenrir",  // Fenrir - male
-  "bf_emma",    // Emma - female (British)
-  "am_michael", // Michael - male
-];
+import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 
 /**
- * Assigns default voices to reader IDs based on the number of readers.
+ * Assigns default voices to reader IDs based on the number of readers and language.
  * @param readerIds - Array of unique reader IDs
+ * @param languageCode - ISO 639-1 language code (defaults to "en")
  * @returns A voice map (reader_id -> voice_id)
  */
-export function assignDefaultVoices(readerIds: string[]): Record<string, string> {
+export function assignDefaultVoices(
+  readerIds: string[],
+  languageCode: string = "en"
+): Record<string, string> {
   const voiceMap: Record<string, string> = {};
+  const langConfig = getLanguageConfig(languageCode);
 
   if (readerIds.length === 1) {
-    // Single reader: use Heart
-    voiceMap[readerIds[0]] = SINGLE_READER_VOICE;
+    // Single reader: use language-specific default
+    voiceMap[readerIds[0]] = langConfig.singleReaderVoice;
   } else {
-    // Multiple readers: George first, Heart second, then cycle through others
+    // Multiple readers: cycle through language-specific voices
     readerIds.forEach((readerId, index) => {
-      voiceMap[readerId] = MULTI_READER_VOICES[index % MULTI_READER_VOICES.length];
+      voiceMap[readerId] = langConfig.multiReaderVoices[index % langConfig.multiReaderVoices.length];
     });
   }
 
