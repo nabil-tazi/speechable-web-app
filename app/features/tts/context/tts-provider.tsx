@@ -63,6 +63,7 @@ const TTSContext = createContext<TTSContextValue | null>(null);
 interface TTSProviderProps {
   children: React.ReactNode;
   segments: Segment[];
+  languageCode?: string;
   initialVoiceMap?: Record<string, string>;
   initialSpeed?: number;
 }
@@ -74,6 +75,7 @@ interface TTSProviderProps {
 export function TTSProvider({
   children,
   segments,
+  languageCode = "en",
   initialVoiceMap = {},
   initialSpeed = 1.0,
 }: TTSProviderProps) {
@@ -127,10 +129,10 @@ export function TTSProvider({
     dispatch({ type: "STOP" });
 
     // Create new sentences from updated segments
-    const sentences = createSentencesFromSegments(segments);
+    const sentences = createSentencesFromSegments(segments, languageCode);
     sentencesRef.current = sentences;
     dispatch({ type: "SET_SENTENCES", sentences });
-  }, [segments]);
+  }, [segments, languageCode]);
 
   // Initialize worker
   useEffect(() => {

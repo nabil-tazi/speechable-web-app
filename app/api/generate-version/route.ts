@@ -3,6 +3,7 @@ import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
 import { checkCredits, deductCredits, refundCredits } from "@/app/features/credits/service";
 import { PROCESSING_ARRAY } from "@/app/features/pdf/types";
+import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 import { convertProcessedTextToBlocks } from "@/app/features/block-editor";
 import type { ProcessedText, ProcessedSection, Block } from "@/app/features/documents/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -14,14 +15,23 @@ interface GenerateVersionRequest {
   documentId: string;
   processingLevel: 0 | 1 | 2 | 3;
   existingVersionCount: number;
+  targetLanguage?: string;
 }
 
 // Helper to create ProcessedSection from text
 function createSectionFromText(text: string, title: string): ProcessedSection {
+  // Split into paragraphs so each becomes its own block
+  const paragraphs = text
+    .split(/\n\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
   return {
     title,
     content: {
-      speech: [{ text, reader_id: "Narrator" }],
+      speech: paragraphs.length > 0
+        ? paragraphs.map((p) => ({ text: p, reader_id: "Narrator" }))
+        : [{ text, reader_id: "Narrator" }],
     },
   };
 }
@@ -37,6 +47,17 @@ function createSectionFromDialogue(
       speech: dialogue,
     },
   };
+}
+
+// Decode common HTML entities in AI output
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 // Extract plain text from processed_text structure
@@ -69,7 +90,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { documentId, processingLevel, existingVersionCount }: GenerateVersionRequest =
+  const { documentId, processingLevel, existingVersionCount, targetLanguage }: GenerateVersionRequest =
     await req.json();
 
   // Validate processing level
@@ -83,7 +104,7 @@ export async function POST(req: NextRequest) {
   // Get document with processed_text
   const { data: document, error: docError } = await supabase
     .from("documents")
-    .select("id, user_id, processed_text, title")
+    .select("id, user_id, processed_text, title, language")
     .eq("id", documentId)
     .eq("user_id", user.id)
     .single();
@@ -102,12 +123,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Check version limit (max 6 per document)
+  const { count: versionCount } = await supabase
+    .from("document_versions")
+    .select("id", { count: "exact", head: true })
+    .eq("document_id", documentId);
+
+  if (versionCount !== null && versionCount >= 6) {
+    return NextResponse.json(
+      { error: "Maximum of 6 versions per document reached" },
+      { status: 400 }
+    );
+  }
+
   const processedText = document.processed_text as ProcessedText;
   const rawInputText = extractTextFromProcessedText(processedText);
 
-  // Check credits (only for AI processing levels 1-3)
+  // Determine if translation is needed
+  const documentLanguage = document.language || "en";
+  const resolvedTargetLanguage = targetLanguage || documentLanguage;
+  const needsTranslation = resolvedTargetLanguage !== documentLanguage;
+
+  // Check credits (AI processing levels 1-3, or Original with translation)
   let newCreditBalance: number | null = null;
-  if (processingLevel > 0) {
+  if (processingLevel > 0 || needsTranslation) {
     const creditsNeeded = rawInputText.length / CHARACTERS_PER_CREDIT;
     const creditInfo = await checkCredits(user.id);
 
@@ -141,9 +180,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Generate version name
+  const langSuffix = needsTranslation ? ` (${getLanguageConfig(resolvedTargetLanguage).name})` : "";
   const versionName =
     PROCESSING_ARRAY[processingLevel].name +
-    (existingVersionCount > 0 ? " " + (existingVersionCount + 1) : "");
+    (existingVersionCount > 0 ? " " + (existingVersionCount + 1) : "") +
+    langSuffix;
 
   // Create pending version
   const { data: pendingVersion, error: versionError } = await supabase
@@ -175,7 +216,7 @@ export async function POST(req: NextRequest) {
 
   // Start background processing (non-blocking)
   // Use admin client for background processing since the request context will be closed
-  const creditsToRefund = processingLevel > 0 ? rawInputText.length / CHARACTERS_PER_CREDIT : 0;
+  const creditsToRefund = (processingLevel > 0 || needsTranslation) ? rawInputText.length / CHARACTERS_PER_CREDIT : 0;
   processVersionInBackground(
     user.id,
     pendingVersion.id,
@@ -183,7 +224,9 @@ export async function POST(req: NextRequest) {
     processedText,
     rawInputText,
     document.title || "Document",
-    creditsToRefund
+    creditsToRefund,
+    resolvedTargetLanguage,
+    documentLanguage
   );
 
   return response;
@@ -197,7 +240,9 @@ async function processVersionInBackground(
   processedText: ProcessedText,
   rawInputText: string,
   documentTitle: string,
-  creditsToRefund: number
+  creditsToRefund: number,
+  targetLanguage: string,
+  documentLanguage: string
 ) {
   // Create admin client for background processing (bypasses RLS, works after response is sent)
   const adminClient = createAdminClient();
@@ -217,16 +262,28 @@ async function processVersionInBackground(
 
     let processedResult: { cleanedText: ProcessedText; metadata: Record<string, any> };
 
+    const needsTranslation = targetLanguage !== documentLanguage;
+
     if (processingLevel === 0) {
-      // Level 0: Original - use existing processed_text as-is
-      processedResult = {
-        cleanedText: processedText,
-        metadata: {
-          processingLevel,
-          source: "document_processed_text",
-          totalSections: processedText.processed_text?.sections?.length || 0,
-        },
-      };
+      if (needsTranslation) {
+        // Level 0 with translation: translate each section
+        processedResult = await processTranslation(
+          adminClient,
+          versionId,
+          processedText,
+          targetLanguage
+        );
+      } else {
+        // Level 0: Original - use existing processed_text as-is
+        processedResult = {
+          cleanedText: processedText,
+          metadata: {
+            processingLevel,
+            source: "document_processed_text",
+            totalSections: processedText.processed_text?.sections?.length || 0,
+          },
+        };
+      }
 
       await adminClient
         .from("document_versions")
@@ -238,7 +295,8 @@ async function processVersionInBackground(
         adminClient,
         versionId,
         rawInputText,
-        documentTitle
+        documentTitle,
+        targetLanguage
       );
     } else if (processingLevel === 2) {
       // Level 2: Lecture - full document streaming
@@ -246,7 +304,8 @@ async function processVersionInBackground(
         adminClient,
         versionId,
         rawInputText,
-        documentTitle
+        documentTitle,
+        targetLanguage
       );
     } else if (processingLevel === 3) {
       // Level 3: Conversational - no text streaming (JSON output)
@@ -254,7 +313,8 @@ async function processVersionInBackground(
         adminClient,
         versionId,
         rawInputText,
-        documentTitle
+        documentTitle,
+        targetLanguage
       );
     } else {
       throw new Error(`Invalid processing level: ${processingLevel}`);
@@ -294,12 +354,137 @@ async function processVersionInBackground(
   }
 }
 
+// Translation processing for Original with different target language
+async function processTranslation(
+  supabase: SupabaseClient,
+  versionId: string,
+  processedText: ProcessedText,
+  targetLanguage: string
+): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
+  const apiKey = process.env.DEEPINFRA_API_KEY;
+  if (!apiKey) {
+    throw new Error("DeepInfra API key not configured");
+  }
+
+  const langName = getLanguageConfig(targetLanguage).name;
+  const sections = processedText.processed_text?.sections || [];
+  const translatedSections: ProcessedSection[] = [];
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const progress = Math.round(10 + (i / sections.length) * 80);
+
+    await supabase
+      .from("document_versions")
+      .update({ processing_progress: progress })
+      .eq("id", versionId);
+
+    // Translate each speech segment
+    const translatedSpeech: { text: string; reader_id: string }[] = [];
+    for (const speech of section.content.speech) {
+      const response = await fetch(
+        "https://api.deepinfra.com/v1/openai/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "meta-llama/Llama-3.2-3B-Instruct",
+            messages: [
+              {
+                role: "system",
+                content: `You are a professional translator. Translate text accurately to ${langName}.`,
+              },
+              {
+                role: "user",
+                content: `Translate the following text to ${langName}. Return ONLY the translated text, nothing else. No explanations, no notes, no prefixes.\n\n${speech.text}`,
+              },
+            ],
+            max_tokens: Math.max(2048, Math.round(speech.text.length * 1.5)),
+            repetition_penalty: 1.3,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`DeepInfra API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      let translated = data.choices?.[0]?.message?.content?.trim() || speech.text;
+
+      // Clean up quotes
+      if (
+        (translated.startsWith('"') && translated.endsWith('"')) ||
+        (translated.startsWith("'") && translated.endsWith("'"))
+      ) {
+        translated = translated.slice(1, -1);
+      }
+
+      translatedSpeech.push({ text: decodeHtmlEntities(translated), reader_id: speech.reader_id });
+    }
+
+    // Translate section title if present
+    let translatedTitle = section.title;
+    if (section.title) {
+      const titleResponse = await fetch(
+        "https://api.deepinfra.com/v1/openai/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "meta-llama/Llama-3.2-3B-Instruct",
+            messages: [
+              {
+                role: "system",
+                content: `You are a professional translator. Translate text accurately to ${langName}.`,
+              },
+              {
+                role: "user",
+                content: `Translate this title to ${langName}. Return ONLY the translated title, nothing else.\n\n${section.title}`,
+              },
+            ],
+            max_tokens: 256,
+            repetition_penalty: 1.3,
+          }),
+        }
+      );
+
+      if (titleResponse.ok) {
+        const titleData = await titleResponse.json();
+        translatedTitle = decodeHtmlEntities(titleData.choices?.[0]?.message?.content?.trim() || section.title);
+      }
+    }
+
+    translatedSections.push({
+      title: translatedTitle,
+      content: { speech: translatedSpeech },
+    });
+  }
+
+  return {
+    cleanedText: { processed_text: { sections: translatedSections } },
+    metadata: {
+      processingLevel: 0,
+      source: "translation",
+      targetLanguage,
+      totalSections: translatedSections.length,
+    },
+  };
+}
+
 // Natural processing with streaming
 async function processNaturalWithStreaming(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
-  documentTitle: string
+  documentTitle: string,
+  targetLanguage: string
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   // First, identify sections
   const sectionResponse = await fetch(
@@ -347,7 +532,8 @@ async function processNaturalWithStreaming(
       versionId,
       content,
       title,
-      accumulatedText
+      accumulatedText,
+      targetLanguage
     );
 
     const section = createSectionFromText(sectionText, title);
@@ -375,7 +561,8 @@ async function streamNaturalSection(
   versionId: string,
   content: string,
   title: string,
-  previousText: string
+  previousText: string,
+  targetLanguage: string
 ): Promise<string> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -394,6 +581,7 @@ Guidelines:
 - Fix awkward phrasing that doesn't work well in spoken form
 - Keep technical terms but explain them naturally where needed
 - Ensure proper punctuation for natural pauses
+- Output the text in ${getLanguageConfig(targetLanguage).name}
 
 CRITICAL - Output format:
 - Return ONLY the processed text, nothing else
@@ -421,6 +609,8 @@ ${content}`;
           { role: "user", content: userPrompt },
         ],
         stream: true,
+        max_tokens: Math.max(2048, Math.round(content.length * 1.2)),
+        repetition_penalty: 1.3,
       }),
     }
   );
@@ -458,6 +648,18 @@ ${content}`;
             result += content;
             updateCounter++;
 
+            // Loop detection every 100 chunks
+            if (updateCounter % 100 === 0 && result.length > 500) {
+              const last500 = result.slice(-500);
+              const preceding = result.slice(0, -500);
+              if (preceding.includes(last500)) {
+                console.warn("[processNaturalSection] Repetition loop detected, truncating output");
+                result = preceding;
+                reader.cancel();
+                break;
+              }
+            }
+
             // Update streaming text every 10 chunks
             if (updateCounter % 10 === 0) {
               const displayText = previousText + (previousText ? "\n\n" : "") +
@@ -483,7 +685,7 @@ ${content}`;
     result = result.slice(1, -1);
   }
 
-  return result.trim();
+  return decodeHtmlEntities(result.trim());
 }
 
 // Lecture processing with streaming
@@ -491,7 +693,8 @@ async function processLectureWithStreaming(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
-  documentTitle: string
+  documentTitle: string,
+  targetLanguage: string
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -517,6 +720,7 @@ Guidelines:
 - Highlight important terms and definitions
 - Create logical flow from introduction to conclusion
 - Remove content that doesn't contribute to learning
+- Output the text in ${getLanguageConfig(targetLanguage).name}
 
 CRITICAL - Output format:
 - Return ONLY the lecture text, nothing else
@@ -544,6 +748,8 @@ ${rawInputText}`;
           { role: "user", content: userPrompt },
         ],
         stream: true,
+        max_tokens: Math.max(2048, Math.round(rawInputText.length * 1.2)),
+        repetition_penalty: 1.3,
       }),
     }
   );
@@ -561,6 +767,7 @@ ${rawInputText}`;
   let result = "";
   let updateCounter = 0;
   const expectedLength = rawInputText.length * 0.8; // Estimate output length
+  let repetitionDetected = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -581,6 +788,20 @@ ${rawInputText}`;
             result += content;
             updateCounter++;
 
+            // Detect repetition loops every 100 chunks
+            if (updateCounter % 100 === 0 && result.length > 1000) {
+              const tail = result.slice(-500);
+              const preceding = result.slice(0, -500);
+              if (preceding.includes(tail)) {
+                console.warn(`[processLecture] Repetition loop detected for version ${versionId}, truncating output`);
+                // Trim to the first occurrence of the repeated block
+                const firstIdx = preceding.indexOf(tail);
+                result = result.slice(0, firstIdx + tail.length);
+                repetitionDetected = true;
+                break;
+              }
+            }
+
             // Update streaming text and progress every 10 chunks
             if (updateCounter % 10 === 0) {
               const progress = Math.min(
@@ -600,6 +821,11 @@ ${rawInputText}`;
           // Skip invalid JSON
         }
       }
+      if (repetitionDetected) break;
+    }
+    if (repetitionDetected) {
+      reader.cancel();
+      break;
     }
   }
 
@@ -611,7 +837,7 @@ ${rawInputText}`;
     result = result.slice(1, -1);
   }
 
-  const section = createSectionFromText(result.trim(), "");
+  const section = createSectionFromText(decodeHtmlEntities(result.trim()), "");
 
   return {
     cleanedText: { processed_text: { sections: [section] } },
@@ -624,7 +850,8 @@ async function processConversational(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
-  documentTitle: string
+  documentTitle: string,
+  targetLanguage: string
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -666,6 +893,7 @@ Guidelines:
 - Do not omit any important information, concepts, data, examples, or specific details
 - Questioner should ask about key topics, methods, problems, findings, and results
 - Expert should provide comprehensive explanations covering all source material
+- The entire dialogue must be in ${getLanguageConfig(targetLanguage).name}
 
 CRITICAL - Output format:
 Return ONLY a JSON object in this exact format, nothing else:
@@ -694,6 +922,8 @@ ${rawInputText}`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
+        max_tokens: Math.max(2048, Math.round(rawInputText.length * 1.2)),
+        repetition_penalty: 1.3,
       }),
     }
   );
@@ -744,11 +974,12 @@ ${rawInputText}`;
     throw new Error("Invalid dialogue format in response");
   }
 
-  // Normalize reader_ids
+  // Normalize reader_ids and decode HTML entities
   for (const item of dialogue) {
     if (!item.text || !item.reader_id) {
       throw new Error("Invalid dialogue item structure");
     }
+    item.text = decodeHtmlEntities(item.text);
     if (item.reader_id !== "questioner" && item.reader_id !== "expert") {
       item.reader_id = item.reader_id.toLowerCase().includes("question")
         ? "questioner"

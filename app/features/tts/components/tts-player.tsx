@@ -507,8 +507,7 @@ export function TTSPlayer() {
         />
       </div>
 
-      {/* Download Button */}
-      <DownloadButton />
+      {/* Download Button moved to left floating menu */}
 
       {/* Voice Settings with Quality Toggle */}
       {uniqueReaderIds.length >= 1 && (

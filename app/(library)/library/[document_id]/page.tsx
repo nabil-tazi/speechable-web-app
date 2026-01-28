@@ -13,6 +13,8 @@ import { useAudioState, AudioProvider, useRefreshVersions } from "@/app/features
 import {
   updateDocumentLastOpenedAction,
   toggleDocumentStarredAction,
+  deleteDocumentVersionAction,
+  updateDocumentVersionNameAction,
 } from "@/app/features/documents/actions";
 import { useSidebarData } from "@/app/features/sidebar/context";
 import { useProcessingVersions } from "@/app/features/documents/context/processing-context";
@@ -52,7 +54,23 @@ import {
   List,
   Focus,
   FileText,
+  EllipsisVertical,
+  Trash2,
+  Check,
+  Info,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -85,7 +103,7 @@ import {
   getDisabledBlockIds,
 } from "@/app/features/block-editor";
 import type { Block } from "@/app/features/documents/types";
-import { usePlayback, useGeneration } from "@/app/features/tts";
+import { usePlayback, useGeneration, DownloadButton } from "@/app/features/tts";
 import { HeaderUserMenu } from "@/components/header-user-menu";
 import CreditDisplay from "@/app/features/credits/components/credit-display";
 
@@ -174,21 +192,6 @@ function OutlineButton({
   const { blocks, toggleBlockDisabled } = useEditor();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleMouseEnter = useCallback(() => {
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-    setIsOpen(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    closeTimeoutRef.current = setTimeout(() => {
-      setIsOpen(false);
-    }, 150);
-  }, []);
 
   // Convert character count to audio duration (1h = 55000 characters)
   const formatDuration = useCallback((chars: number) => {
@@ -474,37 +477,73 @@ function OutlineButton({
     );
   };
 
-  if (headings.length === 0) return null;
+  const hasOutline = headings.length > 0;
+
+  if (!hasOutline) {
+    return (
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled
+                className={cn("h-8 w-8", className)}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">Current version has no outline</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
 
   return (
-    <HoverCard open={isOpen}>
-      <HoverCardTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("h-8 w-8 hover:bg-gray-200", className)}
-          title="Document outline"
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
-          <List className="h-4 w-4" />
-        </Button>
-      </HoverCardTrigger>
-      <HoverCardContent
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn("h-8 w-8 hover:bg-gray-200", isOpen && "bg-gray-200 text-gray-900 hover:bg-gray-300", className)}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          {!isOpen && (
+            <TooltipContent side="right">Outline</TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
+      <PopoverContent
         side={popoverSide}
         align={popoverAlign}
         className="w-96 p-2"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        onInteractOutside={(e) => e.preventDefault()}
       >
+        <div className="flex items-center justify-between mb-1 pl-2">
+          <span className="text-sm font-medium">Outline</span>
+          <button
+            onClick={() => setIsOpen(false)}
+            className="h-6 w-6 rounded-sm flex items-center justify-center hover:bg-gray-100 transition-colors"
+          >
+            <X className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </div>
         <div
           className="max-h-[70vh] overflow-y-auto"
           onMouseLeave={() => setHoveredId(null)}
         >
           {headingTree.map((node) => renderNode(node, 0))}
         </div>
-      </HoverCardContent>
-    </HoverCard>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -559,7 +598,13 @@ function ExitEditModeDialog({
   onOpenChange: (open: boolean) => void;
   setIsEditMode: (value: boolean) => void;
 }) {
-  const { discardChanges } = useEditor();
+  const { save, discardChanges } = useEditor();
+
+  const handleSave = async () => {
+    await save();
+    setIsEditMode(false);
+    onOpenChange(false);
+  };
 
   const handleDiscard = () => {
     discardChanges();
@@ -571,43 +616,74 @@ function ExitEditModeDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+          <AlertDialogTitle>Unsaved changes</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved changes. If you exit edit mode now, your changes will be lost.
+            You have unsaved changes. What would you like to do?
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleDiscard}
-            className="bg-red-600 hover:bg-red-700"
-          >
-            Discard changes
-          </AlertDialogAction>
+        <AlertDialogFooter className="flex-row items-center gap-2 sm:justify-between">
+          <AlertDialogCancel className="mt-0">Keep editing</AlertDialogCancel>
+          <div className="flex gap-2">
+            <AlertDialogAction
+              onClick={handleDiscard}
+              className="bg-white text-gray-900 border border-gray-200 hover:bg-gray-50"
+            >
+              <X className="h-4 w-4 mr-1.5" />
+              Discard
+            </AlertDialogAction>
+            <AlertDialogAction onClick={handleSave}>
+              <Check className="h-4 w-4 mr-1.5" />
+              Save
+            </AlertDialogAction>
+          </div>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 }
 
-// Edit Button - must be inside EditorProvider (for future dirty state checking)
-function EditButton({
-  isActive,
+// Edit Button - must be inside EditorProvider to access isDirty
+function EditToggleButton({
+  isEditMode,
   setIsEditMode,
+  onRequestExit,
+  className: extraClassName,
 }: {
-  isActive: boolean;
+  isEditMode: boolean;
   setIsEditMode: (value: boolean) => void;
+  onRequestExit: () => void;
+  className?: string;
 }) {
+  const { isDirty } = useEditor();
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => setIsEditMode(!isActive)}
-      className={cn("h-8 w-8 hover:bg-gray-200", isActive && "bg-gray-200 text-gray-900 hover:bg-gray-300")}
-      title={isActive ? "Exit edit mode" : "Edit document"}
-    >
-      <SquarePen className="h-4 w-4" />
-    </Button>
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (isEditMode) {
+                if (isDirty) {
+                  onRequestExit();
+                } else {
+                  setIsEditMode(false);
+                }
+              } else {
+                setIsEditMode(true);
+              }
+            }}
+            className={cn("h-8 w-8 hover:bg-gray-200", isEditMode && "bg-gray-200 text-gray-900 hover:bg-gray-300", extraClassName)}
+          >
+            <SquarePen className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          {isEditMode ? "Exit edit mode" : "Edit"}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -768,7 +844,7 @@ function VersionTabsWithScroll({
           <div
             ref={scrollContainerRef}
             onScroll={checkScroll}
-            className="overflow-x-auto scrollbar-hide"
+            className="overflow-x-auto"
           >
             <Tabs value={activeVersionId} onValueChange={onVersionChange}>
               <TabsList className="h-auto p-1 inline-flex w-max">
@@ -836,6 +912,7 @@ function VersionTabsWithScroll({
           </Tooltip>
         </TooltipProvider>
       </div>
+
     </div>
   );
 }
@@ -848,6 +925,8 @@ function VersionSelectorPopover({
   activeVersionName,
   onVersionChange,
   onCreateNew,
+  trigger,
+  hideVersionTabs,
 }: {
   document: {
     title: string;
@@ -865,6 +944,8 @@ function VersionSelectorPopover({
   activeVersionName: string;
   onVersionChange: (versionId: string) => void;
   onCreateNew: () => void;
+  trigger?: React.ReactNode;
+  hideVersionTabs?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [thumbnailError, setThumbnailError] = useState(false);
@@ -898,16 +979,26 @@ function VersionSelectorPopover({
   return (
     <HoverCard open={isOpen}>
       <HoverCardTrigger asChild>
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors"
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
-          <span className="text-sm text-gray-700">
-            {activeVersionName}
-          </span>
-          <ChevronDown className="h-4 w-4 text-gray-700" />
-        </button>
+        {trigger ? (
+          <button
+            className="flex items-center justify-center rounded-full p-1.5 hover:bg-gray-200 transition-colors"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+          >
+            {trigger}
+          </button>
+        ) : (
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+          >
+            <span className="text-sm text-gray-700">
+              {activeVersionName}
+            </span>
+            <ChevronDown className="h-4 w-4 text-gray-700" />
+          </button>
+        )}
       </HoverCardTrigger>
       <HoverCardContent
         side="bottom"
@@ -963,21 +1054,52 @@ function VersionSelectorPopover({
           </div>
 
           {/* Bottom section: Versions */}
-          <VersionTabsWithScroll
-            versions={versions}
-            activeVersionId={activeVersionId}
-            onVersionChange={onVersionChange}
-            onCreateNew={onCreateNew}
-          />
+          {!hideVersionTabs && (
+            <VersionTabsWithScroll
+              versions={versions}
+              activeVersionId={activeVersionId}
+              onVersionChange={onVersionChange}
+              onCreateNew={onCreateNew}
+            />
+          )}
         </div>
       </HoverCardContent>
     </HoverCard>
   );
 }
 
+// Error boundary to catch render errors in child components
+class RenderErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[RenderErrorBoundary] Caught error:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8">
+          <h2 className="text-lg font-semibold text-gray-900">Something went wrong</h2>
+          <p className="text-sm text-red-600 font-mono max-w-lg text-center">{this.state.error.message}</p>
+          <button onClick={() => window.location.reload()} className="text-blue-600 hover:text-blue-800">Reload page</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Bridge component: Computes segments from EditorProvider's blocks and provides to TTSProvider
 // Must be inside EditorProvider, wraps children with TTSProvider
-function TTSProviderWithBlocks({ children }: { children: React.ReactNode }) {
+function TTSProviderWithBlocks({ children, languageCode = "en" }: { children: React.ReactNode; languageCode?: string }) {
   const { blocks } = useEditor();
 
   const segments = useMemo(() => {
@@ -992,7 +1114,7 @@ function TTSProviderWithBlocks({ children }: { children: React.ReactNode }) {
   }, [segments]);
 
   return (
-    <TTSProvider segments={segments} initialVoiceMap={initialVoiceMap}>
+    <TTSProvider segments={segments} languageCode={languageCode} initialVoiceMap={initialVoiceMap}>
       {children}
     </TTSProvider>
   );
@@ -1023,6 +1145,9 @@ function DocumentTextView() {
   const [isStarred, setIsStarred] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
+  const [deleteVersionConfirmOpen, setDeleteVersionConfirmOpen] = useState(false);
+  const [renameVersionOpen, setRenameVersionOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
   const { refreshRecent, refreshStarred } = useSidebarData();
@@ -1073,6 +1198,7 @@ function DocumentTextView() {
 
   // Get the active version from sorted versions
   const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
+  const hasReachedVersionLimit = sortedVersions.length >= 6;
 
   // Get blocks from active version, or convert from processed_text
   // These are the initial blocks - EditorProvider will manage the live state
@@ -1100,12 +1226,14 @@ function DocumentTextView() {
 
   // Auto-update URL with version parameter if not present
   // Uses replace to avoid creating extra history entries
+  const hasRedirected = useRef(false);
   useEffect(() => {
     const versionFromUrl = searchParams.get("version");
     const firstVersionId = sortedVersions[0]?.id;
 
     // If no version in URL but we have versions, add the first version to URL
-    if (!versionFromUrl && firstVersionId && sortedVersions.length > 0) {
+    if (!versionFromUrl && firstVersionId && sortedVersions.length > 0 && !hasRedirected.current) {
+      hasRedirected.current = true;
       updateVersionInUrl(firstVersionId, true); // Use replace for automatic redirect
     }
   }, [searchParams, sortedVersions, updateVersionInUrl]);
@@ -1116,6 +1244,40 @@ function DocumentTextView() {
       updateVersionInUrl(versionId);
     },
     [updateVersionInUrl]
+  );
+
+  // Handle version deletion
+  const handleDeleteVersion = useCallback(
+    async (versionId: string) => {
+      const { error } = await deleteDocumentVersionAction(versionId);
+      if (error) {
+        console.error("Failed to delete version:", error);
+        return;
+      }
+      setIsEditMode(false);
+      await refreshVersions();
+      // Navigate to the first remaining version that isn't the deleted one
+      const remaining = sortedVersions.filter((v) => v.id !== versionId);
+      if (remaining.length > 0) {
+        updateVersionInUrl(remaining[0].id, true);
+      }
+    },
+    [refreshVersions, sortedVersions, updateVersionInUrl]
+  );
+
+  // Handle version rename
+  const handleRenameVersion = useCallback(
+    async (newName: string) => {
+      if (!newName.trim()) return;
+      const { error } = await updateDocumentVersionNameAction(activeVersionId, newName.trim());
+      if (error) {
+        console.error("Failed to rename version:", error);
+        return;
+      }
+      await refreshVersions();
+      setRenameVersionOpen(false);
+    },
+    [activeVersionId, refreshVersions]
   );
 
   // Update last_opened timestamp when document is loaded
@@ -1197,6 +1359,7 @@ function DocumentTextView() {
   }
 
   return (
+    <RenderErrorBoundary>
     <Dialog
       open={isCreateVersionModalOpen}
       onOpenChange={setCreateVersionModalOpen}
@@ -1207,7 +1370,7 @@ function DocumentTextView() {
         initialVersionName={activeVersion?.version_name || ""}
         autoSave={!isEditMode}
       >
-        <TTSProviderWithBlocks>
+        <TTSProviderWithBlocks languageCode={document.language || "en"}>
           {/* Controller to stop playback when entering edit mode */}
           <EditModePlaybackController isEditMode={isEditMode} />
 
@@ -1238,26 +1401,22 @@ function DocumentTextView() {
                   <Separator orientation="vertical" className="h-5 mx-1" />
 
                   {/* Document Title */}
-                  {/* <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleToggleStar}
-                    className="h-8 w-8 hover:bg-gray-200"
-                    title={
-                      isStarred
-                        ? "Remove from favorites"
-                        : "Add to favorites"
-                    }
-                  >
-                    <Bookmark
-                      className={`h-4 w-4 ${
-                        isStarred ? "fill-current" : ""
-                      }`}
-                    />
-                  </Button> */}
                   <span className="text-sm font-medium truncate max-w-[300px]" title={document.title}>
                     {document.title}
                   </span>
+                  {/* Info icon - triggers document info popover */}
+                  <VersionSelectorPopover
+                    document={document}
+                    versions={sortedVersions}
+                    activeVersionId={activeVersionId}
+                    activeVersionName={activeVersion?.version_name || ""}
+                    onVersionChange={handleVersionChange}
+                    onCreateNew={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
+                    hideVersionTabs
+                    trigger={
+                      <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                    }
+                  />
 
                   {/* Save Indicator */}
                   <SaveIndicator />
@@ -1266,21 +1425,60 @@ function DocumentTextView() {
                 {/* Center section - Edit Button + Version Selector */}
                 <div className="flex-shrink-0 flex items-center gap-1">
                   {isEditMode ? (
-                    /* Edit mode: Show version name input */
-                    <VersionNameInput />
+                    /* Edit mode: Show version name */
+                    <span className="text-sm text-gray-700">{activeVersion?.version_name}</span>
                   ) : (
-                    /* Read mode: Edit button + version popover */
-                    <>
-                      <EditButton isActive={false} setIsEditMode={setIsEditMode} />
-                      <VersionSelectorPopover
-                        document={document}
-                        versions={sortedVersions}
-                        activeVersionId={activeVersionId}
-                        activeVersionName={activeVersion?.version_name || ""}
-                        onVersionChange={handleVersionChange}
-                        onCreateNew={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
-                      />
-                    </>
+                    /* Read mode: Version dropdown */
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors">
+                          <span className="text-sm text-gray-700 truncate max-w-[150px]">
+                            {activeVersion?.version_name || ""}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatDurationFromChars(
+                              activeVersion?.blocks?.reduce(
+                                (acc, block) => acc + (block.disabled ? 0 : block.content.length),
+                                0
+                              ) || 0
+                            )}
+                          </span>
+                          <ChevronDown className="h-4 w-4 text-gray-700" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center" className="max-h-72 overflow-y-auto">
+                        {sortedVersions.map((version) => {
+                          const charCount =
+                            version.blocks?.reduce(
+                              (acc, block) =>
+                                acc + (block.disabled ? 0 : block.content.length),
+                              0
+                            ) || 0;
+                          const duration = formatDurationFromChars(charCount);
+                          return (
+                            <DropdownMenuItem
+                              key={version.id}
+                              onClick={() => handleVersionChange(version.id)}
+                              className={cn(
+                                "flex items-center justify-between gap-4",
+                                version.id === activeVersionId && "bg-accent"
+                              )}
+                            >
+                              <span className="text-sm truncate max-w-[150px]">{version.version_name}</span>
+                              <span className="text-xs text-muted-foreground">{duration}</span>
+                            </DropdownMenuItem>
+                          );
+                        })}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
+                          disabled={hasReachedVersionLimit}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          {hasReachedVersionLimit ? "Version limit reached" : "New version"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
 
@@ -1312,13 +1510,82 @@ function DocumentTextView() {
             />
           </div>
 
-          {/* Fixed Outline Button - left side, vertically centered */}
-          <div className="fixed left-4 top-1/2 -translate-y-1/2 z-40">
+          {/* Fixed left side menu - vertically centered */}
+          <div className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-3">
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    onClick={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
+                    disabled={hasReachedVersionLimit}
+                    className="h-9 w-9 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-transform hover:scale-110 disabled:opacity-50 disabled:hover:scale-100"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  {hasReachedVersionLimit ? "Version limit reached (6 max)" : "New version"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <div className="flex flex-col bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
             <OutlineButton
-              className="bg-white shadow-md border border-gray-200 hover:bg-gray-100"
+              className="rounded-none border-0 shadow-none h-9 w-9 hover:bg-gray-100"
               popoverSide="right"
               popoverAlign="center"
             />
+            <Separator />
+            <EditToggleButton
+              isEditMode={isEditMode}
+              setIsEditMode={setIsEditMode}
+              onRequestExit={() => setShowBackConfirmation(true)}
+              className="rounded-none h-9 w-9 hover:bg-gray-100"
+            />
+            <Separator />
+            <div className="flex items-center justify-center h-9 w-9">
+              <DownloadButton />
+            </div>
+            <Separator />
+            <DropdownMenu>
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-none h-9 w-9 hover:bg-gray-100"
+                          >
+                            <EllipsisVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">More</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <DropdownMenuContent align="start" side="right">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setRenameValue(activeVersion?.version_name || "");
+                        setRenameVersionOpen(true);
+                      }}
+                    >
+                      <SquarePen className="h-4 w-4 mr-2" />
+                      Rename
+                    </DropdownMenuItem>
+                    {sortedVersions.length >= 2 && (
+                      <DropdownMenuItem
+                        onClick={() => setDeleteVersionConfirmOpen(true)}
+                        className="text-red-600 focus:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete {activeVersion?.version_name}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
           </div>
 
           {/* TTS Player - slides out in edit mode */}
@@ -1344,6 +1611,58 @@ function DocumentTextView() {
         />
       </EditorProvider>
 
+      <AlertDialog open={renameVersionOpen} onOpenChange={setRenameVersionOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename version</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter a new name for this version.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleRenameVersion(renameValue);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            autoFocus
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleRenameVersion(renameValue)}
+              disabled={!renameValue.trim()}
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteVersionConfirmOpen} onOpenChange={setDeleteVersionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete version</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this version?
+              <br />
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDeleteVersion(activeVersionId)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CreateVersionDialog
         key={createVersionKey}
         document={document}
@@ -1352,6 +1671,7 @@ function DocumentTextView() {
       />
       <DialogTrigger className="hidden" />
     </Dialog>
+    </RenderErrorBoundary>
   );
 }
 

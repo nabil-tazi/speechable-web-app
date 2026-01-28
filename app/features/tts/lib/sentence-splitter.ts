@@ -1,4 +1,3 @@
-import { TextSplitterStream } from "kokoro-js";
 import type { Segment, Sentence } from "../types";
 import type { Block } from "@/app/features/documents/types";
 import { getDisabledBlockIds } from "@/app/features/block-editor/utils/disabled-sections";
@@ -9,21 +8,26 @@ import { getDisabledBlockIds } from "@/app/features/block-editor/utils/disabled-
 const MIN_GROUP_CHARS = 120;
 
 /**
- * Split segment text into sentences using Kokoro's TextSplitterStream.
+ * Split segment text into sentences using sentencex (multilingual).
  * This is the ONLY place splitting happens - used for both display and audio generation.
  */
-export function splitIntoSentences(text: string): string[] {
-  const splitter = new TextSplitterStream();
+export function splitIntoSentences(text: string, languageCode: string = "en"): string[] {
+  let sentences: string[];
 
-  // Same tokenization pattern that Kokoro uses internally
-  const tokens = text.match(/\s*\S+/g) || [text];
-  for (const token of tokens) {
-    splitter.push(token);
+  try {
+    // Use Intl.Segmenter for locale-aware sentence splitting (built-in browser API)
+    const SegmenterClass = (Intl as any).Segmenter;
+    if (!SegmenterClass) throw new Error("Intl.Segmenter not available");
+    const segmenter = new SegmenterClass(languageCode, { granularity: "sentence" });
+    sentences = Array.from(segmenter.segment(text), (s: any) => (s.segment as string).trim()).filter((s) => s.length > 0);
+  } catch {
+    // Fallback to manual splitting if Intl.Segmenter is unavailable
+    sentences = manualSentenceSplit(text);
   }
 
-  splitter.close();
-
-  let sentences = Array.from(splitter);
+  if (sentences.length === 0) {
+    sentences = [text];
+  }
 
   // Debug: log when we get unexpectedly few splits for long text
   const DEBUG_SENTENCE_SPLITTER = false;
@@ -75,9 +79,10 @@ export function splitIntoSentences(text: string): string[] {
  * Splits on common sentence-ending punctuation followed by space and capital letter.
  */
 function manualSentenceSplit(text: string): string[] {
-  // Split on . ! ? followed by space and capital letter (or end of string)
-  // Also handle quotes: ." !" ?"
-  const sentenceEndPattern = /([.!?]["']?\s+)(?=[A-Z])/g;
+  // Split on . ! ? followed by space and capital/uppercase letter
+  // Also handle quotes: ." !" ?" «» ""
+  // Uses Unicode uppercase letter class to support accented characters (À, É, etc.)
+  const sentenceEndPattern = /([.!?]["'»"]?\s+)(?=[\p{Lu}«""])/gu;
 
   const parts = text.split(sentenceEndPattern);
 
@@ -88,7 +93,7 @@ function manualSentenceSplit(text: string): string[] {
   for (let i = 0; i < parts.length; i++) {
     current += parts[i];
     // Check if this part is a delimiter (ends with space)
-    if (parts[i].match(/[.!?]["']?\s+$/)) {
+    if (parts[i].match(/[.!?]["'»"]?\s+$/)) {
       sentences.push(current.trim());
       current = "";
     }
@@ -183,7 +188,7 @@ export function groupSentences(
  * This creates a unified list of sentences that are used for both
  * display (highlighting) and audio generation.
  */
-export function createSentencesFromSegments(segments: Segment[]): Sentence[] {
+export function createSentencesFromSegments(segments: Segment[], languageCode: string = "en"): Sentence[] {
   const sentences: Sentence[] = [];
   let globalIndex = 0;
 
@@ -221,7 +226,7 @@ export function createSentencesFromSegments(segments: Segment[]): Sentence[] {
       });
     }
 
-    const rawSentences = splitIntoSentences(segment.text);
+    const rawSentences = splitIntoSentences(segment.text, languageCode);
     const groupedTexts = groupSentences(rawSentences, segment.text);
 
     // Debug: log grouping

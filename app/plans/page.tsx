@@ -36,7 +36,7 @@ export default function PlansPage() {
           <div className="flex items-center gap-1 flex-1">
             <Button
               variant="ghost"
-              onClick={() => router.push("/library")}
+              onClick={() => router.back()}
               className="h-8 px-2 gap-1"
               title="Back to library"
             >

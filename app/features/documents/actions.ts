@@ -910,3 +910,19 @@ export async function finalizeVersionAction(
     return { data: null, error: "Failed to finalize version" };
   }
 }
+
+// Server Action: Delete a document version
+export async function deleteDocumentVersionAction(
+  versionId: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const { deleteDocumentVersion } = await import("./models");
+    await deleteDocumentVersion(versionId);
+    return { success: true, error: null };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete version",
+    };
+  }
+}

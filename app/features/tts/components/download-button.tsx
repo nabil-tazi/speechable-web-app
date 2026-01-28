@@ -6,6 +6,7 @@ import { Download } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSentences } from "../hooks/use-sentences";
@@ -61,12 +62,7 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
 }
 
 export function DownloadButton() {
-  const { totalCount, sentences, audioState, allReady, readyCount } =
-    useSentences();
-
-  // Progress for generation (0 to 1)
-  const generationProgress = totalCount > 0 ? readyCount / totalCount : 0;
-  const circumference = 2 * Math.PI * 10; // radius = 10
+  const { sentences, audioState, allReady } = useSentences();
 
   // Download handler - decodes, concatenates, and re-encodes WAV audio
   const handleDownload = useCallback(async () => {
@@ -139,56 +135,24 @@ export function DownloadButton() {
   }, [allReady, sentences, audioState]);
 
   return (
-    <div className="relative h-8 w-8 flex-shrink-0">
-      {/* Progress Ring SVG - hidden when complete */}
-      {!allReady && (
-        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 24 24">
-          {/* Background circle (light gray track) */}
-          <circle
-            cx="12"
-            cy="12"
-            r="10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            className="text-gray-200"
-          />
-          {/* Progress circle (medium gray) */}
-          <circle
-            cx="12"
-            cy="12"
-            r="10"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            className="text-muted-foreground/50 transition-all duration-300"
-            strokeDasharray={circumference}
-            strokeDashoffset={circumference * (1 - generationProgress)}
-          />
-        </svg>
-      )}
-
-      {/* Download Button with Tooltip */}
+    <TooltipProvider delayDuration={0}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="absolute inset-0">
-            <Button
-              variant="ghost"
-              onClick={handleDownload}
-              disabled={!allReady}
-              className="h-8 w-8 p-0"
-            >
-              <Download className="w-4 h-4" />
-            </Button>
-          </span>
+          <Button
+            variant="ghost"
+            onClick={handleDownload}
+            disabled={!allReady}
+            className="h-8 w-8 p-0"
+          >
+            <Download className="w-4 h-4" />
+          </Button>
         </TooltipTrigger>
-        <TooltipContent>
+        <TooltipContent side="right">
           {allReady
-            ? "Grab your audio!"
-            : `Cooking up your audio... ${Math.round(generationProgress * 100)}%`}
+            ? "Download audio"
+            : "Audio not ready yet"}
         </TooltipContent>
       </Tooltip>
-    </div>
+    </TooltipProvider>
   );
 }

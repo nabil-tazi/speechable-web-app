@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { createClient } from "@/app/lib/supabase/client";
 import { useCredits } from "@/app/features/users/context";
+import { getThumbnailUrl } from "@/app/utils/storage";
 import type { VersionStatus } from "../types";
 
 const supabase = createClient();
@@ -168,17 +169,19 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       }
 
       if (data && data.length > 0) {
-        const versions: ProcessingVersion[] = data.map((v: any) => ({
-          versionId: v.id,
-          documentId: v.document.id,
-          documentTitle: v.document.title,
-          documentThumbnail: v.document.thumbnail_path,
-          versionName: v.version_name,
-          processingType: getProcessingTypeName(v.processing_type),
-          status: v.status,
-          progress: v.processing_progress || 0,
-          errorMessage: v.error_message,
-        }));
+        const versions: ProcessingVersion[] = await Promise.all(
+          data.map(async (v: any) => ({
+            versionId: v.id,
+            documentId: v.document.id,
+            documentTitle: v.document.title,
+            documentThumbnail: await getThumbnailUrl(v.document.thumbnail_path),
+            versionName: v.version_name,
+            processingType: getProcessingTypeName(v.processing_type),
+            status: v.status,
+            progress: v.processing_progress || 0,
+            errorMessage: v.error_message,
+          }))
+        );
 
         setProcessingVersions(versions);
       }

@@ -68,6 +68,7 @@ export function CreateVersionDialog({
   );
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasReachedVersionLimit = existingVersions.length >= 6;
   const [showInsufficientCredits, setShowInsufficientCredits] = useState(false);
   const { addProcessingVersion, processingVersions } = useProcessingVersions();
   const { updateCredits } = useCredits();
@@ -151,8 +152,10 @@ export function CreateVersionDialog({
     }
   };
 
+  const needsTranslation = targetLanguage !== (document.language || "en");
+
   const getCreditsText = () => {
-    if (selectedProcessing === 0) {
+    if (selectedProcessing === 0 && !needsTranslation) {
       return "Create";
     }
     return `Create (${estimatedCredits} credits)`;
@@ -409,20 +412,22 @@ export function CreateVersionDialog({
                       <Button
                         onClick={handleCreateVersion}
                         className="bg-brand-primary-dark hover:bg-brand-primary-dark/90"
-                        disabled={isCreating}
+                        disabled={isCreating || hasReachedVersionLimit}
                       >
                         {isCreating ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             Creating...
                           </>
+                        ) : hasReachedVersionLimit ? (
+                          "Version limit reached"
                         ) : (
                           "Create"
                         )}
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {selectedProcessing === 0 ? "Free" : `${estimatedCredits} credits`}
+                      {selectedProcessing === 0 && !needsTranslation ? "Free" : `${estimatedCredits} credits`}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

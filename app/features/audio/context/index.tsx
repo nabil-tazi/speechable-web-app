@@ -121,8 +121,8 @@ export function AudioProvider({ children, documentId }: AudioProviderProps) {
         const allAudioVersions: AudioVersionWithSegments[] = [];
         const allAudioSegments: Record<string, AudioSegment[]> = {};
 
-        documentData.versions.forEach((version: any) => {
-          version.audio_versions.forEach((audioVersion: any) => {
+        (documentData.versions || []).forEach((version: any) => {
+          (version.audio_versions || []).forEach((audioVersion: any) => {
             // Cast to proper types
             const typedAudioVersion = audioVersion as AudioVersion;
             const typedSegments = (audioVersion.segments ||
@@ -165,6 +165,7 @@ export function AudioProvider({ children, documentId }: AudioProviderProps) {
 
       hasLoadedDocuments.current = true;
     } catch (error) {
+      console.error("[AudioProvider] Failed to load document audio:", error);
       dispatch({ type: "SET_ERROR", payload: "Failed to load audio data" });
     }
   }
