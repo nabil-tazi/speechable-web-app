@@ -87,6 +87,11 @@ export function TTSProvider({
     },
   });
 
+  // Re-assign voice map when version changes (e.g. different language)
+  useEffect(() => {
+    dispatch({ type: "SET_VOICE_MAP", voiceMap: initialVoiceMap });
+  }, [initialVoiceMap]);
+
   // Refs
   const workerRef = useRef<Worker | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);

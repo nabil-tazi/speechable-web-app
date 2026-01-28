@@ -18,7 +18,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PROCESSING_ARRAY, type ProcessingType } from "../../pdf/types";
+import {
+  PROCESSING_ARRAY,
+  LECTURE_DURATIONS,
+  MAX_VERSIONS_PER_DOCUMENT,
+  type ProcessingType,
+  type LectureDuration,
+} from "../../pdf/types";
 import {
   FileText,
   MessagesSquare,
@@ -30,6 +36,7 @@ import {
   Loader2,
   ChevronLeft,
   Globe,
+  Timer,
 } from "lucide-react";
 import { TransitionPanel } from "@/components/ui/transition-panel";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -61,26 +68,94 @@ export function CreateVersionDialog({
 }: Props) {
   const [step, setStep] = useState<0 | 1>(0);
   const [selectedProcessing, setSelectedProcessing] = useState<0 | 1 | 2 | 3>(
-    0
+    0,
   );
   const [targetLanguage, setTargetLanguage] = useState<string>(
-    document.language || "en"
+    document.language || "en",
   );
+  const [lectureDuration, setLectureDuration] =
+    useState<LectureDuration>("medium");
+  const [versionName, setVersionName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const hasReachedVersionLimit = existingVersions.length >= 6;
+  const hasReachedVersionLimit = existingVersions.length >= MAX_VERSIONS_PER_DOCUMENT;
   const [showInsufficientCredits, setShowInsufficientCredits] = useState(false);
   const { addProcessingVersion, processingVersions } = useProcessingVersions();
   const { updateCredits } = useCredits();
 
-  // Calculate estimated credits based on document text length
-  const estimatedCredits = useMemo(() => {
+  // Source document character count
+  const sourceCharCount = useMemo(() => {
     if (!document.processed_text) return 0;
-    const textLength = extractTextFromProcessedText(document.processed_text).length;
-    return Math.ceil((textLength / CHARACTERS_PER_CREDIT) * 10) / 10;
+    return extractTextFromProcessedText(document.processed_text).length;
   }, [document.processed_text]);
 
+  // Check if any lecture duration is available
+  const isLectureAvailable = LECTURE_DURATIONS.some(
+    (d) => sourceCharCount >= d.minSourceChars,
+  );
+
+  // Auto-select highest available duration if current selection is disabled
+  React.useEffect(() => {
+    if (selectedProcessing !== 2) return;
+    const currentConfig = LECTURE_DURATIONS.find((d) => d.value === lectureDuration);
+    if (currentConfig && sourceCharCount >= currentConfig.minSourceChars) return;
+    const available = [...LECTURE_DURATIONS]
+      .reverse()
+      .find((d) => sourceCharCount >= d.minSourceChars);
+    if (available) setLectureDuration(available.value);
+  }, [selectedProcessing, sourceCharCount, lectureDuration]);
+
+  // Calculate estimated credits based on document text length, processing type, and duration
+  const estimatedCredits = useMemo(() => {
+    if (!document.processed_text) return 0;
+    const isTranslating = targetLanguage !== (document.language || "en");
+    if (selectedProcessing === 0 && !isTranslating) return 0;
+    const textLength = extractTextFromProcessedText(
+      document.processed_text,
+    ).length;
+    const baseCredits = textLength / CHARACTERS_PER_CREDIT;
+    const multiplier =
+      selectedProcessing === 2
+        ? (LECTURE_DURATIONS.find((d) => d.value === lectureDuration)
+            ?.creditMultiplier ?? 1)
+        : 1;
+    return Math.ceil(baseCredits * multiplier * 10) / 10;
+  }, [
+    document.processed_text,
+    document.language,
+    selectedProcessing,
+    lectureDuration,
+    targetLanguage,
+  ]);
+
+  const computeDefaultVersionName = (lang: string) => {
+    const processingTypeName = PROCESSING_ARRAY[selectedProcessing].name;
+    const needsLangSuffix = lang !== (document.language || "en");
+    const langLabel = needsLangSuffix
+      ? ` (${SUPPORTED_LANGUAGES.find((l) => l.code === lang)?.name || lang})`
+      : "";
+    const baseName = processingTypeName + langLabel;
+
+    // Check existing versions + pending for name collision
+    const existingNames = new Set([
+      ...existingVersions.map((v) => v.version_name),
+      ...processingVersions
+        .filter(
+          (v) =>
+            v.documentId === document.id &&
+            (v.status === "pending" || v.status === "processing"),
+        )
+        .map((v) => v.versionName),
+    ]);
+
+    if (!existingNames.has(baseName)) return baseName;
+    let i = 2;
+    while (existingNames.has(`${baseName} ${i}`)) i++;
+    return `${baseName} ${i}`;
+  };
+
   const handleContinue = () => {
+    setVersionName(computeDefaultVersionName(targetLanguage));
     setStep(1);
   };
 
@@ -95,11 +170,13 @@ export function CreateVersionDialog({
     try {
       const processingTypeName = PROCESSING_ARRAY[selectedProcessing].name;
       const existingCount = existingVersions.filter(
-        (v) => v.processing_type === selectedProcessing.toString()
+        (v) => v.processing_type === selectedProcessing.toString(),
       ).length;
       const pendingCount = processingVersions.filter(
-        (v) => v.documentId === document.id && v.processingType === processingTypeName &&
-          (v.status === "pending" || v.status === "processing")
+        (v) =>
+          v.documentId === document.id &&
+          v.processingType === processingTypeName &&
+          (v.status === "pending" || v.status === "processing"),
       ).length;
 
       const response = await fetch("/api/generate-version", {
@@ -110,6 +187,8 @@ export function CreateVersionDialog({
           processingLevel: selectedProcessing,
           existingVersionCount: existingCount + pendingCount,
           targetLanguage,
+          lectureDuration,
+          versionName: versionName.trim() || undefined,
         }),
       });
 
@@ -131,16 +210,15 @@ export function CreateVersionDialog({
         updateCredits(data.newCreditBalance);
       }
 
-      const versionName =
-        PROCESSING_ARRAY[selectedProcessing].name +
-        (existingCount > 0 ? " " + (existingCount + 1) : "");
+      const finalVersionName =
+        versionName.trim() || PROCESSING_ARRAY[selectedProcessing].name;
 
       addProcessingVersion({
         versionId: data.versionId,
         documentId: document.id,
         documentTitle: document.title,
         documentThumbnail: document.thumbnail_path,
-        versionName,
+        versionName: finalVersionName,
         processingType: PROCESSING_ARRAY[selectedProcessing].name,
       });
 
@@ -189,16 +267,45 @@ export function CreateVersionDialog({
                   }
                 >
                   <TabsList className="grid w-full grid-cols-4">
-                    {PROCESSING_ARRAY.map((item, index) => (
-                      <TabsTrigger
-                        key={index}
-                        value={index.toString()}
-                        className="flex items-center gap-2 text-sm text-gray-500 data-[state=active]:text-gray-900"
-                      >
-                        {renderProcessingIcon(item, selectedProcessing === index)}
-                        {item.name}
-                      </TabsTrigger>
-                    ))}
+                    {PROCESSING_ARRAY.map((item, index) => {
+                      const isDisabled = index === 2 && !isLectureAvailable;
+                      const trigger = (
+                        <TabsTrigger
+                          key={index}
+                          value={index.toString()}
+                          disabled={isDisabled}
+                          className="flex items-center gap-2 text-sm text-gray-500 data-[state=active]:text-gray-900"
+                        >
+                          {renderProcessingIcon(
+                            item,
+                            selectedProcessing === index,
+                          )}
+                          {item.name}
+                        </TabsTrigger>
+                      );
+                      if (isDisabled) {
+                        return (
+                          <Tooltip key={index} delayDuration={0}>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <TabsTrigger
+                                  value={index.toString()}
+                                  disabled
+                                  className="flex items-center gap-2 text-sm text-gray-500 w-full pointer-events-auto"
+                                >
+                                  {renderProcessingIcon(item, false)}
+                                  {item.name}
+                                </TabsTrigger>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              <p>Document not long enough</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      }
+                      return trigger;
+                    })}
                   </TabsList>
                 </Tabs>
               </motion.div>
@@ -272,7 +379,7 @@ export function CreateVersionDialog({
                             {getProcessingFeatures(selectedItem.name)
                               .sort(
                                 (a, b) =>
-                                  (b.included ? 1 : 0) - (a.included ? 1 : 0)
+                                  (b.included ? 1 : 0) - (a.included ? 1 : 0),
                               )
                               .map((feature, idx) => (
                                 <div
@@ -306,36 +413,95 @@ export function CreateVersionDialog({
                         exit={{ opacity: 0, y: -20 }}
                         transition={{ duration: 0.25 }}
                       >
-                        <Card className="p-4 bg-white">
-                          <div className="space-y-4">
-                            {/* Language Selection */}
+                        <div className="space-y-6">
+                          {/* Language Selection */}
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                              <Globe className="w-4 h-4" />
+                              Output Language
+                            </label>
+                            <Select
+                              value={targetLanguage}
+                              onValueChange={(lang) => {
+                                setTargetLanguage(lang);
+                                setVersionName(computeDefaultVersionName(lang));
+                              }}
+                            >
+                              <SelectTrigger className="w-full bg-white">
+                                <SelectValue placeholder="Select language" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SUPPORTED_LANGUAGES.map((lang) => (
+                                  <SelectItem key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Lecture duration selector */}
+                          {selectedProcessing === 2 && (
                             <div className="space-y-2">
                               <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                <Globe className="w-4 h-4" />
-                                Output Language
+                                <Timer className="w-4 h-4" />
+                                Duration
                               </label>
-                              <Select
-                                value={targetLanguage}
-                                onValueChange={setTargetLanguage}
-                              >
-                                <SelectTrigger className="w-full bg-white">
-                                  <SelectValue placeholder="Select language" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {SUPPORTED_LANGUAGES.map((lang) => (
-                                    <SelectItem key={lang.code} value={lang.code}>
-                                      {lang.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <p className="text-xs text-gray-500">
-                                The generated audio will be in this language
-                              </p>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {LECTURE_DURATIONS.map((d) => {
+                                  const isDurationDisabled = sourceCharCount < d.minSourceChars;
+                                  const btn = (
+                                    <button
+                                      key={d.value}
+                                      type="button"
+                                      disabled={isDurationDisabled}
+                                      onClick={() => setLectureDuration(d.value)}
+                                      className={`px-2 py-1.5 rounded-md text-sm border transition-colors ${
+                                        isDurationDisabled
+                                          ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
+                                          : lectureDuration === d.value
+                                            ? "border-gray-800 bg-gray-800 text-white"
+                                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                                      }`}
+                                    >
+                                      <div className="font-medium">{d.label}</div>
+                                      <div
+                                        className={`text-xs ${isDurationDisabled ? "text-gray-300" : lectureDuration === d.value ? "text-gray-300" : "text-gray-400"}`}
+                                      >
+                                        {d.description}
+                                      </div>
+                                    </button>
+                                  );
+                                  if (isDurationDisabled) {
+                                    return (
+                                      <Tooltip key={d.value} delayDuration={0}>
+                                        <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Document not long enough</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    );
+                                  }
+                                  return btn;
+                                })}
+                              </div>
                             </div>
+                          )}
 
+                          {/* Credits cost */}
+                          <div className="pt-4 mt-10 border-t border-gray-300">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-gray-500">
+                                Estimated cost
+                              </span>
+                              <span className="font-medium text-gray-700">
+                                {estimatedCredits === 0
+                                  ? "Free"
+                                  : `${estimatedCredits} credits`}
+                              </span>
+                            </div>
                           </div>
-                        </Card>
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -427,7 +593,9 @@ export function CreateVersionDialog({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {selectedProcessing === 0 && !needsTranslation ? "Free" : `${estimatedCredits} credits`}
+                      {selectedProcessing === 0 && !needsTranslation
+                        ? "Free"
+                        : `${estimatedCredits} credits`}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -462,7 +630,7 @@ export function CreateVersionDialog({
 function renderProcessingIcon(
   p: ProcessingType,
   isActive: boolean = false,
-  className: string = "w-4 h-4"
+  className: string = "w-4 h-4",
 ) {
   switch (p.name) {
     case "Original":
@@ -479,7 +647,7 @@ function renderProcessingIcon(
 }
 
 function getProcessingFeatures(
-  processingType: string
+  processingType: string,
 ): { feature: string; included: boolean }[] {
   switch (processingType) {
     case "Original":

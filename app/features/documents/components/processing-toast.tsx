@@ -51,7 +51,7 @@ function ProcessingItem({ version, onDismiss }: ProcessingItemProps) {
     version.status === "processing" || version.status === "pending";
 
   // Only show progress bar for Natural mode
-  const showProgressBar = version.processingType === "Natural" && isProcessing;
+  const showProgressBar = (version.processingType === "Natural" || version.processingType === "Lecture") && isProcessing;
 
   const handleOpen = () => {
     router.push(`/library/${version.documentId}?version=${version.versionId}`);
@@ -145,7 +145,7 @@ function getStatusText(version: ProcessingVersion): string {
     case "Natural":
       return `Processing... ${version.progress}%`;
     case "Lecture":
-      return "Generating lecture...";
+      return `Generating lecture... ${version.progress}%`;
     case "Conversational":
       return "Generating dialogue...";
     case "Original":

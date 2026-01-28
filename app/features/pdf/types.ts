@@ -23,37 +23,64 @@ export interface StructuredLine {
   font: FontInfo;
   wmode: number;
   // Character boundary positions for detecting word breaks across lines
-  firstCharX?: number;  // X position of first character's left edge
-  lastCharX?: number;   // X position of last character's right edge
+  firstCharX?: number; // X position of first character's left edge
+  lastCharX?: number; // X position of last character's right edge
 }
 
 export interface StructuredBlock {
   type: string;
   bbox: BoundingBox;
   lines: StructuredLine[];
-  isVertical?: boolean;  // True if block contains vertical/rotated text (detected via bbox h/w ratio)
+  isVertical?: boolean; // True if block contains vertical/rotated text (detected via bbox h/w ratio)
 }
 
 // Removable highlight types (cleaned when hiding tagged sections)
-export type RemovableHighlightType = 'anomaly' | 'legend' | 'footnote' | 'figure_label' | 'reference' | 'header' | 'footer' | 'page_number' | 'author' | 'heading' | 'url' | 'email' | 'toc' | 'bibliography';
+export type RemovableHighlightType =
+  | "anomaly"
+  | "legend"
+  | "footnote"
+  | "figure_label"
+  | "reference"
+  | "header"
+  | "footer"
+  | "page_number"
+  | "author"
+  | "heading"
+  | "url"
+  | "email"
+  | "toc"
+  | "bibliography";
 
 // All highlight types including permanent markers
 // NOTE: 'section_start' is deprecated - use 'heading' with enriched properties instead
-export type HighlightType = RemovableHighlightType | 'section_start';
+export type HighlightType = RemovableHighlightType | "section_start";
 
 // Array of removable types for filtering
 export const REMOVABLE_HIGHLIGHT_TYPES: RemovableHighlightType[] = [
-  'anomaly', 'legend', 'footnote', 'figure_label', 'reference', 'header', 'footer', 'page_number', 'author', 'heading', 'url', 'email', 'toc', 'bibliography'
+  "anomaly",
+  "legend",
+  "footnote",
+  "figure_label",
+  "reference",
+  "header",
+  "footer",
+  "page_number",
+  "author",
+  "heading",
+  "url",
+  "email",
+  "toc",
+  "bibliography",
 ];
 
 export interface TextHighlight {
-  start: number;  // Character index in rawText
-  end: number;    // Character index (exclusive)
+  start: number; // Character index in rawText
+  end: number; // Character index (exclusive)
   type: HighlightType;
   // For 'heading' type (enriched with PDF outline metadata when available):
-  sectionTitle?: string;   // The section title (detected text, e.g., "2. Methods")
-  sectionLevel?: number;   // The section level (1, 2, 3...) - from outline or font hierarchy
-  verified?: boolean;      // True if heading matched a PDF outline entry
+  sectionTitle?: string; // The section title (detected text, e.g., "2. Methods")
+  sectionLevel?: number; // The section level (1, 2, 3...) - from outline or font hierarchy
+  verified?: boolean; // True if heading matched a PDF outline entry
 }
 
 /**
@@ -61,11 +88,11 @@ export interface TextHighlight {
  * Used to preserve font metadata through text joining for heading detection.
  */
 export interface FontRange {
-  start: number;      // Character offset in text
-  end: number;        // Character offset (exclusive)
-  size: number;       // Font size (rounded to 0.1)
-  weight: 'normal' | 'bold';
-  italic: boolean;    // Whether font is italic/oblique
+  start: number; // Character offset in text
+  end: number; // Character offset (exclusive)
+  size: number; // Font size (rounded to 0.1)
+  weight: "normal" | "bold";
+  italic: boolean; // Whether font is italic/oblique
 }
 
 /**
@@ -73,16 +100,16 @@ export interface FontRange {
  * Contains scoring information for Stage 2 validation.
  */
 export interface BlockHeadingCandidate {
-  textStart: number;         // Position in joined text
-  textEnd: number;           // End position (exclusive)
-  text: string;              // The heading text
-  score: number;             // Total score from all factors
-  factors: string[];         // Contributing factors for debugging
-  fontSize: number;          // Dominant font size
-  fontWeight: string;        // Dominant font weight
-  italic: boolean;           // Whether italic
+  textStart: number; // Position in joined text
+  textEnd: number; // End position (exclusive)
+  text: string; // The heading text
+  score: number; // Total score from all factors
+  factors: string[]; // Contributing factors for debugging
+  fontSize: number; // Dominant font size
+  fontWeight: string; // Dominant font weight
+  italic: boolean; // Whether italic
   verticalGapBefore: number; // Gap from previous block (px)
-  lineCount: number;         // Number of lines in the heading (for position calculation)
+  lineCount: number; // Number of lines in the heading (for position calculation)
 }
 
 export interface StructuredPage {
@@ -124,9 +151,9 @@ export interface OutlineMatch {
   matchedPageNumber: number;
   matchedBlockIndex: number;
   matchedLineIndex: number;
-  matchConfidence: 'high' | 'medium' | 'none';
+  matchConfidence: "high" | "medium" | "none";
   skipped?: boolean;
-  skipReason?: 'legend' | 'no_match';
+  skipReason?: "legend" | "no_match";
 }
 
 export interface OutlineSectionWithContent {
@@ -237,3 +264,39 @@ export const PROCESSING_ARRAY: ProcessingType[] =
   Object.values(PREPROCESSING_LEVELS);
 
 export type PreprocessingLevel = 0 | 1 | 2 | 3;
+
+export const MAX_VERSIONS_PER_DOCUMENT = 15;
+
+export type LectureDuration = "short" | "medium" | "long";
+export const LECTURE_DURATIONS = [
+  {
+    value: "short" as const,
+    label: "Short",
+    topics: 3,
+    description: "~5 min",
+    creditMultiplier: 0.8,
+    charsPerSection: 1000,
+    minSourceChars: 10000,
+    maxTokens: 4096,
+  },
+  {
+    value: "medium" as const,
+    label: "Medium",
+    topics: 5,
+    description: "~10 min",
+    creditMultiplier: 1.2,
+    charsPerSection: 1300,
+    minSourceChars: 20000,
+    maxTokens: 8192,
+  },
+  {
+    value: "long" as const,
+    label: "Long",
+    topics: 8,
+    description: "~15 min",
+    creditMultiplier: 1.6,
+    charsPerSection: 1700,
+    minSourceChars: 30000,
+    maxTokens: 16384,
+  },
+] as const;

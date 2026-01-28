@@ -9,7 +9,11 @@ import React, {
   useRef,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAudioState, AudioProvider, useRefreshVersions } from "@/app/features/audio/context";
+import {
+  useAudioState,
+  AudioProvider,
+  useRefreshVersions,
+} from "@/app/features/audio/context";
 import {
   updateDocumentLastOpenedAction,
   toggleDocumentStarredAction,
@@ -20,6 +24,7 @@ import { useSidebarData } from "@/app/features/sidebar/context";
 import { useProcessingVersions } from "@/app/features/documents/context/processing-context";
 import { DocumentVersionLoader } from "@/app/features/documents/components/document-version-loader";
 import { CreateVersionDialog } from "@/app/features/documents/components/create-version-dialog";
+import { MAX_VERSIONS_PER_DOCUMENT } from "@/app/features/pdf/types";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -326,7 +331,7 @@ function OutlineButton({
       }
       return null;
     },
-    [headings, disabledIds]
+    [headings, disabledIds],
   );
 
   // Get the effective hover ID (may be redirected to parent if in disabled section)
@@ -374,7 +379,7 @@ function OutlineButton({
                   "group flex items-center gap-2 py-1.5 px-2",
                   depth === 1 && "pl-6",
                   depth === 2 && "pl-12",
-                  depth >= 3 && "pl-16"
+                  depth >= 3 && "pl-16",
                 )}
               >
                 <Checkbox
@@ -386,18 +391,18 @@ function OutlineButton({
                     isDisabledViaCascade
                       ? "opacity-0 pointer-events-none"
                       : isHovered
-                      ? "opacity-100"
-                      : "opacity-0 group-hover:opacity-100"
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100",
                   )}
                 />
                 <span
                   onClick={() => {
                     // Find the block element and scroll to it with offset for header
                     const blockElement = document.querySelector(
-                      `[data-block-id="${heading.id}"]`
+                      `[data-block-id="${heading.id}"]`,
                     );
                     const scrollContainer = document.querySelector(
-                      '[data-scroll-container="true"]'
+                      '[data-scroll-container="true"]',
                     );
                     if (blockElement && scrollContainer) {
                       const headerOffset = 80; // Account for fixed header
@@ -423,7 +428,7 @@ function OutlineButton({
                     heading.type === "heading3" && "font-normal",
                     heading.type === "heading4" && "text-sm font-normal",
                     disabledIds.has(heading.id) &&
-                      "line-through text-muted-foreground"
+                      "line-through text-muted-foreground",
                   )}
                 >
                   {heading.content}
@@ -431,10 +436,10 @@ function OutlineButton({
                 <Focus
                   onClick={() => {
                     const blockElement = document.querySelector(
-                      `[data-block-id="${heading.id}"]`
+                      `[data-block-id="${heading.id}"]`,
                     );
                     const scrollContainer = document.querySelector(
-                      '[data-scroll-container="true"]'
+                      '[data-scroll-container="true"]',
                     );
                     if (blockElement && scrollContainer) {
                       const headerOffset = 80;
@@ -495,7 +500,9 @@ function OutlineButton({
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent side="right">Current version has no outline</TooltipContent>
+          <TooltipContent side="right">
+            Current version has no outline
+          </TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );
@@ -510,15 +517,17 @@ function OutlineButton({
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn("h-8 w-8 hover:bg-gray-200", isOpen && "bg-gray-200 text-gray-900 hover:bg-gray-300", className)}
+                className={cn(
+                  "h-8 w-8 hover:bg-gray-200",
+                  isOpen && "bg-gray-200 text-gray-900 hover:bg-gray-300",
+                  className,
+                )}
               >
                 <List className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
           </TooltipTrigger>
-          {!isOpen && (
-            <TooltipContent side="right">Outline</TooltipContent>
-          )}
+          {!isOpen && <TooltipContent side="right">Outline</TooltipContent>}
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
@@ -674,7 +683,11 @@ function EditToggleButton({
                 setIsEditMode(true);
               }
             }}
-            className={cn("h-8 w-8 hover:bg-gray-200", isEditMode && "bg-gray-200 text-gray-900 hover:bg-gray-300", extraClassName)}
+            className={cn(
+              "h-8 w-8 hover:bg-gray-200",
+              isEditMode && "bg-gray-200 text-gray-900 hover:bg-gray-300",
+              extraClassName,
+            )}
           >
             <SquarePen className="h-4 w-4" />
           </Button>
@@ -733,7 +746,7 @@ function ScrollingText({
       className={cn(
         "overflow-hidden",
         useHoverAnimation && "marquee-hover-container",
-        className
+        className,
       )}
       title={text}
     >
@@ -741,7 +754,7 @@ function ScrollingText({
         className={cn(
           "inline-flex whitespace-nowrap",
           shouldAnimate && "marquee-ticker",
-          useHoverAnimation && "marquee-ticker-hover"
+          useHoverAnimation && "marquee-ticker-hover",
         )}
         style={
           isOverflowing
@@ -853,7 +866,7 @@ function VersionTabsWithScroll({
                     version.blocks?.reduce(
                       (acc, block) =>
                         acc + (block.disabled ? 0 : block.content.length),
-                      0
+                      0,
                     ) || 0;
                   const duration = formatDurationFromChars(charCount);
 
@@ -897,7 +910,7 @@ function VersionTabsWithScroll({
                   "flex-shrink-0 bg-brand-primary-dark text-white flex items-center justify-center hover:opacity-90 transition-all",
                   isOverflowing
                     ? "h-8 w-8 rounded-full"
-                    : "h-8 px-3 rounded-full gap-1.5 text-sm font-medium"
+                    : "h-8 px-3 rounded-full gap-1.5 text-sm font-medium",
                 )}
               >
                 <Plus className="h-4 w-4" />
@@ -912,7 +925,6 @@ function VersionTabsWithScroll({
           </Tooltip>
         </TooltipProvider>
       </div>
-
     </div>
   );
 }
@@ -993,9 +1005,7 @@ function VersionSelectorPopover({
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            <span className="text-sm text-gray-700">
-              {activeVersionName}
-            </span>
+            <span className="text-sm text-gray-700">{activeVersionName}</span>
             <ChevronDown className="h-4 w-4 text-gray-700" />
           </button>
         )}
@@ -1081,15 +1091,28 @@ class RenderErrorBoundary extends React.Component<
     return { error };
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("[RenderErrorBoundary] Caught error:", error, info.componentStack);
+    console.error(
+      "[RenderErrorBoundary] Caught error:",
+      error,
+      info.componentStack,
+    );
   }
   render() {
     if (this.state.error) {
       return (
         <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8">
-          <h2 className="text-lg font-semibold text-gray-900">Something went wrong</h2>
-          <p className="text-sm text-red-600 font-mono max-w-lg text-center">{this.state.error.message}</p>
-          <button onClick={() => window.location.reload()} className="text-blue-600 hover:text-blue-800">Reload page</button>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Something went wrong
+          </h2>
+          <p className="text-sm text-red-600 font-mono max-w-lg text-center">
+            {this.state.error.message}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-blue-600 hover:text-blue-800"
+          >
+            Reload page
+          </button>
         </div>
       );
     }
@@ -1099,7 +1122,13 @@ class RenderErrorBoundary extends React.Component<
 
 // Bridge component: Computes segments from EditorProvider's blocks and provides to TTSProvider
 // Must be inside EditorProvider, wraps children with TTSProvider
-function TTSProviderWithBlocks({ children, languageCode = "en" }: { children: React.ReactNode; languageCode?: string }) {
+function TTSProviderWithBlocks({
+  children,
+  languageCode = "en",
+}: {
+  children: React.ReactNode;
+  languageCode?: string;
+}) {
   const { blocks } = useEditor();
 
   const segments = useMemo(() => {
@@ -1110,11 +1139,15 @@ function TTSProviderWithBlocks({ children, languageCode = "en" }: { children: Re
   // Extract unique reader IDs and assign default voices
   const initialVoiceMap = useMemo(() => {
     const readerIds = [...new Set(segments.map((s) => s.reader_id))];
-    return assignDefaultVoices(readerIds);
-  }, [segments]);
+    return assignDefaultVoices(readerIds, languageCode);
+  }, [segments, languageCode]);
 
   return (
-    <TTSProvider segments={segments} languageCode={languageCode} initialVoiceMap={initialVoiceMap}>
+    <TTSProvider
+      segments={segments}
+      languageCode={languageCode}
+      initialVoiceMap={initialVoiceMap}
+    >
       {children}
     </TTSProvider>
   );
@@ -1145,7 +1178,8 @@ function DocumentTextView() {
   const [isStarred, setIsStarred] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showBackConfirmation, setShowBackConfirmation] = useState(false);
-  const [deleteVersionConfirmOpen, setDeleteVersionConfirmOpen] = useState(false);
+  const [deleteVersionConfirmOpen, setDeleteVersionConfirmOpen] =
+    useState(false);
   const [renameVersionOpen, setRenameVersionOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const router = useRouter();
@@ -1167,13 +1201,15 @@ function DocumentTextView() {
   useEffect(() => {
     if (!document) return;
     const completed = processingVersions.filter(
-      (v) => v.documentId === document.id && v.status === "completed"
+      (v) => v.documentId === document.id && v.status === "completed",
     );
     const newlyCompleted = completed.filter(
-      (v) => !completedVersionIds.current.has(v.versionId)
+      (v) => !completedVersionIds.current.has(v.versionId),
     );
     if (newlyCompleted.length > 0) {
-      newlyCompleted.forEach((v) => completedVersionIds.current.add(v.versionId));
+      newlyCompleted.forEach((v) =>
+        completedVersionIds.current.add(v.versionId),
+      );
       refreshVersions();
     }
   }, [processingVersions, document, refreshVersions]);
@@ -1181,10 +1217,12 @@ function DocumentTextView() {
   // Sort versions by creation date (newest first)
   const sortedVersions = useMemo(() => {
     if (!document?.versions) return [];
-    return [...document.versions].sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return [...document.versions]
+      .filter((v) => v.status === "completed")
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
   }, [document?.versions]);
 
   // Get the active version ID from URL or default to first version
@@ -1198,7 +1236,7 @@ function DocumentTextView() {
 
   // Get the active version from sorted versions
   const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
-  const hasReachedVersionLimit = sortedVersions.length >= 6;
+  const hasReachedVersionLimit = sortedVersions.length >= MAX_VERSIONS_PER_DOCUMENT;
 
   // Get blocks from active version, or convert from processed_text
   // These are the initial blocks - EditorProvider will manage the live state
@@ -1221,7 +1259,7 @@ function DocumentTextView() {
         router.push(url);
       }
     },
-    [document, searchParams, router]
+    [document, searchParams, router],
   );
 
   // Auto-update URL with version parameter if not present
@@ -1232,7 +1270,12 @@ function DocumentTextView() {
     const firstVersionId = sortedVersions[0]?.id;
 
     // If no version in URL but we have versions, add the first version to URL
-    if (!versionFromUrl && firstVersionId && sortedVersions.length > 0 && !hasRedirected.current) {
+    if (
+      !versionFromUrl &&
+      firstVersionId &&
+      sortedVersions.length > 0 &&
+      !hasRedirected.current
+    ) {
       hasRedirected.current = true;
       updateVersionInUrl(firstVersionId, true); // Use replace for automatic redirect
     }
@@ -1243,7 +1286,7 @@ function DocumentTextView() {
     (versionId: string) => {
       updateVersionInUrl(versionId);
     },
-    [updateVersionInUrl]
+    [updateVersionInUrl],
   );
 
   // Handle version deletion
@@ -1262,14 +1305,17 @@ function DocumentTextView() {
         updateVersionInUrl(remaining[0].id, true);
       }
     },
-    [refreshVersions, sortedVersions, updateVersionInUrl]
+    [refreshVersions, sortedVersions, updateVersionInUrl],
   );
 
   // Handle version rename
   const handleRenameVersion = useCallback(
     async (newName: string) => {
       if (!newName.trim()) return;
-      const { error } = await updateDocumentVersionNameAction(activeVersionId, newName.trim());
+      const { error } = await updateDocumentVersionNameAction(
+        activeVersionId,
+        newName.trim(),
+      );
       if (error) {
         console.error("Failed to rename version:", error);
         return;
@@ -1277,7 +1323,7 @@ function DocumentTextView() {
       await refreshVersions();
       setRenameVersionOpen(false);
     },
-    [activeVersionId, refreshVersions]
+    [activeVersionId, refreshVersions],
   );
 
   // Update last_opened timestamp when document is loaded
@@ -1360,194 +1406,222 @@ function DocumentTextView() {
 
   return (
     <RenderErrorBoundary>
-    <Dialog
-      open={isCreateVersionModalOpen}
-      onOpenChange={setCreateVersionModalOpen}
-    >
-      <EditorProvider
-        documentVersionId={activeVersionId}
-        initialBlocks={initialBlocks}
-        initialVersionName={activeVersion?.version_name || ""}
-        autoSave={!isEditMode}
+      <Dialog
+        open={isCreateVersionModalOpen}
+        onOpenChange={setCreateVersionModalOpen}
       >
-        <TTSProviderWithBlocks languageCode={document.language || "en"}>
-          {/* Controller to stop playback when entering edit mode */}
-          <EditModePlaybackController isEditMode={isEditMode} />
+        <EditorProvider
+          documentVersionId={activeVersionId}
+          initialBlocks={initialBlocks}
+          initialVersionName={activeVersion?.version_name || ""}
+          autoSave={!isEditMode}
+        >
+          <TTSProviderWithBlocks languageCode={activeVersion?.language || document.language || "en"}>
+            {/* Controller to stop playback when entering edit mode */}
+            <EditModePlaybackController isEditMode={isEditMode} />
 
-          <div className="bg-sidebar">
-            {/* Breadcrumb Header - sticky at top */}
-            <div className="sticky top-0 z-20">
-              <div className="pl-2 pr-4 h-12 flex items-center bg-sidebar">
-                {/* Left section */}
-                <div className="flex items-center gap-1 flex-1">
-                  {/* Back to Library Button */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      if (isEditMode) {
-                        setShowBackConfirmation(true);
-                      } else {
-                        router.push("/library");
+            <div className="bg-sidebar">
+              {/* Breadcrumb Header - sticky at top */}
+              <div className="sticky top-0 z-20">
+                <div className="pl-2 pr-4 h-12 flex items-center bg-sidebar">
+                  {/* Left section */}
+                  <div className="flex items-center gap-1 flex-1">
+                    {/* Back to Library Button */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        if (isEditMode) {
+                          setShowBackConfirmation(true);
+                        } else {
+                          router.push("/library");
+                        }
+                      }}
+                      className="h-8 w-8 hover:bg-gray-200"
+                      title="Back to library"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {/* Vertical Separator */}
+                    <Separator orientation="vertical" className="h-5 mx-1" />
+
+                    {/* Document Title */}
+                    <span
+                      className="text-sm font-medium truncate max-w-[300px]"
+                      title={document.title}
+                    >
+                      {document.title}
+                    </span>
+                    {/* Info icon - triggers document info popover */}
+                    <VersionSelectorPopover
+                      document={document}
+                      versions={sortedVersions}
+                      activeVersionId={activeVersionId}
+                      activeVersionName={activeVersion?.version_name || ""}
+                      onVersionChange={handleVersionChange}
+                      onCreateNew={() => {
+                        setCreateVersionKey((k) => k + 1);
+                        setCreateVersionModalOpen(true);
+                      }}
+                      hideVersionTabs
+                      trigger={
+                        <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
                       }
-                    }}
-                    className="h-8 w-8 hover:bg-gray-200"
-                    title="Back to library"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
+                    />
 
-                  {/* Vertical Separator */}
-                  <Separator orientation="vertical" className="h-5 mx-1" />
+                    {/* Save Indicator */}
+                    <SaveIndicator />
+                  </div>
 
-                  {/* Document Title */}
-                  <span className="text-sm font-medium truncate max-w-[300px]" title={document.title}>
-                    {document.title}
-                  </span>
-                  {/* Info icon - triggers document info popover */}
-                  <VersionSelectorPopover
-                    document={document}
-                    versions={sortedVersions}
-                    activeVersionId={activeVersionId}
-                    activeVersionName={activeVersion?.version_name || ""}
-                    onVersionChange={handleVersionChange}
-                    onCreateNew={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
-                    hideVersionTabs
-                    trigger={
-                      <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
-                    }
-                  />
-
-                  {/* Save Indicator */}
-                  <SaveIndicator />
-                </div>
-
-                {/* Center section - Edit Button + Version Selector */}
-                <div className="flex-shrink-0 flex items-center gap-1">
-                  {isEditMode ? (
-                    /* Edit mode: Show version name */
-                    <span className="text-sm text-gray-700">{activeVersion?.version_name}</span>
-                  ) : (
-                    /* Read mode: Version dropdown */
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors">
-                          <span className="text-sm text-gray-700 truncate max-w-[150px]">
-                            {activeVersion?.version_name || ""}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDurationFromChars(
-                              activeVersion?.blocks?.reduce(
-                                (acc, block) => acc + (block.disabled ? 0 : block.content.length),
-                                0
-                              ) || 0
-                            )}
-                          </span>
-                          <ChevronDown className="h-4 w-4 text-gray-700" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="center" className="max-h-72 overflow-y-auto">
-                        {sortedVersions.map((version) => {
-                          const charCount =
-                            version.blocks?.reduce(
-                              (acc, block) =>
-                                acc + (block.disabled ? 0 : block.content.length),
-                              0
-                            ) || 0;
-                          const duration = formatDurationFromChars(charCount);
-                          return (
-                            <DropdownMenuItem
-                              key={version.id}
-                              onClick={() => handleVersionChange(version.id)}
-                              className={cn(
-                                "flex items-center justify-between gap-4",
-                                version.id === activeVersionId && "bg-accent"
+                  {/* Center section - Edit Button + Version Selector */}
+                  <div className="flex-shrink-0 flex items-center gap-1">
+                    {isEditMode ? (
+                      /* Edit mode: Show version name */
+                      <span className="text-sm text-gray-700">
+                        {activeVersion?.version_name}
+                      </span>
+                    ) : (
+                      /* Read mode: Version dropdown */
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors">
+                            <span className="text-sm text-gray-700 truncate max-w-[150px]">
+                              {activeVersion?.version_name || ""}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDurationFromChars(
+                                activeVersion?.blocks?.reduce(
+                                  (acc, block) =>
+                                    acc +
+                                    (block.disabled ? 0 : block.content.length),
+                                  0,
+                                ) || 0,
                               )}
-                            >
-                              <span className="text-sm truncate max-w-[150px]">{version.version_name}</span>
-                              <span className="text-xs text-muted-foreground">{duration}</span>
-                            </DropdownMenuItem>
-                          );
-                        })}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
-                          disabled={hasReachedVersionLimit}
+                            </span>
+                            <ChevronDown className="h-4 w-4 text-gray-700" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="center"
+                          className="max-h-72 overflow-y-auto"
                         >
-                          <Plus className="h-4 w-4 mr-2" />
-                          {hasReachedVersionLimit ? "Version limit reached" : "New version"}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                          {sortedVersions.map((version) => {
+                            const charCount =
+                              version.blocks?.reduce(
+                                (acc, block) =>
+                                  acc +
+                                  (block.disabled ? 0 : block.content.length),
+                                0,
+                              ) || 0;
+                            const duration = formatDurationFromChars(charCount);
+                            return (
+                              <DropdownMenuItem
+                                key={version.id}
+                                onClick={() => handleVersionChange(version.id)}
+                                className={cn(
+                                  "flex items-center justify-between gap-4",
+                                  version.id === activeVersionId && "bg-accent",
+                                )}
+                              >
+                                <span className="text-sm truncate max-w-[150px]">
+                                  {version.version_name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {duration}
+                                </span>
+                              </DropdownMenuItem>
+                            );
+                          })}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setCreateVersionKey((k) => k + 1);
+                              setCreateVersionModalOpen(true);
+                            }}
+                            disabled={hasReachedVersionLimit}
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            {hasReachedVersionLimit
+                              ? "Version limit reached"
+                              : "New version"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+
+                  {/* Right section */}
+                  <div className="flex items-center gap-3 flex-1 justify-end">
+                    {/* Edit mode: Save/Discard buttons */}
+                    {isEditMode && (
+                      <EditModeButtons setIsEditMode={setIsEditMode} />
+                    )}
+
+                    {/* Read mode: EcoBadge */}
+                    {!isEditMode && <EcoBadge />}
+
+                    {/* Credits display */}
+                    <CreditDisplay />
+
+                    {/* User menu */}
+                    <HeaderUserMenu />
+                  </div>
                 </div>
-
-                {/* Right section */}
-                <div className="flex items-center gap-3 flex-1 justify-end">
-                  {/* Edit mode: Save/Discard buttons */}
-                  {isEditMode && (
-                    <EditModeButtons setIsEditMode={setIsEditMode} />
-                  )}
-
-                  {/* Read mode: EcoBadge */}
-                  {!isEditMode && <EcoBadge />}
-
-                  {/* Credits display */}
-                  <CreditDisplay />
-
-                  {/* User menu */}
-                  <HeaderUserMenu />
-                </div>
+                {/* Gradient fade */}
+                <div className="h-4 bg-gradient-to-b from-sidebar to-transparent" />
               </div>
-              {/* Gradient fade */}
-              <div className="h-4 bg-gradient-to-b from-sidebar to-transparent" />
+
+              {/* Block Editor */}
+              <BlockEditor
+                isEditMode={isEditMode}
+                isConversation={activeVersion?.processing_type === "3"}
+              />
             </div>
 
-            {/* Block Editor */}
-            <BlockEditor
-              isEditMode={isEditMode}
-              isConversation={activeVersion?.processing_type === "3"}
-            />
-          </div>
-
-          {/* Fixed left side menu - vertically centered */}
-          <div className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-3">
-            <TooltipProvider delayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    onClick={() => { setCreateVersionKey(k => k + 1); setCreateVersionModalOpen(true); }}
-                    disabled={hasReachedVersionLimit}
-                    className="h-9 w-9 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-transform hover:scale-110 disabled:opacity-50 disabled:hover:scale-100"
-                  >
-                    <Plus className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  {hasReachedVersionLimit ? "Version limit reached (6 max)" : "New version"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <div className="flex flex-col bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-            <OutlineButton
-              className="rounded-none border-0 shadow-none h-9 w-9 hover:bg-gray-100"
-              popoverSide="right"
-              popoverAlign="center"
-            />
-            <Separator />
-            <EditToggleButton
-              isEditMode={isEditMode}
-              setIsEditMode={setIsEditMode}
-              onRequestExit={() => setShowBackConfirmation(true)}
-              className="rounded-none h-9 w-9 hover:bg-gray-100"
-            />
-            <Separator />
-            <div className="flex items-center justify-center h-9 w-9">
-              <DownloadButton />
-            </div>
-            <Separator />
-            <DropdownMenu>
+            {/* Fixed left side menu - vertically centered */}
+            <div className="fixed left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-3">
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      onClick={() => {
+                        setCreateVersionKey((k) => k + 1);
+                        setCreateVersionModalOpen(true);
+                      }}
+                      disabled={hasReachedVersionLimit}
+                      className="h-9 w-9 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-transform hover:scale-110 disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {hasReachedVersionLimit
+                      ? `Version limit reached (${MAX_VERSIONS_PER_DOCUMENT} max)`
+                      : "New version"}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <div className="flex flex-col bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                <OutlineButton
+                  className="rounded-none border-0 shadow-none h-9 w-9 hover:bg-gray-100"
+                  popoverSide="right"
+                  popoverAlign="center"
+                />
+                <Separator />
+                <EditToggleButton
+                  isEditMode={isEditMode}
+                  setIsEditMode={setIsEditMode}
+                  onRequestExit={() => setShowBackConfirmation(true)}
+                  className="rounded-none h-9 w-9 hover:bg-gray-100"
+                />
+                <Separator />
+                <div className="flex items-center justify-center h-9 w-9">
+                  <DownloadButton />
+                </div>
+                <Separator />
+                <DropdownMenu>
                   <TooltipProvider delayDuration={0}>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1564,7 +1638,11 @@ function DocumentTextView() {
                       <TooltipContent side="right">More</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  <DropdownMenuContent align="start" side="right">
+                  <DropdownMenuContent
+                    align="start"
+                    side="right"
+                    className="max-w-[300px]"
+                  >
                     <DropdownMenuItem
                       onClick={() => {
                         setRenameValue(activeVersion?.version_name || "");
@@ -1579,98 +1657,106 @@ function DocumentTextView() {
                         onClick={() => setDeleteVersionConfirmOpen(true)}
                         className="text-red-600 focus:text-red-600"
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete {activeVersion?.version_name}
+                        <Trash2 className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">
+                          Delete {activeVersion?.version_name}
+                        </span>
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+              </div>
             </div>
-          </div>
 
-          {/* TTS Player - slides out in edit mode */}
-          <div
-            className={cn(
-              "fixed left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ease-in-out",
-              isEditMode
-                ? "bottom-0 translate-y-full opacity-0"
-                : "bottom-6 translate-y-0 opacity-100"
-            )}
-          >
-            <div className="bg-white border border-gray-200 shadow-lg rounded-2xl px-3 py-3">
-              <TTSPlayer />
+            {/* TTS Player - slides out in edit mode */}
+            <div
+              className={cn(
+                "fixed left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ease-in-out",
+                isEditMode
+                  ? "bottom-0 translate-y-full opacity-0"
+                  : "bottom-6 translate-y-0 opacity-100",
+              )}
+            >
+              <div className="bg-white border border-gray-200 shadow-lg rounded-2xl px-3 py-3">
+                <TTSPlayer />
+              </div>
             </div>
-          </div>
-        </TTSProviderWithBlocks>
+          </TTSProviderWithBlocks>
 
-        {/* Exit edit mode confirmation dialog - must be inside EditorProvider */}
-        <ExitEditModeDialog
-          open={showBackConfirmation}
-          onOpenChange={setShowBackConfirmation}
-          setIsEditMode={setIsEditMode}
-        />
-      </EditorProvider>
-
-      <AlertDialog open={renameVersionOpen} onOpenChange={setRenameVersionOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Rename version</AlertDialogTitle>
-            <AlertDialogDescription>
-              Enter a new name for this version.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <input
-            type="text"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRenameVersion(renameValue);
-            }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            autoFocus
+          {/* Exit edit mode confirmation dialog - must be inside EditorProvider */}
+          <ExitEditModeDialog
+            open={showBackConfirmation}
+            onOpenChange={setShowBackConfirmation}
+            setIsEditMode={setIsEditMode}
           />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleRenameVersion(renameValue)}
-              disabled={!renameValue.trim()}
-            >
-              Save
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </EditorProvider>
 
-      <AlertDialog open={deleteVersionConfirmOpen} onOpenChange={setDeleteVersionConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete version</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this version?
-              <br />
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleDeleteVersion(activeVersionId)}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog
+          open={renameVersionOpen}
+          onOpenChange={setRenameVersionOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Rename version</AlertDialogTitle>
+              <AlertDialogDescription>
+                Enter a new name for this version.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRenameVersion(renameValue);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              autoFocus
+            />
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => handleRenameVersion(renameValue)}
+                disabled={!renameValue.trim()}
+              >
+                Save
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-      <CreateVersionDialog
-        key={createVersionKey}
-        document={document}
-        existingVersions={document.versions}
-        onClose={handleCloseCreateVersionModal}
-      />
-      <DialogTrigger className="hidden" />
-    </Dialog>
+        <AlertDialog
+          open={deleteVersionConfirmOpen}
+          onOpenChange={setDeleteVersionConfirmOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete version</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this version?
+                <br />
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => handleDeleteVersion(activeVersionId)}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <CreateVersionDialog
+          key={createVersionKey}
+          document={document}
+          existingVersions={document.versions}
+          onClose={handleCloseCreateVersionModal}
+        />
+        <DialogTrigger className="hidden" />
+      </Dialog>
     </RenderErrorBoundary>
   );
 }

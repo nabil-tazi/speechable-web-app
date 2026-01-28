@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/app/lib/supabase/server";
 import { createAdminClient } from "@/app/lib/supabase/admin";
-import { checkCredits, deductCredits, refundCredits } from "@/app/features/credits/service";
-import { PROCESSING_ARRAY } from "@/app/features/pdf/types";
+import {
+  checkCredits,
+  deductCredits,
+  refundCredits,
+} from "@/app/features/credits/service";
+import {
+  PROCESSING_ARRAY,
+  LECTURE_DURATIONS,
+  MAX_VERSIONS_PER_DOCUMENT,
+  type LectureDuration,
+} from "@/app/features/pdf/types";
 import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 import { convertProcessedTextToBlocks } from "@/app/features/block-editor";
-import type { ProcessedText, ProcessedSection, Block } from "@/app/features/documents/types";
+import type {
+  ProcessedText,
+  ProcessedSection,
+  Block,
+} from "@/app/features/documents/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Credit rate for text processing
@@ -16,6 +29,8 @@ interface GenerateVersionRequest {
   processingLevel: 0 | 1 | 2 | 3;
   existingVersionCount: number;
   targetLanguage?: string;
+  lectureDuration?: LectureDuration;
+  versionName?: string;
 }
 
 // Helper to create ProcessedSection from text
@@ -29,9 +44,10 @@ function createSectionFromText(text: string, title: string): ProcessedSection {
   return {
     title,
     content: {
-      speech: paragraphs.length > 0
-        ? paragraphs.map((p) => ({ text: p, reader_id: "Narrator" }))
-        : [{ text, reader_id: "Narrator" }],
+      speech:
+        paragraphs.length > 0
+          ? paragraphs.map((p) => ({ text: p, reader_id: "Narrator" }))
+          : [{ text, reader_id: "Narrator" }],
     },
   };
 }
@@ -39,7 +55,7 @@ function createSectionFromText(text: string, title: string): ProcessedSection {
 // Helper to create ProcessedSection from dialogue
 function createSectionFromDialogue(
   dialogue: { text: string; reader_id: string }[],
-  title: string
+  title: string,
 ): ProcessedSection {
   return {
     title,
@@ -86,18 +102,24 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json(
       { error: "Authentication required" },
-      { status: 401 }
+      { status: 401 },
     );
   }
 
-  const { documentId, processingLevel, existingVersionCount, targetLanguage }: GenerateVersionRequest =
-    await req.json();
+  const {
+    documentId,
+    processingLevel,
+    existingVersionCount,
+    targetLanguage,
+    lectureDuration,
+    versionName: customVersionName,
+  }: GenerateVersionRequest = await req.json();
 
   // Validate processing level
   if (![0, 1, 2, 3].includes(processingLevel)) {
     return NextResponse.json(
       { error: "Invalid processing level" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -112,27 +134,27 @@ export async function POST(req: NextRequest) {
   if (docError || !document) {
     return NextResponse.json(
       { error: "Document not found or access denied" },
-      { status: 404 }
+      { status: 404 },
     );
   }
 
   if (!document.processed_text) {
     return NextResponse.json(
       { error: "Document has no processed text" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  // Check version limit (max 6 per document)
+  // Check version limit (max 15 per document)
   const { count: versionCount } = await supabase
     .from("document_versions")
     .select("id", { count: "exact", head: true })
     .eq("document_id", documentId);
 
-  if (versionCount !== null && versionCount >= 6) {
+  if (versionCount !== null && versionCount >= MAX_VERSIONS_PER_DOCUMENT) {
     return NextResponse.json(
-      { error: "Maximum of 6 versions per document reached" },
-      { status: 400 }
+      { error: `Maximum of ${MAX_VERSIONS_PER_DOCUMENT} versions per document reached` },
+      { status: 400 },
     );
   }
 
@@ -147,13 +169,16 @@ export async function POST(req: NextRequest) {
   // Check credits (AI processing levels 1-3, or Original with translation)
   let newCreditBalance: number | null = null;
   if (processingLevel > 0 || needsTranslation) {
-    const creditsNeeded = rawInputText.length / CHARACTERS_PER_CREDIT;
+    const durationMultiplier = processingLevel === 2
+      ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
+      : 1;
+    const creditsNeeded = (rawInputText.length / CHARACTERS_PER_CREDIT) * durationMultiplier;
     const creditInfo = await checkCredits(user.id);
 
     if (!creditInfo) {
       return NextResponse.json(
         { error: "Failed to check credits" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -164,7 +189,7 @@ export async function POST(req: NextRequest) {
           creditsNeeded,
           creditsAvailable: creditInfo.credits,
         },
-        { status: 402 }
+        { status: 402 },
       );
     }
 
@@ -173,18 +198,23 @@ export async function POST(req: NextRequest) {
     if (!deductionResult?.success) {
       return NextResponse.json(
         { error: "Failed to deduct credits" },
-        { status: 500 }
+        { status: 500 },
       );
     }
     newCreditBalance = deductionResult.newBalance;
   }
 
   // Generate version name
-  const langSuffix = needsTranslation ? ` (${getLanguageConfig(resolvedTargetLanguage).name})` : "";
-  const versionName =
-    PROCESSING_ARRAY[processingLevel].name +
-    (existingVersionCount > 0 ? " " + (existingVersionCount + 1) : "") +
-    langSuffix;
+  const versionName = customVersionName
+    ? customVersionName
+    : (() => {
+        const langSuffix = needsTranslation
+          ? ` (${getLanguageConfig(resolvedTargetLanguage).name})`
+          : "";
+        return PROCESSING_ARRAY[processingLevel].name +
+          (existingVersionCount > 0 ? " " + (existingVersionCount + 1) : "") +
+          langSuffix;
+      })();
 
   // Create pending version
   const { data: pendingVersion, error: versionError } = await supabase
@@ -192,6 +222,7 @@ export async function POST(req: NextRequest) {
     .insert({
       document_id: documentId,
       version_name: versionName,
+      language: resolvedTargetLanguage,
       processing_type: processingLevel.toString(),
       status: "pending",
       streaming_text: "",
@@ -203,7 +234,7 @@ export async function POST(req: NextRequest) {
   if (versionError || !pendingVersion) {
     return NextResponse.json(
       { error: "Failed to create version" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -216,7 +247,13 @@ export async function POST(req: NextRequest) {
 
   // Start background processing (non-blocking)
   // Use admin client for background processing since the request context will be closed
-  const creditsToRefund = (processingLevel > 0 || needsTranslation) ? rawInputText.length / CHARACTERS_PER_CREDIT : 0;
+  const refundMultiplier = processingLevel === 2
+    ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
+    : 1;
+  const creditsToRefund =
+    processingLevel > 0 || needsTranslation
+      ? (rawInputText.length / CHARACTERS_PER_CREDIT) * refundMultiplier
+      : 0;
   processVersionInBackground(
     user.id,
     pendingVersion.id,
@@ -226,7 +263,8 @@ export async function POST(req: NextRequest) {
     document.title || "Document",
     creditsToRefund,
     resolvedTargetLanguage,
-    documentLanguage
+    documentLanguage,
+    lectureDuration || "medium",
   );
 
   return response;
@@ -242,13 +280,16 @@ async function processVersionInBackground(
   documentTitle: string,
   creditsToRefund: number,
   targetLanguage: string,
-  documentLanguage: string
+  documentLanguage: string,
+  lectureDuration: LectureDuration = "medium",
 ) {
   // Create admin client for background processing (bypasses RLS, works after response is sent)
   const adminClient = createAdminClient();
 
   try {
-    console.log(`[generate-version] Starting background processing for version ${versionId}`);
+    console.log(
+      `[generate-version] Starting background processing for version ${versionId}`,
+    );
 
     // Update status to processing
     const { error: updateError } = await adminClient
@@ -260,7 +301,10 @@ async function processVersionInBackground(
       console.error(`[generate-version] Failed to update status:`, updateError);
     }
 
-    let processedResult: { cleanedText: ProcessedText; metadata: Record<string, any> };
+    let processedResult: {
+      cleanedText: ProcessedText;
+      metadata: Record<string, any>;
+    };
 
     const needsTranslation = targetLanguage !== documentLanguage;
 
@@ -271,7 +315,7 @@ async function processVersionInBackground(
           adminClient,
           versionId,
           processedText,
-          targetLanguage
+          targetLanguage,
         );
       } else {
         // Level 0: Original - use existing processed_text as-is
@@ -296,7 +340,7 @@ async function processVersionInBackground(
         versionId,
         rawInputText,
         documentTitle,
-        targetLanguage
+        targetLanguage,
       );
     } else if (processingLevel === 2) {
       // Level 2: Lecture - full document streaming
@@ -305,7 +349,8 @@ async function processVersionInBackground(
         versionId,
         rawInputText,
         documentTitle,
-        targetLanguage
+        targetLanguage,
+        lectureDuration,
       );
     } else if (processingLevel === 3) {
       // Level 3: Conversational - no text streaming (JSON output)
@@ -314,7 +359,7 @@ async function processVersionInBackground(
         versionId,
         rawInputText,
         documentTitle,
-        targetLanguage
+        targetLanguage,
       );
     } else {
       throw new Error(`Invalid processing level: ${processingLevel}`);
@@ -336,21 +381,25 @@ async function processVersionInBackground(
       })
       .eq("id", versionId);
 
-    console.log(`[generate-version] Version ${versionId} completed successfully`);
+    console.log(
+      `[generate-version] Version ${versionId} completed successfully`,
+    );
   } catch (error) {
-    console.error(`[generate-version] Error processing version ${versionId}:`, error);
+    console.error(
+      `[generate-version] Error processing version ${versionId}:`,
+      error,
+    );
 
     // Refund credits on failure
     if (creditsToRefund > 0) {
-      console.log(`[generate-version] Refunding ${creditsToRefund} credits to user ${userId}`);
+      console.log(
+        `[generate-version] Refunding ${creditsToRefund} credits to user ${userId}`,
+      );
       await refundCredits(userId, creditsToRefund);
     }
 
     // Delete the failed version
-    await adminClient
-      .from("document_versions")
-      .delete()
-      .eq("id", versionId);
+    await adminClient.from("document_versions").delete().eq("id", versionId);
   }
 }
 
@@ -359,7 +408,7 @@ async function processTranslation(
   supabase: SupabaseClient,
   versionId: string,
   processedText: ProcessedText,
-  targetLanguage: string
+  targetLanguage: string,
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -405,7 +454,7 @@ async function processTranslation(
             max_tokens: Math.max(2048, Math.round(speech.text.length * 1.5)),
             repetition_penalty: 1.3,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -413,7 +462,8 @@ async function processTranslation(
       }
 
       const data = await response.json();
-      let translated = data.choices?.[0]?.message?.content?.trim() || speech.text;
+      let translated =
+        data.choices?.[0]?.message?.content?.trim() || speech.text;
 
       // Clean up quotes
       if (
@@ -423,7 +473,10 @@ async function processTranslation(
         translated = translated.slice(1, -1);
       }
 
-      translatedSpeech.push({ text: decodeHtmlEntities(translated), reader_id: speech.reader_id });
+      translatedSpeech.push({
+        text: decodeHtmlEntities(translated),
+        reader_id: speech.reader_id,
+      });
     }
 
     // Translate section title if present
@@ -452,12 +505,14 @@ async function processTranslation(
             max_tokens: 256,
             repetition_penalty: 1.3,
           }),
-        }
+        },
       );
 
       if (titleResponse.ok) {
         const titleData = await titleResponse.json();
-        translatedTitle = decodeHtmlEntities(titleData.choices?.[0]?.message?.content?.trim() || section.title);
+        translatedTitle = decodeHtmlEntities(
+          titleData.choices?.[0]?.message?.content?.trim() || section.title,
+        );
       }
     }
 
@@ -484,7 +539,7 @@ async function processNaturalWithStreaming(
   versionId: string,
   rawInputText: string,
   documentTitle: string,
-  targetLanguage: string
+  targetLanguage: string,
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   // First, identify sections
   const sectionResponse = await fetch(
@@ -493,7 +548,7 @@ async function processNaturalWithStreaming(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: rawInputText }),
-    }
+    },
   );
 
   if (!sectionResponse.ok) {
@@ -533,14 +588,17 @@ async function processNaturalWithStreaming(
       content,
       title,
       accumulatedText,
-      targetLanguage
+      targetLanguage,
     );
 
     const section = createSectionFromText(sectionText, title);
     processedSections.push(section);
 
     // Update accumulated text
-    accumulatedText += (accumulatedText ? "\n\n" : "") + (title ? `## ${title}\n\n` : "") + sectionText;
+    accumulatedText +=
+      (accumulatedText ? "\n\n" : "") +
+      (title ? `## ${title}\n\n` : "") +
+      sectionText;
 
     // Update with completed section
     await supabase
@@ -562,7 +620,7 @@ async function streamNaturalSection(
   content: string,
   title: string,
   previousText: string,
-  targetLanguage: string
+  targetLanguage: string,
 ): Promise<string> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -612,7 +670,7 @@ ${content}`;
         max_tokens: Math.max(2048, Math.round(content.length * 1.2)),
         repetition_penalty: 1.3,
       }),
-    }
+    },
   );
 
   if (!response.ok) {
@@ -653,7 +711,9 @@ ${content}`;
               const last500 = result.slice(-500);
               const preceding = result.slice(0, -500);
               if (preceding.includes(last500)) {
-                console.warn("[processNaturalSection] Repetition loop detected, truncating output");
+                console.warn(
+                  "[processNaturalSection] Repetition loop detected, truncating output",
+                );
                 result = preceding;
                 reader.cancel();
                 break;
@@ -662,8 +722,11 @@ ${content}`;
 
             // Update streaming text every 10 chunks
             if (updateCounter % 10 === 0) {
-              const displayText = previousText + (previousText ? "\n\n" : "") +
-                (title ? `## ${title}\n\n` : "") + result;
+              const displayText =
+                previousText +
+                (previousText ? "\n\n" : "") +
+                (title ? `## ${title}\n\n` : "") +
+                result;
               await supabase
                 .from("document_versions")
                 .update({ streaming_text: displayText })
@@ -688,51 +751,231 @@ ${content}`;
   return decodeHtmlEntities(result.trim());
 }
 
-// Lecture processing with streaming
+// Lecture processing with two-step approach: plan topics, then generate full lecture
 async function processLectureWithStreaming(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
   documentTitle: string,
-  targetLanguage: string
+  targetLanguage: string,
+  duration: LectureDuration = "medium",
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
     throw new Error("DeepInfra API key not configured");
   }
 
+  const durationConfig =
+    LECTURE_DURATIONS.find((d) => d.value === duration) || LECTURE_DURATIONS[1];
+  const numTopics = durationConfig.topics;
+  const charsPerSection = durationConfig.charsPerSection;
+  const langName = getLanguageConfig(targetLanguage).name;
+
+  // Localized section labels
+  const INTRO_LABELS: Record<string, string> = {
+    en: "Introduction", es: "Introducción", fr: "Introduction",
+    it: "Introduzione", pt: "Introdução", ja: "はじめに",
+    zh: "引言", hi: "परिचय",
+  };
+  const CONCLUSION_LABELS: Record<string, string> = {
+    en: "Conclusion", es: "Conclusión", fr: "Conclusion",
+    it: "Conclusione", pt: "Conclusão", ja: "まとめ",
+    zh: "结论", hi: "निष्कर्ष",
+  };
+  const introLabel = INTRO_LABELS[targetLanguage] || "Introduction";
+  const conclusionLabel = CONCLUSION_LABELS[targetLanguage] || "Conclusion";
+
+  // Step 1: Topic Planning (non-streaming)
   await supabase
     .from("document_versions")
-    .update({ processing_progress: 10 })
+    .update({
+      processing_progress: 5,
+      streaming_text: "Planning lecture topics...",
+    })
     .eq("id", versionId);
 
-  const systemPrompt = `You are an educational content transformer that restructures text into lecture format.`;
-  const userPrompt = `Transform the following text into an educational lecture format optimized for learning and memorization.
+  const planResponse = await fetch(
+    "https://api.deepinfra.com/v1/openai/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        reasoning_effort: "medium",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You extract key topics from text. Always respond with a JSON array of strings.",
+          },
+          {
+            role: "user",
+            content: `Read the following text and list exactly ${numTopics} key topics as a JSON array of strings. Each topic should be a short phrase (3-8 words) written in ${langName}. Return ONLY the JSON array, nothing else.\n\n${rawInputText}`,
+          },
+        ],
+        max_tokens: 2048,
+        repetition_penalty: 1.3,
+      }),
+    },
+  );
 
-${documentTitle ? `TOPIC: "${documentTitle}"` : ""}
+  if (!planResponse.ok) {
+    throw new Error(
+      `DeepInfra API error during planning: ${planResponse.status}`,
+    );
+  }
 
-Guidelines:
-- Restructure content for educational delivery
-- Emphasize key concepts and main ideas
-- Add natural transitions between topics
-- Pace information for better comprehension and retention
-- Use clear, explanatory language
-- Highlight important terms and definitions
-- Create logical flow from introduction to conclusion
-- Remove content that doesn't contribute to learning
-- Output the text in ${getLanguageConfig(targetLanguage).name}
+  const planData = await planResponse.json();
+  const planContent = planData.choices?.[0]?.message?.content?.trim() || "";
 
-CRITICAL - Output format:
-- Return ONLY the lecture text, nothing else
-- Do NOT include any explanations, notes, or commentary
-- Do NOT use any markdown formatting (no **bold**, *italics*, headers, bullet points, numbered lists, etc.)
-- Do NOT wrap the text in quotes or any other delimiters
-- Do NOT add any prefixes like "Here is...", "Lecture:", etc.
-- Output ONLY the lecture-formatted version of the text
+  let topics: string[] = [];
+  try {
+    const jsonMatch = planContent.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("No JSON array found");
+    topics = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(topics) || topics.length === 0) throw new Error("Empty or invalid array");
+  } catch (e) {
+    console.warn(`[processLecture] JSON parse failed (${(e as Error).message}), trying line fallback`);
+    // Fallback: split by newlines, strip numbering/bullets/quotes
+    topics = planContent
+      .split(/\n/)
+      .map((line: string) => line.replace(/^[\d\-\.\*\)]+\s*/, "").replace(/^["']|["']$/g, "").trim())
+      .filter((line: string) => line.length > 2 && line.length < 100)
+      .slice(0, numTopics);
+  }
 
-Text to transform:
+  if (topics.length === 0) {
+    topics = ["Main Content"];
+  }
+
+  console.log(
+    `[processLecture] Planned ${topics.length} topics for version ${versionId}:`,
+    topics,
+  );
+
+  await supabase
+    .from("document_versions")
+    .update({ processing_progress: 20 })
+    .eq("id", versionId);
+
+  // Step 2: Generate lecture content
+  let processedSections: ProcessedSection[] = [];
+  let totalPromptTokens = planData.usage?.prompt_tokens || 0;
+  let totalCompletionTokens = planData.usage?.completion_tokens || 0;
+
+  const baseSystemPrompt = `You are giving a TED talk based on source material. Speak directly to the audience. Use "you", ask rhetorical questions. Be vivid, engaging, with a touch of humor. No markdown formatting (no bold, italics, bullets, headers). Output in ${langName}.
+
+CRITICAL: You must ONLY use facts, examples, names, dates, and claims that appear in the source material. Do NOT invent, fabricate, or embellish any information. Rephrasing for clarity and engagement is encouraged, but every factual claim must be traceable to the source text. If the source does not cover something, do not fill the gap with invented content.
+
+Do NOT include academic citations (e.g. "Author 2023", "Smith et al.") in the output. This is a talk, not a paper. You may mention names naturally (e.g. "as the historian noted") but never use parenthetical references.${targetLanguage === "ja" ? "\n\nIMPORTANT: You are writing in Japanese. Use only Japanese characters (hiragana, katakana, kanji). Do NOT use simplified Chinese characters or Chinese vocabulary in place of Japanese equivalents." : ""}`;
+
+  const sectionNames = [introLabel, ...topics, conclusionLabel];
+    const singlePrompt = `Give a TED talk based on the source material below.
+
+Your output MUST use this exact format — start each section with a marker line, then the content:
+
+${sectionNames.map((s) => `===SECTION: ${s}===\n[content for "${s}" here]`).join("\n\n")}
+
+Rules:
+- Every section MUST start with ===SECTION: Title=== on its own line
+- Do NOT use any other formatting (no markdown, no JSON, no headers)
+- Each section should be approximately ${charsPerSection} characters long. Stay focused and concise.
+
+Source material:
 ${rawInputText}`;
 
+    const expectedTotalChars = sectionNames.length * charsPerSection;
+    const maxRetries = parseInt(process.env.MAX_LLM_RETRIES || "2", 10);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(
+        `[processLecture] Generating full lecture (single call, attempt ${attempt}/${maxRetries}) for version ${versionId}`,
+      );
+
+      const result = await streamLectureSection(
+        supabase,
+        versionId,
+        apiKey,
+        baseSystemPrompt,
+        singlePrompt,
+        "",
+        rawInputText.length,
+        20,
+        1,
+        0,
+        expectedTotalChars,
+        durationConfig.maxTokens,
+      );
+      totalPromptTokens += result.promptTokens;
+      totalCompletionTokens += result.completionTokens;
+
+      // Split on ===SECTION: Title=== markers
+      processedSections = [];
+      const sectionRegex = /===SECTION:\s*(.+?)\s*===/g;
+      const parts = result.text.split(sectionRegex);
+      // parts: [preamble, title1, content1, title2, content2, ...]
+      let sectionIndex = 0;
+      for (let i = 1; i < parts.length; i += 2) {
+        const content = (parts[i + 1] || "").trim();
+        if (content) {
+          const rawTitle = sectionNames[sectionIndex] || parts[i].trim();
+          const title = rawTitle.charAt(0).toUpperCase() + rawTitle.slice(1);
+          processedSections.push(createSectionFromText(content, title));
+          sectionIndex++;
+        }
+      }
+
+      if (processedSections.length >= sectionNames.length) {
+        break; // All sections produced
+      }
+
+      console.warn(
+        `[processLecture] Attempt ${attempt}: got ${processedSections.length}/${sectionNames.length} sections`,
+      );
+
+      if (attempt === maxRetries) {
+        if (processedSections.length === 0) {
+          console.error(`[processLecture] No sections found. Raw output (first 500 chars):`, result.text.slice(0, 500));
+          throw new Error("Lecture generation failed: no sections detected in output");
+        }
+        console.warn(`[processLecture] Proceeding with ${processedSections.length} sections after ${maxRetries} attempts`);
+      }
+    }
+
+    console.log(
+      `[processLecture] Version ${versionId} complete (single call) — ${processedSections.length} sections — Total tokens: ${totalPromptTokens} in / ${totalCompletionTokens} out (${totalPromptTokens + totalCompletionTokens} total)`,
+    );
+
+    return {
+      cleanedText: { processed_text: { sections: processedSections } },
+      metadata: {
+        processingLevel: 2,
+        processingMethod: "deepinfra-lecture-single-call",
+        duration,
+        plannedTopics: topics,
+        actualSections: processedSections.length,
+      },
+    };
+}
+
+// Stream a single lecture section (intro or topic)
+async function streamLectureSection(
+  supabase: SupabaseClient,
+  versionId: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  previousText: string,
+  sourceLength: number,
+  progressBase: number,
+  totalCalls: number,
+  callIndex: number,
+  expectedChars?: number,
+  maxTokensOverride?: number,
+): Promise<{ text: string; promptTokens: number; completionTokens: number }> {
   const response = await fetch(
     "https://api.deepinfra.com/v1/openai/chat/completions",
     {
@@ -742,16 +985,17 @@ ${rawInputText}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "meta-llama/Llama-3.2-3B-Instruct",
+        model: "openai/gpt-oss-120b",
+        reasoning_effort: "medium",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
         stream: true,
-        max_tokens: Math.max(2048, Math.round(rawInputText.length * 1.2)),
+        max_tokens: maxTokensOverride || Math.max(1024, Math.round(sourceLength / totalCalls)),
         repetition_penalty: 1.3,
       }),
-    }
+    },
   );
 
   if (!response.ok) {
@@ -766,8 +1010,9 @@ ${rawInputText}`;
   const decoder = new TextDecoder();
   let result = "";
   let updateCounter = 0;
-  const expectedLength = rawInputText.length * 0.8; // Estimate output length
   let repetitionDetected = false;
+  let promptTokens = 0;
+  let completionTokens = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -783,18 +1028,23 @@ ${rawInputText}`;
 
         try {
           const parsed = JSON.parse(data);
+          if (parsed.usage) {
+            promptTokens = parsed.usage.prompt_tokens || 0;
+            completionTokens = parsed.usage.completion_tokens || 0;
+          }
           const content = parsed.choices?.[0]?.delta?.content;
           if (content) {
             result += content;
             updateCounter++;
 
             // Detect repetition loops every 100 chunks
-            if (updateCounter % 100 === 0 && result.length > 1000) {
-              const tail = result.slice(-500);
-              const preceding = result.slice(0, -500);
+            if (updateCounter % 100 === 0 && result.length > 500) {
+              const tail = result.slice(-300);
+              const preceding = result.slice(0, -300);
               if (preceding.includes(tail)) {
-                console.warn(`[processLecture] Repetition loop detected for version ${versionId}, truncating output`);
-                // Trim to the first occurrence of the repeated block
+                console.warn(
+                  `[processLecture] Repetition detected in section ${callIndex}, truncating`,
+                );
                 const firstIdx = preceding.indexOf(tail);
                 result = result.slice(0, firstIdx + tail.length);
                 repetitionDetected = true;
@@ -802,16 +1052,20 @@ ${rawInputText}`;
               }
             }
 
-            // Update streaming text and progress every 10 chunks
+            // Update streaming text every 10 chunks
             if (updateCounter % 10 === 0) {
+              const displayText =
+                previousText + (previousText ? "\n\n" : "") + result;
               const progress = Math.min(
                 90,
-                Math.round(10 + (result.length / expectedLength) * 80)
+                expectedChars
+                  ? progressBase + Math.round(70 * (result.length / expectedChars))
+                  : progressBase + Math.round((1 / totalCalls) * 70 * (updateCounter / 200)),
               );
               await supabase
                 .from("document_versions")
                 .update({
-                  streaming_text: result,
+                  streaming_text: displayText,
                   processing_progress: progress,
                 })
                 .eq("id", versionId);
@@ -829,7 +1083,7 @@ ${rawInputText}`;
     }
   }
 
-  // Clean up result
+  // Clean up
   if (
     (result.startsWith('"') && result.endsWith('"')) ||
     (result.startsWith("'") && result.endsWith("'"))
@@ -837,12 +1091,19 @@ ${rawInputText}`;
     result = result.slice(1, -1);
   }
 
-  const section = createSectionFromText(decodeHtmlEntities(result.trim()), "");
+  const cleaned = decodeHtmlEntities(result.trim());
+  console.log(
+    `[processLecture] Section ${callIndex} generated: ${cleaned.length} chars (${promptTokens} in / ${completionTokens} out)`,
+  );
 
-  return {
-    cleanedText: { processed_text: { sections: [section] } },
-    metadata: { processingLevel: 2, processingMethod: "deepinfra-lecture-streaming" },
-  };
+  // Final streaming update for this section
+  const finalDisplay = previousText + (previousText ? "\n\n" : "") + cleaned;
+  await supabase
+    .from("document_versions")
+    .update({ streaming_text: finalDisplay })
+    .eq("id", versionId);
+
+  return { text: cleaned, promptTokens, completionTokens };
 }
 
 // Conversational processing (no streaming - JSON output)
@@ -851,7 +1112,7 @@ async function processConversational(
   versionId: string,
   rawInputText: string,
   documentTitle: string,
-  targetLanguage: string
+  targetLanguage: string,
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
@@ -925,12 +1186,16 @@ ${rawInputText}`;
         max_tokens: Math.max(2048, Math.round(rawInputText.length * 1.2)),
         repetition_penalty: 1.3,
       }),
-    }
+    },
   );
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("[processConversational] DeepInfra API error:", response.status, errorText);
+    console.error(
+      "[processConversational] DeepInfra API error:",
+      response.status,
+      errorText,
+    );
     throw new Error(`DeepInfra API error: ${response.status}`);
   }
 
@@ -960,12 +1225,15 @@ ${rawInputText}`;
         (_match: string, textContent: string) => {
           const escaped = textContent.replace(/(?<!\\)"/g, '\\"');
           return `"text": "${escaped}", "reader_id"`;
-        }
+        },
       );
       const parsed = JSON.parse(fixed);
       dialogue = parsed.dialogue;
     } catch (e2) {
-      console.error("[processConversational] JSON parse failed. Raw content:", content);
+      console.error(
+        "[processConversational] JSON parse failed. Raw content:",
+        content,
+      );
       throw new Error("Could not parse dialogue JSON from response");
     }
   }
