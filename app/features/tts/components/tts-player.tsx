@@ -377,11 +377,13 @@ export function TTSPlayer() {
     }
   }, [isEnglish, voiceQuality, setVoiceQuality]);
 
-  // Get unique reader IDs from sentences
+  // Get unique reader IDs from sentences (excluding "skip" which has no voice)
   const uniqueReaderIds = useMemo(() => {
     const readerIds = new Set<string>();
     for (const sentence of sentences) {
-      readerIds.add(sentence.reader_id);
+      if (sentence.reader_id !== "skip") {
+        readerIds.add(sentence.reader_id);
+      }
     }
     return Array.from(readerIds);
   }, [sentences]);

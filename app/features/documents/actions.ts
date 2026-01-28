@@ -785,6 +785,7 @@ export async function createPendingVersionAction(versionData: {
         status: "pending",
         streaming_text: "",
         processing_progress: 0,
+        is_new: true,
       })
       .select()
       .single();
@@ -908,6 +909,59 @@ export async function finalizeVersionAction(
     return { data: data as DocumentVersion, error: null };
   } catch (error) {
     return { data: null, error: "Failed to finalize version" };
+  }
+}
+
+// Server Action: Mark version as seen (is_new = false)
+export async function markVersionAsSeenAction(
+  versionId: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return { success: false, error: "User not authenticated" };
+    }
+
+    // Verify ownership through document
+    const { data: version } = await supabase
+      .from("document_versions")
+      .select(
+        `
+        id,
+        is_new,
+        document:documents!inner(user_id)
+      `
+      )
+      .eq("id", versionId)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const doc = version?.document as any;
+    if (!version || !doc || doc.user_id !== user.id) {
+      return { success: false, error: "Version not found or access denied" };
+    }
+
+    // Only update if currently is_new
+    if (version.is_new) {
+      const { error } = await supabase
+        .from("document_versions")
+        .update({ is_new: false })
+        .eq("id", versionId);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    return { success: false, error: "Failed to mark version as seen" };
   }
 }
 

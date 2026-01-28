@@ -9,8 +9,10 @@ import {
 import {
   PROCESSING_ARRAY,
   LECTURE_DURATIONS,
+  CONVERSATIONAL_DURATIONS,
   MAX_VERSIONS_PER_DOCUMENT,
   type LectureDuration,
+  type ConversationalDuration,
 } from "@/app/features/pdf/types";
 import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 import { convertProcessedTextToBlocks } from "@/app/features/block-editor";
@@ -30,6 +32,7 @@ interface GenerateVersionRequest {
   existingVersionCount: number;
   targetLanguage?: string;
   lectureDuration?: LectureDuration;
+  conversationalDuration?: ConversationalDuration;
   versionName?: string;
 }
 
@@ -112,6 +115,7 @@ export async function POST(req: NextRequest) {
     existingVersionCount,
     targetLanguage,
     lectureDuration,
+    conversationalDuration,
     versionName: customVersionName,
   }: GenerateVersionRequest = await req.json();
 
@@ -171,7 +175,9 @@ export async function POST(req: NextRequest) {
   if (processingLevel > 0 || needsTranslation) {
     const durationMultiplier = processingLevel === 2
       ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
-      : 1;
+      : processingLevel === 3
+        ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === (conversationalDuration || "medium"))?.creditMultiplier ?? 1)
+        : 1;
     const creditsNeeded = (rawInputText.length / CHARACTERS_PER_CREDIT) * durationMultiplier;
     const creditInfo = await checkCredits(user.id);
 
@@ -249,7 +255,9 @@ export async function POST(req: NextRequest) {
   // Use admin client for background processing since the request context will be closed
   const refundMultiplier = processingLevel === 2
     ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
-    : 1;
+    : processingLevel === 3
+      ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === (conversationalDuration || "medium"))?.creditMultiplier ?? 1)
+      : 1;
   const creditsToRefund =
     processingLevel > 0 || needsTranslation
       ? (rawInputText.length / CHARACTERS_PER_CREDIT) * refundMultiplier
@@ -265,6 +273,7 @@ export async function POST(req: NextRequest) {
     resolvedTargetLanguage,
     documentLanguage,
     lectureDuration || "medium",
+    conversationalDuration || "medium",
   );
 
   return response;
@@ -282,6 +291,7 @@ async function processVersionInBackground(
   targetLanguage: string,
   documentLanguage: string,
   lectureDuration: LectureDuration = "medium",
+  conversationalDuration: ConversationalDuration = "medium",
 ) {
   // Create admin client for background processing (bypasses RLS, works after response is sent)
   const adminClient = createAdminClient();
@@ -353,21 +363,24 @@ async function processVersionInBackground(
         lectureDuration,
       );
     } else if (processingLevel === 3) {
-      // Level 3: Conversational - no text streaming (JSON output)
+      // Level 3: Conversational - two-step approach like Lecture
       processedResult = await processConversational(
         adminClient,
         versionId,
         rawInputText,
         documentTitle,
         targetLanguage,
+        conversationalDuration,
       );
     } else {
       throw new Error(`Invalid processing level: ${processingLevel}`);
     }
 
     // Convert to blocks
+    // For Lecture (2) and Conversational (3), skip TTS for headings
     const processedTextJson = JSON.stringify(processedResult.cleanedText);
-    const blocks = convertProcessedTextToBlocks(processedTextJson);
+    const headingReaderId = processingLevel === 2 || processingLevel === 3 ? "skip" : undefined;
+    const blocks = convertProcessedTextToBlocks(processedTextJson, { headingReaderId });
 
     // Finalize version
     await adminClient
@@ -1106,70 +1119,50 @@ async function streamLectureSection(
   return { text: cleaned, promptTokens, completionTokens };
 }
 
-// Conversational processing (no streaming - JSON output)
+// Conversational processing with two-step approach (like Lecture)
 async function processConversational(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
   documentTitle: string,
   targetLanguage: string,
+  duration: ConversationalDuration = "medium",
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
   const apiKey = process.env.DEEPINFRA_API_KEY;
   if (!apiKey) {
     throw new Error("DeepInfra API key not configured");
   }
 
+  const durationConfig =
+    CONVERSATIONAL_DURATIONS.find((d) => d.value === duration) || CONVERSATIONAL_DURATIONS[1];
+  const numTopics = durationConfig.topics;
+  const charsPerSection = durationConfig.charsPerSection;
+  const langName = getLanguageConfig(targetLanguage).name;
+
+  // Localized section labels (reuse from Lecture)
+  const INTRO_LABELS: Record<string, string> = {
+    en: "Introduction", es: "Introducción", fr: "Introduction",
+    it: "Introduzione", pt: "Introdução", ja: "はじめに",
+    zh: "引言", hi: "परिचय",
+  };
+  const CONCLUSION_LABELS: Record<string, string> = {
+    en: "Conclusion", es: "Conclusión", fr: "Conclusion",
+    it: "Conclusione", pt: "Conclusão", ja: "まとめ",
+    zh: "结论", hi: "निष्कर्ष",
+  };
+  const introLabel = INTRO_LABELS[targetLanguage] || "Introduction";
+  const conclusionLabel = CONCLUSION_LABELS[targetLanguage] || "Conclusion";
+
+  // Step 1: Topic Planning (non-streaming)
   await supabase
     .from("document_versions")
     .update({
-      processing_progress: 20,
-      streaming_text: "Generating dialogue...",
+      processing_progress: 5,
+      streaming_text: "Planning conversation topics...",
     })
     .eq("id", versionId);
 
-  const systemPrompt = `You are a conversational content transformer. Create engaging dialogues between exactly 2 speakers with strict alternation. Always respond with valid JSON.`;
-
-  const userPrompt = `Transform this text into a natural conversation format suitable for text-to-speech.
-
-${documentTitle ? `TOPIC: "${documentTitle}"` : ""}
-
-Create an engaging dialogue between EXACTLY 2 speakers that makes the content accessible and interesting to listen to:
-
-SPEAKER ROLES:
-- The questioner introduces the conversation, asks thoughtful questions, and guides the discussion. Helps the expert cover important issues, methods, problems, findings, and results by asking strategic questions. Keeps responses brief and focused on facilitating the expert's explanations. (reader_id: "questioner")
-
-- The expert provides extensive, detailed answers to the questioner's inquiries. Can give longer, comprehensive responses that thoroughly explain concepts, data, methods, and findings. Should cover all the substantive content from the original text. (reader_id: "expert")
-
-CONVERSATION FLOW:
-- MUST alternate between questioner and expert - no consecutive speeches from the same speaker
-- Questioner asks questions or makes brief comments to guide the conversation
-- Expert provides detailed, informative responses
-- Expert can have longer speeches (multiple sentences/paragraphs) while questioner keeps contributions shorter
-- Ensure natural back-and-forth rhythm throughout
-
-Guidelines:
-- Use natural, conversational language with appropriate transitions
-- Ensure STRICT alternation between speakers (questioner -> expert -> questioner -> expert)
-- Include ALL content from the original text through the expert's responses
-- Do not omit any important information, concepts, data, examples, or specific details
-- Questioner should ask about key topics, methods, problems, findings, and results
-- Expert should provide comprehensive explanations covering all source material
-- The entire dialogue must be in ${getLanguageConfig(targetLanguage).name}
-
-CRITICAL - Output format:
-Return ONLY a JSON object in this exact format, nothing else:
-{
-  "dialogue": [
-    {"text": "Speaker's dialogue here", "reader_id": "questioner"},
-    {"text": "Speaker's response here", "reader_id": "expert"},
-    ...
-  ]
-}
-
-Text to transform:
-${rawInputText}`;
-
-  const response = await fetch(
+  const planResponse = await fetch(
     "https://api.deepinfra.com/v1/openai/chat/completions",
     {
       method: "POST",
@@ -1178,91 +1171,212 @@ ${rawInputText}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "meta-llama/Llama-3.2-3B-Instruct",
+        model: "openai/gpt-oss-120b",
+        reasoning_effort: "medium",
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
+          {
+            role: "system",
+            content:
+              "You extract key discussion topics from text. Always respond with a JSON array of strings.",
+          },
+          {
+            role: "user",
+            content: `Read the following text and list exactly ${numTopics} key discussion topics as a JSON array of strings. Each topic should be a question or theme that two people would naturally discuss (3-8 words) written in ${langName}. Return ONLY the JSON array, nothing else.\n\n${rawInputText}`,
+          },
         ],
-        max_tokens: Math.max(2048, Math.round(rawInputText.length * 1.2)),
+        max_tokens: 2048,
         repetition_penalty: 1.3,
       }),
     },
   );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(
-      "[processConversational] DeepInfra API error:",
-      response.status,
-      errorText,
+  if (!planResponse.ok) {
+    throw new Error(
+      `DeepInfra API error during planning: ${planResponse.status}`,
     );
-    throw new Error(`DeepInfra API error: ${response.status}`);
   }
+
+  const planData = await planResponse.json();
+  const planContent = planData.choices?.[0]?.message?.content?.trim() || "";
+
+  let topics: string[] = [];
+  try {
+    const jsonMatch = planContent.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("No JSON array found");
+    topics = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(topics) || topics.length === 0) throw new Error("Empty or invalid array");
+  } catch (e) {
+    console.warn(`[processConversational] JSON parse failed (${(e as Error).message}), trying line fallback`);
+    topics = planContent
+      .split(/\n/)
+      .map((line: string) => line.replace(/^[\d\-\.\*\)]+\s*/, "").replace(/^["']|["']$/g, "").trim())
+      .filter((line: string) => line.length > 2 && line.length < 100)
+      .slice(0, numTopics);
+  }
+
+  if (topics.length === 0) {
+    topics = ["Main Discussion"];
+  }
+
+  console.log(
+    `[processConversational] Planned ${topics.length} topics for version ${versionId}:`,
+    topics,
+  );
 
   await supabase
     .from("document_versions")
-    .update({ processing_progress: 80 })
+    .update({ processing_progress: 20 })
     .eq("id", versionId);
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content?.trim();
+  // Step 2: Conversation Generation (single streaming call)
+  let processedSections: ProcessedSection[] = [];
+  let totalPromptTokens = planData.usage?.prompt_tokens || 0;
+  let totalCompletionTokens = planData.usage?.completion_tokens || 0;
 
-  if (!content) {
-    throw new Error("No content in response");
-  }
+  const baseSystemPrompt = `You are writing a natural conversation between a Questioner (Q) and an Expert (E) discussing the following source material. The conversation should feel like a podcast interview — curious, engaging, and accessible.
 
-  // Parse JSON response
-  let dialogue;
-  const jsonStr = content.match(/\{[\s\S]*\}/)?.[0] || content;
-  try {
-    const parsed = JSON.parse(jsonStr);
-    dialogue = parsed.dialogue;
-  } catch {
-    // Attempt to fix common LLM JSON issues: unescaped quotes in values
-    try {
-      const fixed = jsonStr.replace(
-        /"text"\s*:\s*"([\s\S]*?)"\s*,\s*"reader_id"/g,
-        (_match: string, textContent: string) => {
-          const escaped = textContent.replace(/(?<!\\)"/g, '\\"');
-          return `"text": "${escaped}", "reader_id"`;
-        },
-      );
-      const parsed = JSON.parse(fixed);
-      dialogue = parsed.dialogue;
-    } catch (e2) {
-      console.error(
-        "[processConversational] JSON parse failed. Raw content:",
-        content,
-      );
-      throw new Error("Could not parse dialogue JSON from response");
+Output in ${langName}.
+
+CRITICAL: Only use facts from the source material. Do NOT invent information. Do NOT include academic citations.${targetLanguage === "ja" ? "\n\nIMPORTANT: You are writing in Japanese. Use only Japanese characters (hiragana, katakana, kanji). Do NOT use simplified Chinese characters or Chinese vocabulary in place of Japanese equivalents." : ""}`;
+
+  const sectionNames = [introLabel, ...topics, conclusionLabel];
+  const singlePrompt = `Write a conversation between Q (Questioner) and E (Expert) covering these topics:
+
+${sectionNames.map((s) => `===SECTION: ${s}===\n[conversation about "${s}" using Q: and E: line prefixes]`).join("\n\n")}
+
+Rules:
+- Every section MUST start with ===SECTION: Title=== on its own line
+- Within each section, every line of dialogue MUST start with Q: or E:
+- Q asks curious, probing questions. E gives clear, engaging answers.
+- Each section ~${charsPerSection} characters. Stay focused and concise.
+- No markdown formatting.
+
+Source material:
+${rawInputText}`;
+
+  const expectedTotalChars = sectionNames.length * charsPerSection;
+  const maxRetries = parseInt(process.env.MAX_LLM_RETRIES || "2", 10);
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    console.log(
+      `[processConversational] Generating full conversation (single call, attempt ${attempt}/${maxRetries}) for version ${versionId}`,
+    );
+
+    const result = await streamLectureSection(
+      supabase,
+      versionId,
+      apiKey,
+      baseSystemPrompt,
+      singlePrompt,
+      "",
+      rawInputText.length,
+      20,
+      1,
+      0,
+      expectedTotalChars,
+      durationConfig.maxTokens,
+    );
+    totalPromptTokens += result.promptTokens;
+    totalCompletionTokens += result.completionTokens;
+
+    // Split on ===SECTION: Title=== markers
+    processedSections = [];
+    const sectionRegex = /===SECTION:\s*(.+?)\s*===/g;
+    const parts = result.text.split(sectionRegex);
+    // parts: [preamble, title1, content1, title2, content2, ...]
+    let sectionIndex = 0;
+    for (let i = 1; i < parts.length; i += 2) {
+      const content = (parts[i + 1] || "").trim();
+      if (content) {
+        const rawTitle = sectionNames[sectionIndex] || parts[i].trim();
+        const title = rawTitle.charAt(0).toUpperCase() + rawTitle.slice(1);
+        // Parse Q:/E: prefixes into dialogue blocks
+        const section = createConversationalSection(content, title);
+        processedSections.push(section);
+        sectionIndex++;
+      }
+    }
+
+    if (processedSections.length >= sectionNames.length) {
+      break; // All sections produced
+    }
+
+    console.warn(
+      `[processConversational] Attempt ${attempt}: got ${processedSections.length}/${sectionNames.length} sections`,
+    );
+
+    if (attempt === maxRetries) {
+      if (processedSections.length === 0) {
+        console.error(`[processConversational] No sections found. Raw output (first 500 chars):`, result.text.slice(0, 500));
+        throw new Error("Conversation generation failed: no sections detected in output");
+      }
+      console.warn(`[processConversational] Proceeding with ${processedSections.length} sections after ${maxRetries} attempts`);
     }
   }
 
-  if (!Array.isArray(dialogue) || dialogue.length === 0) {
-    throw new Error("Invalid dialogue format in response");
-  }
-
-  // Normalize reader_ids and decode HTML entities
-  for (const item of dialogue) {
-    if (!item.text || !item.reader_id) {
-      throw new Error("Invalid dialogue item structure");
-    }
-    item.text = decodeHtmlEntities(item.text);
-    if (item.reader_id !== "questioner" && item.reader_id !== "expert") {
-      item.reader_id = item.reader_id.toLowerCase().includes("question")
-        ? "questioner"
-        : "expert";
-    }
-  }
-
-  const section = createSectionFromDialogue(dialogue, "");
+  console.log(
+    `[processConversational] Version ${versionId} complete (single call) — ${processedSections.length} sections — Total tokens: ${totalPromptTokens} in / ${totalCompletionTokens} out (${totalPromptTokens + totalCompletionTokens} total)`,
+  );
 
   return {
-    cleanedText: { processed_text: { sections: [section] } },
+    cleanedText: { processed_text: { sections: processedSections } },
     metadata: {
       processingLevel: 3,
-      processingMethod: "deepinfra-conversational",
-      dialogueCount: dialogue.length,
+      processingMethod: "deepinfra-conversational-two-step",
+      duration,
+      plannedTopics: topics,
+      actualSections: processedSections.length,
+    },
+  };
+}
+
+// Helper to create ProcessedSection from Q:/E: dialogue text
+function createConversationalSection(text: string, title: string): ProcessedSection {
+  const lines = text.split(/\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  const dialogue: { text: string; reader_id: string }[] = [];
+  let currentSpeaker: string | null = null;
+  let currentText = "";
+
+  for (const line of lines) {
+    const qMatch = line.match(/^Q:\s*(.*)$/i);
+    const eMatch = line.match(/^E:\s*(.*)$/i);
+
+    if (qMatch) {
+      // Flush previous speaker
+      if (currentSpeaker && currentText.trim()) {
+        dialogue.push({ text: decodeHtmlEntities(currentText.trim()), reader_id: currentSpeaker });
+      }
+      currentSpeaker = "questioner";
+      currentText = qMatch[1];
+    } else if (eMatch) {
+      // Flush previous speaker
+      if (currentSpeaker && currentText.trim()) {
+        dialogue.push({ text: decodeHtmlEntities(currentText.trim()), reader_id: currentSpeaker });
+      }
+      currentSpeaker = "expert";
+      currentText = eMatch[1];
+    } else {
+      // Continuation of previous speaker
+      if (currentSpeaker) {
+        currentText += " " + line;
+      }
+    }
+  }
+
+  // Flush last speaker
+  if (currentSpeaker && currentText.trim()) {
+    dialogue.push({ text: decodeHtmlEntities(currentText.trim()), reader_id: currentSpeaker });
+  }
+
+  // Fallback if no dialogue parsed
+  if (dialogue.length === 0) {
+    dialogue.push({ text: decodeHtmlEntities(text), reader_id: "expert" });
+  }
+
+  return {
+    title,
+    content: {
+      speech: dialogue,
     },
   };
 }

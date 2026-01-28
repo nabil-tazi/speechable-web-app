@@ -82,6 +82,8 @@ export class GenerationQueue {
     this.queue = [];
 
     const addToQueue = (sentence: Sentence): boolean => {
+      // Skip sentences with reader_id "skip" - they don't need TTS
+      if (sentence.reader_id === "skip") return false;
       if (this.generatedSet.has(sentence.globalIndex)) return false;
       // Skip if already in queue
       if (this.queue.some((item) => item.globalIndex === sentence.globalIndex))
@@ -132,6 +134,9 @@ export class GenerationQueue {
 
     for (let i = afterIndex + 1; i < sentences.length && added < count; i++) {
       const sentence = sentences[i];
+
+      // Skip sentences with reader_id "skip" - they don't need TTS
+      if (sentence.reader_id === "skip") continue;
 
       // Skip if already generated
       if (this.generatedSet.has(sentence.globalIndex)) continue;
@@ -240,10 +245,13 @@ export class GenerationQueue {
 
   /**
    * Find the first ungenerated sentence at or after the given index.
+   * Skips sentences with reader_id "skip" since they don't need TTS.
    * Returns the index, or -1 if all are generated from that point.
    */
   findFirstUngenerated(sentences: Sentence[], fromIndex: number): number {
     for (let i = fromIndex; i < sentences.length; i++) {
+      // Skip sentences with reader_id "skip" - they don't need TTS
+      if (sentences[i].reader_id === "skip") continue;
       if (!this.generatedSet.has(sentences[i].globalIndex)) {
         return i;
       }

@@ -61,6 +61,7 @@ export interface DocumentVersion {
   streaming_text?: string;
   processing_progress?: number;
   error_message?: string;
+  is_new?: boolean; // True for newly created versions, false once opened
 }
 
 export interface UserStorageUsage {

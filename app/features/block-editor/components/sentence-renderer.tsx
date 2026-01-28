@@ -41,32 +41,39 @@ export function SentenceRenderer({
       );
     }
 
-    // Check various states for this sentence
-    const isCurrentSentence = sentence.globalIndex === currentPlayingIndex;
-    const isPlaying = isPlaybackOn && isCurrentSentence;
-    const isBuffering = status === "buffering" && isCurrentSentence;
-    const isGeneratingThis = isCurrentSentence && isGenerating(sentence.id);
-    const isWaiting = isBuffering || isGeneratingThis;
+    // Sentences with reader_id "skip" are rendered as plain text (no TTS, no click, no hover)
+    if (sentence.reader_id === "skip") {
+      elements.push(
+        <span key={sentence.id}>{sentence.text}</span>
+      );
+    } else {
+      // Check various states for this sentence
+      const isCurrentSentence = sentence.globalIndex === currentPlayingIndex;
+      const isPlaying = isPlaybackOn && isCurrentSentence;
+      const isBuffering = status === "buffering" && isCurrentSentence;
+      const isGeneratingThis = isCurrentSentence && isGenerating(sentence.id);
+      const isWaiting = isBuffering || isGeneratingThis;
 
-    elements.push(
-      <span
-        key={sentence.id}
-        className={cn(
-          "cursor-pointer transition-colors rounded px-1 -mx-1 py-0.25 -my-0.25",
-          isWaiting
-            ? "bg-gray-300 text-gray-900 animate-pulse"
-            : isPlaying
-            ? "bg-gray-300 text-gray-900"
-            : "hover:bg-gray-200"
-        )}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSentenceClick(sentence.globalIndex);
-        }}
-      >
-        {sentence.text}
-      </span>
-    );
+      elements.push(
+        <span
+          key={sentence.id}
+          className={cn(
+            "cursor-pointer transition-colors rounded px-1 -mx-1 py-0.25 -my-0.25",
+            isWaiting
+              ? "bg-gray-300 text-gray-900 animate-pulse"
+              : isPlaying
+              ? "bg-gray-300 text-gray-900"
+              : "hover:bg-gray-200"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSentenceClick(sentence.globalIndex);
+          }}
+        >
+          {sentence.text}
+        </span>
+      );
+    }
 
     lastEnd = startIndex + sentence.text.length;
   }

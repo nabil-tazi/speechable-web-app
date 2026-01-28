@@ -536,13 +536,13 @@ export function BlockComponent({
     <div
       ref={blockContainerRef}
       data-block-id={block.id}
-      className="group relative flex items-start gap-2 py-1 px-2 rounded-lg"
+      className={cn("group relative flex gap-2 py-1 px-2 rounded-lg", isConversation ? "items-baseline" : "items-start")}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Reader selector - positioned outside the block for conversation mode */}
+      {/* Reader selector - in flex flow for baseline alignment */}
       {isConversation && (
-        <div className="absolute -left-0.5 top-1 z-10">
+        <div className="flex-shrink-0 -translate-y-[2px]">
           <ReaderSelector
             readerId={block.reader_id}
             onChange={handleReaderChange}
@@ -553,7 +553,7 @@ export function BlockComponent({
       )}
 
       {/* Block content */}
-      <div ref={containerRef} className="flex-1 min-w-0 relative px-8">
+      <div ref={containerRef} className={cn("flex-1 min-w-0 relative", isConversation ? "pr-8" : "px-8")}>
         {/* No changes notification */}
         {noChangesMessage && (
           <div

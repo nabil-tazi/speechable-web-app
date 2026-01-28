@@ -19,12 +19,19 @@ export function assignDefaultVoices(
   const voiceMap: Record<string, string> = {};
   const langConfig = getLanguageConfig(languageCode);
 
-  if (readerIds.length === 1) {
+  // Filter out "skip" reader IDs - they don't need voice assignment
+  const playableReaderIds = readerIds.filter((id) => id !== "skip");
+
+  if (playableReaderIds.length === 0) {
+    return voiceMap;
+  }
+
+  if (playableReaderIds.length === 1) {
     // Single reader: use language-specific default
-    voiceMap[readerIds[0]] = langConfig.singleReaderVoice;
+    voiceMap[playableReaderIds[0]] = langConfig.singleReaderVoice;
   } else {
     // Multiple readers: cycle through language-specific voices
-    readerIds.forEach((readerId, index) => {
+    playableReaderIds.forEach((readerId, index) => {
       voiceMap[readerId] = langConfig.multiReaderVoices[index % langConfig.multiReaderVoices.length];
     });
   }

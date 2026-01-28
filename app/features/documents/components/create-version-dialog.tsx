@@ -21,9 +21,11 @@ import {
 import {
   PROCESSING_ARRAY,
   LECTURE_DURATIONS,
+  CONVERSATIONAL_DURATIONS,
   MAX_VERSIONS_PER_DOCUMENT,
   type ProcessingType,
   type LectureDuration,
+  type ConversationalDuration,
 } from "../../pdf/types";
 import {
   FileText,
@@ -75,6 +77,8 @@ export function CreateVersionDialog({
   );
   const [lectureDuration, setLectureDuration] =
     useState<LectureDuration>("medium");
+  const [conversationalDuration, setConversationalDuration] =
+    useState<ConversationalDuration>("medium");
   const [versionName, setVersionName] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +98,11 @@ export function CreateVersionDialog({
     (d) => sourceCharCount >= d.minSourceChars,
   );
 
+  // Check if any conversational duration is available
+  const isConversationalAvailable = CONVERSATIONAL_DURATIONS.some(
+    (d) => sourceCharCount >= d.minSourceChars,
+  );
+
   // Auto-select highest available duration if current selection is disabled
   React.useEffect(() => {
     if (selectedProcessing !== 2) return;
@@ -104,6 +113,17 @@ export function CreateVersionDialog({
       .find((d) => sourceCharCount >= d.minSourceChars);
     if (available) setLectureDuration(available.value);
   }, [selectedProcessing, sourceCharCount, lectureDuration]);
+
+  // Auto-select highest available conversational duration if current selection is disabled
+  React.useEffect(() => {
+    if (selectedProcessing !== 3) return;
+    const currentConfig = CONVERSATIONAL_DURATIONS.find((d) => d.value === conversationalDuration);
+    if (currentConfig && sourceCharCount >= currentConfig.minSourceChars) return;
+    const available = [...CONVERSATIONAL_DURATIONS]
+      .reverse()
+      .find((d) => sourceCharCount >= d.minSourceChars);
+    if (available) setConversationalDuration(available.value);
+  }, [selectedProcessing, sourceCharCount, conversationalDuration]);
 
   // Calculate estimated credits based on document text length, processing type, and duration
   const estimatedCredits = useMemo(() => {
@@ -118,13 +138,17 @@ export function CreateVersionDialog({
       selectedProcessing === 2
         ? (LECTURE_DURATIONS.find((d) => d.value === lectureDuration)
             ?.creditMultiplier ?? 1)
-        : 1;
+        : selectedProcessing === 3
+          ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === conversationalDuration)
+              ?.creditMultiplier ?? 1)
+          : 1;
     return Math.ceil(baseCredits * multiplier * 10) / 10;
   }, [
     document.processed_text,
     document.language,
     selectedProcessing,
     lectureDuration,
+    conversationalDuration,
     targetLanguage,
   ]);
 
@@ -188,6 +212,7 @@ export function CreateVersionDialog({
           existingVersionCount: existingCount + pendingCount,
           targetLanguage,
           lectureDuration,
+          conversationalDuration,
           versionName: versionName.trim() || undefined,
         }),
       });
@@ -268,7 +293,7 @@ export function CreateVersionDialog({
                 >
                   <TabsList className="grid w-full grid-cols-4">
                     {PROCESSING_ARRAY.map((item, index) => {
-                      const isDisabled = index === 2 && !isLectureAvailable;
+                      const isDisabled = (index === 2 && !isLectureAvailable) || (index === 3 && !isConversationalAvailable);
                       const trigger = (
                         <TabsTrigger
                           key={index}
@@ -440,53 +465,58 @@ export function CreateVersionDialog({
                             </Select>
                           </div>
 
-                          {/* Lecture duration selector */}
-                          {selectedProcessing === 2 && (
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                <Timer className="w-4 h-4" />
-                                Duration
-                              </label>
-                              <div className="grid grid-cols-3 gap-1.5">
-                                {LECTURE_DURATIONS.map((d) => {
-                                  const isDurationDisabled = sourceCharCount < d.minSourceChars;
-                                  const btn = (
-                                    <button
-                                      key={d.value}
-                                      type="button"
-                                      disabled={isDurationDisabled}
-                                      onClick={() => setLectureDuration(d.value)}
-                                      className={`px-2 py-1.5 rounded-md text-sm border transition-colors ${
-                                        isDurationDisabled
-                                          ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
-                                          : lectureDuration === d.value
-                                            ? "border-gray-800 bg-gray-800 text-white"
-                                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                                      }`}
-                                    >
-                                      <div className="font-medium">{d.label}</div>
-                                      <div
-                                        className={`text-xs ${isDurationDisabled ? "text-gray-300" : lectureDuration === d.value ? "text-gray-300" : "text-gray-400"}`}
+                          {/* Duration selector for Lecture and Conversational */}
+                          {(selectedProcessing === 2 || selectedProcessing === 3) && (() => {
+                            const durations = selectedProcessing === 2 ? LECTURE_DURATIONS : CONVERSATIONAL_DURATIONS;
+                            const activeDuration = selectedProcessing === 2 ? lectureDuration : conversationalDuration;
+                            const setDuration = selectedProcessing === 2 ? setLectureDuration : setConversationalDuration;
+                            return (
+                              <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                  <Timer className="w-4 h-4" />
+                                  Duration
+                                </label>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {durations.map((d) => {
+                                    const isDurationDisabled = sourceCharCount < d.minSourceChars;
+                                    const btn = (
+                                      <button
+                                        key={d.value}
+                                        type="button"
+                                        disabled={isDurationDisabled}
+                                        onClick={() => setDuration(d.value)}
+                                        className={`px-2 py-1.5 rounded-md text-sm border transition-colors ${
+                                          isDurationDisabled
+                                            ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed"
+                                            : activeDuration === d.value
+                                              ? "border-gray-800 bg-gray-800 text-white"
+                                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                                        }`}
                                       >
-                                        {d.description}
-                                      </div>
-                                    </button>
-                                  );
-                                  if (isDurationDisabled) {
-                                    return (
-                                      <Tooltip key={d.value} delayDuration={0}>
-                                        <TooltipTrigger asChild>{btn}</TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>Document not long enough</p>
-                                        </TooltipContent>
-                                      </Tooltip>
+                                        <div className="font-medium">{d.label}</div>
+                                        <div
+                                          className={`text-xs ${isDurationDisabled ? "text-gray-300" : activeDuration === d.value ? "text-gray-300" : "text-gray-400"}`}
+                                        >
+                                          {d.description}
+                                        </div>
+                                      </button>
                                     );
-                                  }
-                                  return btn;
-                                })}
+                                    if (isDurationDisabled) {
+                                      return (
+                                        <Tooltip key={d.value} delayDuration={0}>
+                                          <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Document not long enough</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      );
+                                    }
+                                    return btn;
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           {/* Credits cost */}
                           <div className="pt-4 mt-10 border-t border-gray-300">

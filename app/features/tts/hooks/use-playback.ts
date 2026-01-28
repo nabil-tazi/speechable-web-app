@@ -3,6 +3,34 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useTTSContext } from "../context/tts-provider";
 import { useGeneration } from "./use-generation";
+import type { Sentence } from "../types";
+
+/**
+ * Find the next playable sentence index (skipping "skip" reader_ids).
+ * Returns -1 if no playable sentence found.
+ */
+function findNextPlayableSentence(sentences: Sentence[], fromIndex: number): number {
+  for (let i = fromIndex; i < sentences.length; i++) {
+    if (sentences[i].reader_id !== "skip") {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Find the previous playable sentence index (skipping "skip" reader_ids).
+ * Returns 0 if no playable sentence found before the given index.
+ */
+function findPreviousPlayableSentence(sentences: Sentence[], fromIndex: number): number {
+  for (let i = fromIndex; i >= 0; i--) {
+    if (sentences[i].reader_id !== "skip") {
+      return i;
+    }
+  }
+  // Fallback to first playable sentence
+  return findNextPlayableSentence(sentences, 0);
+}
 
 /**
  * Hook for controlling audio playback.
@@ -172,10 +200,11 @@ export function usePlayback() {
 
           // Only advance if we're still in playing state (use ref!)
           if (playbackStatusRef.current === "playing") {
-            const nextIndex = sentenceIndex + 1;
             const sentences = sentencesRef.current;
+            // Find next playable sentence (skip over "skip" reader_ids)
+            const nextIndex = findNextPlayableSentence(sentences, sentenceIndex + 1);
 
-            if (nextIndex >= sentences.length) {
+            if (nextIndex === -1 || nextIndex >= sentences.length) {
               // End of document - reset to idle
               console.log("[usePlayback] End of document, stopping");
               isStartingPlaybackRef.current = false;
@@ -243,11 +272,19 @@ export function usePlayback() {
     (sentenceIndex: number) => {
       console.log("[usePlayback] playFromSentence called:", sentenceIndex);
 
+      // If target sentence is a "skip" sentence, find the next playable one
+      let targetIndex = sentenceIndex;
+      if (state.sentences[targetIndex]?.reader_id === "skip") {
+        targetIndex = findNextPlayableSentence(state.sentences, targetIndex);
+        if (targetIndex === -1) return; // No playable sentences
+        console.log("[usePlayback] Skipped to next playable sentence:", targetIndex);
+      }
+
       // For eco mode, require local model to be ready
       // For cloud modes (standard/expressive), we can proceed without local model
       if (ttsMode === "eco" && modelStatus !== "ready") {
-        dispatch({ type: "SET_PENDING_ACTION", action: { type: "play", sentenceIndex } });
-        dispatch({ type: "SET_BUFFERING", sentenceIndex });
+        dispatch({ type: "SET_PENDING_ACTION", action: { type: "play", sentenceIndex: targetIndex } });
+        dispatch({ type: "SET_BUFFERING", sentenceIndex: targetIndex });
         return;
       }
 
@@ -256,7 +293,7 @@ export function usePlayback() {
       isStartingPlaybackRef.current = false; // Reset the guard
 
       // Check if the sentence is already generated
-      const sentence = state.sentences[sentenceIndex];
+      const sentence = state.sentences[targetIndex];
       if (!sentence) return;
 
       const audio = state.audioState.get(sentence.id);
@@ -264,13 +301,13 @@ export function usePlayback() {
 
       if (isReady) {
         // Audio ready - play immediately
-        playSentenceAtIndex(sentenceIndex);
+        playSentenceAtIndex(targetIndex);
         // Start generating from next ungenerated sentence
-        generateFrom(sentenceIndex + 1);
+        generateFrom(targetIndex + 1);
       } else {
         // Audio not ready - enter buffering and start generation
-        dispatch({ type: "SET_BUFFERING", sentenceIndex });
-        generateFrom(sentenceIndex);
+        dispatch({ type: "SET_BUFFERING", sentenceIndex: targetIndex });
+        generateFrom(targetIndex);
       }
     },
     [ttsMode, modelStatus, state.sentences, state.audioState, dispatch, stopCurrentAudio, playSentenceAtIndex, generateFrom]
@@ -329,20 +366,24 @@ export function usePlayback() {
   }, [isPlaybackOn, state.playback.status, state.playback.currentIndex, pause, resume, playFromSentence]);
 
   /**
-   * Skip to previous sentence.
+   * Skip to previous sentence (skipping "skip" reader_ids).
    */
   const skipToPreviousSentence = useCallback(() => {
-    const newIndex = Math.max(0, state.playback.currentIndex - 1);
-    playFromSentence(newIndex);
-  }, [state.playback.currentIndex, playFromSentence]);
+    const newIndex = findPreviousPlayableSentence(state.sentences, state.playback.currentIndex - 1);
+    if (newIndex >= 0) {
+      playFromSentence(newIndex);
+    }
+  }, [state.sentences, state.playback.currentIndex, playFromSentence]);
 
   /**
-   * Skip to next sentence.
+   * Skip to next sentence (skipping "skip" reader_ids).
    */
   const skipToNextSentence = useCallback(() => {
-    const newIndex = Math.min(state.sentences.length - 1, state.playback.currentIndex + 1);
-    playFromSentence(newIndex);
-  }, [state.playback.currentIndex, state.sentences.length, playFromSentence]);
+    const newIndex = findNextPlayableSentence(state.sentences, state.playback.currentIndex + 1);
+    if (newIndex >= 0 && newIndex < state.sentences.length) {
+      playFromSentence(newIndex);
+    }
+  }, [state.sentences, state.playback.currentIndex, playFromSentence]);
 
   // SINGLE EFFECT: When audio becomes ready and we're buffering, start playing
   useEffect(() => {
@@ -368,9 +409,10 @@ export function usePlayback() {
       return;
     }
 
-    // Wait for next sentence to be ready too (for seamless playback)
-    // Skip this check if we're at the last sentence
-    const nextSentence = state.sentences[state.playback.currentIndex + 1];
+    // Wait for next playable sentence to be ready too (for seamless playback)
+    // Skip this check if we're at the last sentence or if next sentence is "skip"
+    const nextPlayableIndex = findNextPlayableSentence(state.sentences, state.playback.currentIndex + 1);
+    const nextSentence = nextPlayableIndex >= 0 ? state.sentences[nextPlayableIndex] : null;
     if (nextSentence) {
       const nextAudio = state.audioState.get(nextSentence.id);
       const nextVoice = state.voiceConfig.voiceMap[nextSentence.reader_id] || "af_heart";
@@ -407,17 +449,18 @@ export function usePlayback() {
   // Compute whether we're actually waiting for audio (not just in buffering state)
   // This is true when status is "buffering" AND either:
   // 1. Current sentence's audio isn't ready, OR
-  // 2. Next sentence's audio isn't ready (we wait for 2 sentences for seamless playback)
+  // 2. Next playable sentence's audio isn't ready (we wait for 2 sentences for seamless playback)
   const currentAudio = currentSentence
     ? state.audioState.get(currentSentence.id)
     : null;
-  const nextSentence = state.sentences[state.playback.currentIndex + 1];
-  const nextAudio = nextSentence
-    ? state.audioState.get(nextSentence.id)
+  const nextPlayableIdx = findNextPlayableSentence(state.sentences, state.playback.currentIndex + 1);
+  const nextPlayableSentence = nextPlayableIdx >= 0 ? state.sentences[nextPlayableIdx] : null;
+  const nextAudio = nextPlayableSentence
+    ? state.audioState.get(nextPlayableSentence.id)
     : null;
 
   const isCurrentReady = currentAudio?.status === "ready";
-  const isNextReady = !nextSentence || nextAudio?.status === "ready";
+  const isNextReady = !nextPlayableSentence || nextAudio?.status === "ready";
 
   const isWaitingForAudio =
     state.playback.status === "buffering" &&

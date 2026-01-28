@@ -7,6 +7,10 @@ import type {
 } from "@/app/features/documents/types";
 import type { TTSSection } from "@/app/features/pdf/helpers/remove-highlights";
 
+interface ConvertOptions {
+  headingReaderId?: string; // Override reader_id for headings (e.g., "skip" for Lecture/Conversational)
+}
+
 /**
  * Converts processed_text JSON structure to blocks array.
  *
@@ -15,7 +19,10 @@ import type { TTSSection } from "@/app/features/pdf/helpers/remove-highlights";
  *
  * Output: Block[] with proper ordering
  */
-export function convertProcessedTextToBlocks(processedTextJson: string): Block[] {
+export function convertProcessedTextToBlocks(
+  processedTextJson: string,
+  options: ConvertOptions = {}
+): Block[] {
   const blocks: Block[] = [];
   let order = 0;
   const now = new Date().toISOString();
@@ -35,7 +42,7 @@ export function convertProcessedTextToBlocks(processedTextJson: string): Block[]
           id: uuidv4(),
           type: headingType,
           content: section.title,
-          reader_id: "Narrator",
+          reader_id: options.headingReaderId || "Narrator",
           order: order++,
           audio_stale: false,
           created_at: now,

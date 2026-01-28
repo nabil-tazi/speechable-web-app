@@ -21,11 +21,17 @@ interface ReaderSelectorProps {
   readOnly?: boolean; // If true, just show the badge without popover
 }
 
+// All selectable readers including "skip"
+const ALL_READERS = [
+  ...CONVERSATION_READERS,
+  { id: "skip", label: "Skip", shortLabel: "S" },
+] as const;
+
 export function ReaderSelector({ readerId, onChange, visible, readOnly = false }: ReaderSelectorProps) {
   const [open, setOpen] = useState(false);
 
   const currentReader =
-    CONVERSATION_READERS.find((r) => r.id === readerId) || CONVERSATION_READERS[0];
+    ALL_READERS.find((r) => r.id === readerId) || CONVERSATION_READERS[0];
 
   const handleSelect = (newReaderId: string) => {
     onChange?.(newReaderId);
@@ -33,7 +39,11 @@ export function ReaderSelector({ readerId, onChange, visible, readOnly = false }
   };
 
   // Read-only mode: just show the badge with hover effect and tooltip
+  // For "skip", show invisible placeholder to maintain alignment
   if (readOnly) {
+    if (readerId === "skip") {
+      return <span className="w-[22px] h-[22px] inline-block" />;
+    }
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -59,7 +69,7 @@ export function ReaderSelector({ readerId, onChange, visible, readOnly = false }
       <PopoverTrigger asChild>
         <button
           className={cn(
-            "px-1.5 py-0.5 rounded text-xs font-medium transition-opacity",
+            "w-[22px] h-[22px] rounded text-xs font-medium transition-opacity flex items-center justify-center",
             "bg-gray-100 text-gray-600 hover:bg-gray-200",
             visible || open ? "opacity-100" : "opacity-0"
           )}
@@ -73,7 +83,7 @@ export function ReaderSelector({ readerId, onChange, visible, readOnly = false }
         align="start"
         onClick={(e) => e.stopPropagation()}
       >
-        {CONVERSATION_READERS.map((reader) => (
+        {ALL_READERS.map((reader) => (
           <button
             key={reader.id}
             onClick={() => handleSelect(reader.id)}

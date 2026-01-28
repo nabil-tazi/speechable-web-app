@@ -19,6 +19,7 @@ import {
   toggleDocumentStarredAction,
   deleteDocumentVersionAction,
   updateDocumentVersionNameAction,
+  markVersionAsSeenAction,
 } from "@/app/features/documents/actions";
 import { useSidebarData } from "@/app/features/sidebar/context";
 import { useProcessingVersions } from "@/app/features/documents/context/processing-context";
@@ -1238,6 +1239,18 @@ function DocumentTextView() {
   const activeVersion = sortedVersions.find((v) => v.id === activeVersionId);
   const hasReachedVersionLimit = sortedVersions.length >= MAX_VERSIONS_PER_DOCUMENT;
 
+  // Mark active version as seen when it changes
+  useEffect(() => {
+    if (activeVersionId) {
+      const version = sortedVersions.find((v) => v.id === activeVersionId);
+      if (version?.is_new === true) {
+        markVersionAsSeenAction(activeVersionId).then(() => {
+          refreshVersions();
+        });
+      }
+    }
+  }, [activeVersionId, sortedVersions, refreshVersions]);
+
   // Get blocks from active version, or convert from processed_text
   // These are the initial blocks - EditorProvider will manage the live state
   const initialBlocks = useMemo(() => {
@@ -1524,7 +1537,10 @@ function DocumentTextView() {
                                   version.id === activeVersionId && "bg-accent",
                                 )}
                               >
-                                <span className="text-sm truncate max-w-[150px]">
+                                <span className="flex items-center gap-2 text-sm truncate max-w-[150px]">
+                                  {version.is_new === true && (
+                                    <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                                  )}
                                   {version.version_name}
                                 </span>
                                 <span className="text-xs text-muted-foreground">

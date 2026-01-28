@@ -267,6 +267,40 @@ export type PreprocessingLevel = 0 | 1 | 2 | 3;
 
 export const MAX_VERSIONS_PER_DOCUMENT = 15;
 
+export type ConversationalDuration = "short" | "medium" | "long";
+export const CONVERSATIONAL_DURATIONS = [
+  {
+    value: "short" as const,
+    label: "Short",
+    topics: 3,
+    description: "~5 min",
+    creditMultiplier: 0.8,
+    charsPerSection: 1000,
+    minSourceChars: 10000,
+    maxTokens: 4096,
+  },
+  {
+    value: "medium" as const,
+    label: "Medium",
+    topics: 5,
+    description: "~10 min",
+    creditMultiplier: 1.2,
+    charsPerSection: 1300,
+    minSourceChars: 20000,
+    maxTokens: 8192,
+  },
+  {
+    value: "long" as const,
+    label: "Long",
+    topics: 8,
+    description: "~15 min",
+    creditMultiplier: 1.6,
+    charsPerSection: 1700,
+    minSourceChars: 30000,
+    maxTokens: 16384,
+  },
+] as const;
+
 export type LectureDuration = "short" | "medium" | "long";
 export const LECTURE_DURATIONS = [
   {

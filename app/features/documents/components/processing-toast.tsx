@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   useProcessingVersions,
   ProcessingVersion,
@@ -7,7 +8,6 @@ import {
 import {
   Loader2,
   CheckCircle,
-  AlertCircle,
   X,
   FileText,
   ExternalLink,
@@ -15,7 +15,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 export function ProcessingToast() {
   const { processingVersions, removeProcessingVersion } =
@@ -45,13 +45,30 @@ interface ProcessingItemProps {
 
 function ProcessingItem({ version, onDismiss }: ProcessingItemProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isCompleted = version.status === "completed";
   const isFailed = version.status === "failed";
   const isProcessing =
     version.status === "processing" || version.status === "pending";
 
-  // Only show progress bar for Natural mode
-  const showProgressBar = (version.processingType === "Natural" || version.processingType === "Lecture") && isProcessing;
+  // Show progress bar for Natural, Lecture, and Conversational modes
+  const showProgressBar = (version.processingType === "Natural" || version.processingType === "Lecture" || version.processingType === "Conversational") && isProcessing;
+
+  // Check if user is on the page of this version
+  const isOnVersionPage =
+    pathname === `/library/${version.documentId}` &&
+    searchParams.get("version") === version.versionId;
+
+  // Auto-close after 10 seconds if completed and on the version's page
+  useEffect(() => {
+    if (isCompleted && isOnVersionPage) {
+      const timeout = setTimeout(() => {
+        onDismiss();
+      }, 10000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isCompleted, isOnVersionPage, onDismiss]);
 
   const handleOpen = () => {
     router.push(`/library/${version.documentId}?version=${version.versionId}`);
@@ -147,7 +164,7 @@ function getStatusText(version: ProcessingVersion): string {
     case "Lecture":
       return `Generating lecture... ${version.progress}%`;
     case "Conversational":
-      return "Generating dialogue...";
+      return `Generating conversation... ${version.progress}%`;
     case "Original":
       return "Creating version...";
     default:
