@@ -41,6 +41,15 @@ export interface CloudHealthStatus {
   chatterbox: "unchecked" | "checking" | "ok" | "down";
 }
 
+/**
+ * Insufficient credits info for displaying dialog.
+ */
+export interface InsufficientCreditsInfo {
+  creditsNeeded: number;
+  creditsAvailable: number;
+  nextRefillDate: string | null;
+}
+
 export interface TTSState {
   // Model state
   modelStatus: ModelStatus;
@@ -82,6 +91,9 @@ export interface TTSState {
 
   // Pending action to execute after model loads
   pendingAction: PendingAction | null;
+
+  // Insufficient credits info (for showing dialog)
+  insufficientCreditsInfo: InsufficientCreditsInfo | null;
 }
 
 export const initialState: TTSState = {
@@ -109,6 +121,7 @@ export const initialState: TTSState = {
     speed: 1.0,
   },
   pendingAction: null,
+  insufficientCreditsInfo: null,
 };
 
 // =============================================
@@ -172,7 +185,11 @@ export type TTSAction =
 
   // Pending actions
   | { type: "SET_PENDING_ACTION"; action: PendingAction }
-  | { type: "CLEAR_PENDING_ACTION" };
+  | { type: "CLEAR_PENDING_ACTION" }
+
+  // Insufficient credits
+  | { type: "SET_INSUFFICIENT_CREDITS"; info: InsufficientCreditsInfo }
+  | { type: "CLEAR_INSUFFICIENT_CREDITS" };
 
 // =============================================
 // Reducer
@@ -387,6 +404,13 @@ export function ttsReducer(state: TTSState, action: TTSAction): TTSState {
 
     case "CLEAR_PENDING_ACTION":
       return { ...state, pendingAction: null };
+
+    // Insufficient credits
+    case "SET_INSUFFICIENT_CREDITS":
+      return { ...state, insufficientCreditsInfo: action.info };
+
+    case "CLEAR_INSUFFICIENT_CREDITS":
+      return { ...state, insufficientCreditsInfo: null };
 
     default:
       return state;

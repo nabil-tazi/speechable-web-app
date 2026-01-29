@@ -13,6 +13,21 @@ interface CloudGenerationResult {
   creditsRemaining?: number;
 }
 
+// Custom error for insufficient credits
+class InsufficientCreditsError extends Error {
+  creditsNeeded: number;
+  creditsAvailable: number;
+  nextRefillDate: string | null;
+
+  constructor(creditsNeeded: number, creditsAvailable: number, nextRefillDate: string | null) {
+    super("Insufficient credits");
+    this.name = "InsufficientCreditsError";
+    this.creditsNeeded = creditsNeeded;
+    this.creditsAvailable = creditsAvailable;
+    this.nextRefillDate = nextRefillDate;
+  }
+}
+
 /**
  * Generate audio via cloud API (DeepInfra).
  */
@@ -64,9 +79,20 @@ async function generateViaCloud(
   console.log("[generateViaCloud] Response status:", response.status);
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
-    console.error("[generateViaCloud] API error:", error);
-    throw new Error(error.error || `API error: ${response.status}`);
+    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+
+    // Handle insufficient credits specifically (not logged as error - it's expected)
+    if (response.status === 402) {
+      console.log("[generateViaCloud] Insufficient credits");
+      throw new InsufficientCreditsError(
+        errorData.creditsNeeded ?? 0,
+        errorData.creditsAvailable ?? 0,
+        errorData.nextRefillDate ?? null
+      );
+    }
+
+    console.error("[generateViaCloud] API error:", errorData);
+    throw new Error(errorData.error || `API error: ${response.status}`);
   }
 
   // Extract credit info from headers
@@ -188,6 +214,27 @@ export function useGeneration() {
           }
         })
         .catch((error) => {
+          // Handle insufficient credits error (show dialog, stop playback)
+          if (error instanceof InsufficientCreditsError) {
+            console.log("[useGeneration] Insufficient credits - showing dialog");
+            dispatch({
+              type: "SET_INSUFFICIENT_CREDITS",
+              info: {
+                creditsNeeded: error.creditsNeeded,
+                creditsAvailable: error.creditsAvailable,
+                nextRefillDate: error.nextRefillDate,
+              },
+            });
+            // Stop playback and reset sentence to pending (so user can retry)
+            dispatch({ type: "STOP" });
+            dispatch({
+              type: "GENERATION_ERROR",
+              sentenceId: next.sentenceId,
+              error: "Insufficient credits",
+            });
+            return;
+          }
+
           console.error("[useGeneration] Cloud generation error:", error);
           dispatch({
             type: "GENERATION_ERROR",
@@ -337,6 +384,13 @@ export function useGeneration() {
     [dispatch]
   );
 
+  /**
+   * Clear insufficient credits info (dismiss dialog).
+   */
+  const clearInsufficientCredits = useCallback(() => {
+    dispatch({ type: "CLEAR_INSUFFICIENT_CREDITS" });
+  }, [dispatch]);
+
   // Effect: When the currently processing sentence completes, process next
   useEffect(() => {
     const currentlyProcessing = processingIdRef.current;
@@ -431,11 +485,13 @@ export function useGeneration() {
     cloudHealth: state.cloudHealth,
     chatterboxCfg: state.chatterboxCfg,
     chatterboxExaggeration: state.chatterboxExaggeration,
+    insufficientCreditsInfo: state.insufficientCreditsInfo,
     setTTSMode,
     setVoiceQuality,
     setEcoDisabled,
     setChatterboxCfg,
     setChatterboxExaggeration,
+    clearInsufficientCredits,
     generateFrom,
     invalidateAllAndRegenerate,
     invalidateByReaderAndRegenerate,

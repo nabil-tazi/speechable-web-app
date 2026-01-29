@@ -44,6 +44,7 @@ import { useSentences } from "../hooks/use-sentences";
 import { useVoiceConfig } from "../hooks/use-voice-config";
 import { useGeneration } from "../hooks/use-generation";
 import { useGain } from "../hooks/use-gain";
+import { InsufficientCreditsDialog } from "@/app/features/documents/components/insufficient-credits-dialog";
 import type { VoiceQuality } from "../context/tts-reducer";
 
 // Languages with their voices
@@ -357,8 +358,10 @@ export function TTSPlayer() {
     voiceQuality,
     ecoDisabled,
     cloudHealth,
+    insufficientCreditsInfo,
     setVoiceQuality,
     setEcoDisabled,
+    clearInsufficientCredits,
   } = useGeneration();
   const gain = useGain();
 
@@ -896,6 +899,12 @@ export function TTSPlayer() {
           </PopoverContent>
         </Popover>
       )}
+
+      {/* Insufficient Credits Dialog */}
+      <InsufficientCreditsDialog
+        isOpen={!!insufficientCreditsInfo}
+        onClose={clearInsufficientCredits}
+      />
     </div>
   );
 }
