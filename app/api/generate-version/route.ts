@@ -16,6 +16,7 @@ import {
 } from "@/app/features/pdf/types";
 import { getLanguageConfig } from "@/app/features/audio/supported-languages";
 import { convertProcessedTextToBlocks } from "@/app/features/block-editor";
+import { calculateCredits } from "@/app/features/credits/calculate";
 import type {
   ProcessedText,
   ProcessedSection,
@@ -23,8 +24,6 @@ import type {
 } from "@/app/features/documents/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Credit rate for text processing
-const CHARACTERS_PER_CREDIT = 10000;
 
 interface GenerateVersionRequest {
   documentId: string;
@@ -170,15 +169,17 @@ export async function POST(req: NextRequest) {
   const resolvedTargetLanguage = targetLanguage || documentLanguage;
   const needsTranslation = resolvedTargetLanguage !== documentLanguage;
 
-  // Check credits (AI processing levels 1-3, or Original with translation)
+  // Calculate credits needed based on processing type
+  const creditsCharged = calculateCredits({
+    textLength: rawInputText.length,
+    processingLevel,
+    needsTranslation,
+    lectureDuration: lectureDuration || "medium",
+    conversationalDuration: conversationalDuration || "medium",
+  });
   let newCreditBalance: number | null = null;
-  if (processingLevel > 0 || needsTranslation) {
-    const durationMultiplier = processingLevel === 2
-      ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
-      : processingLevel === 3
-        ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === (conversationalDuration || "medium"))?.creditMultiplier ?? 1)
-        : 1;
-    const creditsNeeded = (rawInputText.length / CHARACTERS_PER_CREDIT) * durationMultiplier;
+
+  if (creditsCharged > 0) {
     const creditInfo = await checkCredits(user.id);
 
     if (!creditInfo) {
@@ -188,11 +189,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (creditInfo.credits < creditsNeeded) {
+    if (creditInfo.credits < creditsCharged) {
       return NextResponse.json(
         {
           error: "Insufficient credits",
-          creditsNeeded,
+          creditsNeeded: creditsCharged,
           creditsAvailable: creditInfo.credits,
         },
         { status: 402 },
@@ -200,7 +201,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Deduct credits immediately to prevent concurrent overspend
-    const deductionResult = await deductCredits(user.id, creditsNeeded);
+    const deductionResult = await deductCredits(user.id, creditsCharged);
     if (!deductionResult?.success) {
       return NextResponse.json(
         { error: "Failed to deduct credits" },
@@ -233,6 +234,7 @@ export async function POST(req: NextRequest) {
       status: "pending",
       streaming_text: "",
       processing_progress: 0,
+      credits_charged: creditsCharged,
     })
     .select()
     .single();
@@ -253,15 +255,6 @@ export async function POST(req: NextRequest) {
 
   // Start background processing (non-blocking)
   // Use admin client for background processing since the request context will be closed
-  const refundMultiplier = processingLevel === 2
-    ? (LECTURE_DURATIONS.find((d) => d.value === (lectureDuration || "medium"))?.creditMultiplier ?? 1)
-    : processingLevel === 3
-      ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === (conversationalDuration || "medium"))?.creditMultiplier ?? 1)
-      : 1;
-  const creditsToRefund =
-    processingLevel > 0 || needsTranslation
-      ? (rawInputText.length / CHARACTERS_PER_CREDIT) * refundMultiplier
-      : 0;
   processVersionInBackground(
     user.id,
     pendingVersion.id,
@@ -269,7 +262,6 @@ export async function POST(req: NextRequest) {
     processedText,
     rawInputText,
     document.title || "Document",
-    creditsToRefund,
     resolvedTargetLanguage,
     documentLanguage,
     lectureDuration || "medium",
@@ -287,7 +279,6 @@ async function processVersionInBackground(
   processedText: ProcessedText,
   rawInputText: string,
   documentTitle: string,
-  creditsToRefund: number,
   targetLanguage: string,
   documentLanguage: string,
   lectureDuration: LectureDuration = "medium",
@@ -344,13 +335,14 @@ async function processVersionInBackground(
         .update({ processing_progress: 90 })
         .eq("id", versionId);
     } else if (processingLevel === 1) {
-      // Level 1: Natural - section-based streaming
+      // Level 1: Natural - section-based streaming using existing sections
       processedResult = await processNaturalWithStreaming(
         adminClient,
         versionId,
         rawInputText,
         documentTitle,
         targetLanguage,
+        processedText,
       );
     } else if (processingLevel === 2) {
       // Level 2: Lecture - full document streaming
@@ -403,7 +395,15 @@ async function processVersionInBackground(
       error,
     );
 
-    // Refund credits on failure
+    // Fetch credits_charged from the version record for refund
+    const { data: version } = await adminClient
+      .from("document_versions")
+      .select("credits_charged")
+      .eq("id", versionId)
+      .single();
+
+    const creditsToRefund = version?.credits_charged ?? 0;
+
     if (creditsToRefund > 0) {
       console.log(
         `[generate-version] Refunding ${creditsToRefund} credits to user ${userId}`,
@@ -414,6 +414,134 @@ async function processVersionInBackground(
     // Delete the failed version
     await adminClient.from("document_versions").delete().eq("id", versionId);
   }
+}
+
+// Shared streaming helper for section content processing (translation and natural)
+async function streamSectionContent(
+  supabase: SupabaseClient,
+  versionId: string,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  previousText: string,
+  progressBase: number,
+  progressWeight: number,
+  maxTokens: number,
+): Promise<{ text: string; promptTokens: number; completionTokens: number }> {
+  const response = await fetch(
+    "https://api.deepinfra.com/v1/openai/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        reasoning_effort: "low",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        stream: true,
+        max_tokens: maxTokens,
+        repetition_penalty: 1.3,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`DeepInfra API error: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response body");
+  }
+
+  const decoder = new TextDecoder();
+  let result = "";
+  let updateCounter = 0;
+  let repetitionDetected = false;
+  let promptTokens = 0;
+  let completionTokens = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split("\n");
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.usage) {
+            promptTokens = parsed.usage.prompt_tokens || 0;
+            completionTokens = parsed.usage.completion_tokens || 0;
+          }
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            result += content;
+            updateCounter++;
+
+            // Detect repetition loops every 100 chunks
+            if (updateCounter % 100 === 0 && result.length > 500) {
+              const tail = result.slice(-300);
+              const preceding = result.slice(0, -300);
+              if (preceding.includes(tail)) {
+                console.warn(
+                  `[streamSectionContent] Repetition detected, truncating`,
+                );
+                const firstIdx = preceding.indexOf(tail);
+                result = result.slice(0, firstIdx + tail.length);
+                repetitionDetected = true;
+                break;
+              }
+            }
+
+            // Update streaming text every 10 chunks
+            if (updateCounter % 10 === 0) {
+              const displayText =
+                previousText + (previousText ? "\n\n" : "") + result;
+              const progress = Math.min(
+                90,
+                progressBase + Math.round(progressWeight * (updateCounter / 200)),
+              );
+              await supabase
+                .from("document_versions")
+                .update({
+                  streaming_text: displayText,
+                  processing_progress: progress,
+                })
+                .eq("id", versionId);
+            }
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+      if (repetitionDetected) break;
+    }
+    if (repetitionDetected) {
+      reader.cancel();
+      break;
+    }
+  }
+
+  // Clean up
+  if (
+    (result.startsWith('"') && result.endsWith('"')) ||
+    (result.startsWith("'") && result.endsWith("'"))
+  ) {
+    result = result.slice(1, -1);
+  }
+
+  return { text: decodeHtmlEntities(result.trim()), promptTokens, completionTokens };
 }
 
 // Translation processing for Original with different target language
@@ -431,6 +559,12 @@ async function processTranslation(
   const langName = getLanguageConfig(targetLanguage).name;
   const sections = processedText.processed_text?.sections || [];
   const translatedSections: ProcessedSection[] = [];
+  let accumulatedText = "";
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+
+  const systemPrompt = `You are a professional translator. Translate text accurately to ${langName}.
+Maintain paragraph breaks. Output ONLY the translated text, no explanations.`;
 
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
@@ -438,62 +572,71 @@ async function processTranslation(
 
     await supabase
       .from("document_versions")
-      .update({ processing_progress: progress })
+      .update({
+        processing_progress: progress,
+        streaming_text: accumulatedText + `\n\n[Translating: ${section.title || "Section " + (i + 1)}...]`,
+      })
       .eq("id", versionId);
 
-    // Translate each speech segment
-    const translatedSpeech: { text: string; reader_id: string }[] = [];
-    for (const speech of section.content.speech) {
-      const response = await fetch(
-        "https://api.deepinfra.com/v1/openai/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "meta-llama/Llama-3.2-3B-Instruct",
-            messages: [
-              {
-                role: "system",
-                content: `You are a professional translator. Translate text accurately to ${langName}.`,
-              },
-              {
-                role: "user",
-                content: `Translate the following text to ${langName}. Return ONLY the translated text, nothing else. No explanations, no notes, no prefixes.\n\n${speech.text}`,
-              },
-            ],
-            max_tokens: Math.max(2048, Math.round(speech.text.length * 1.5)),
-            repetition_penalty: 1.3,
-          }),
-        },
+    // Combine all speech segments into one text block (separated by \n\n)
+    const combinedContent = section.content.speech.map((s) => s.text).join("\n\n").trim();
+
+    let translatedSpeech: { text: string; reader_id: string }[] = [];
+    let translatedTitle = section.title;
+
+    // Skip LLM call if section content is empty
+    if (!combinedContent) {
+      // Keep empty section as-is, just translate the title if present
+      translatedSpeech = section.content.speech;
+    } else {
+      const userPrompt = `Translate the following text to ${langName}. Return ONLY the translated text, nothing else. Preserve paragraph breaks (double newlines).
+
+${combinedContent}`;
+
+      // Stream translation for this section
+      const result = await streamSectionContent(
+        supabase,
+        versionId,
+        apiKey,
+        systemPrompt,
+        userPrompt,
+        accumulatedText,
+        progress,
+        80 / sections.length,
+        Math.max(2048, Math.round(combinedContent.length * 1.5)),
       );
 
-      if (!response.ok) {
-        throw new Error(`DeepInfra API error: ${response.status}`);
+      totalPromptTokens += result.promptTokens;
+      totalCompletionTokens += result.completionTokens;
+
+      // Split result back into paragraphs → speech segments
+      const translatedParagraphs = result.text
+        .split(/\n\n+/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+      // Map back to speech segments, preserving reader_id where possible
+      for (let j = 0; j < translatedParagraphs.length; j++) {
+        const readerId = section.content.speech[j]?.reader_id || "Narrator";
+        translatedSpeech.push({
+          text: translatedParagraphs[j],
+          reader_id: readerId,
+        });
       }
 
-      const data = await response.json();
-      let translated =
-        data.choices?.[0]?.message?.content?.trim() || speech.text;
+      // Update accumulated text for streaming preview
+      accumulatedText +=
+        (accumulatedText ? "\n\n" : "") +
+        (translatedTitle ? `## ${translatedTitle}\n\n` : "") +
+        result.text;
 
-      // Clean up quotes
-      if (
-        (translated.startsWith('"') && translated.endsWith('"')) ||
-        (translated.startsWith("'") && translated.endsWith("'"))
-      ) {
-        translated = translated.slice(1, -1);
-      }
-
-      translatedSpeech.push({
-        text: decodeHtmlEntities(translated),
-        reader_id: speech.reader_id,
-      });
+      await supabase
+        .from("document_versions")
+        .update({ streaming_text: accumulatedText })
+        .eq("id", versionId);
     }
 
-    // Translate section title if present
-    let translatedTitle = section.title;
+    // Translate section title if present (short non-streaming call)
     if (section.title) {
       const titleResponse = await fetch(
         "https://api.deepinfra.com/v1/openai/chat/completions",
@@ -504,7 +647,8 @@ async function processTranslation(
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: "meta-llama/Llama-3.2-3B-Instruct",
+            model: "openai/gpt-oss-120b",
+            reasoning_effort: "low",
             messages: [
               {
                 role: "system",
@@ -516,7 +660,6 @@ async function processTranslation(
               },
             ],
             max_tokens: 256,
-            repetition_penalty: 1.3,
           }),
         },
       );
@@ -535,6 +678,10 @@ async function processTranslation(
     });
   }
 
+  console.log(
+    `[processTranslation] Version ${versionId} complete — ${translatedSections.length} sections — Total tokens: ${totalPromptTokens} in / ${totalCompletionTokens} out`,
+  );
+
   return {
     cleanedText: { processed_text: { sections: translatedSections } },
     metadata: {
@@ -542,108 +689,70 @@ async function processTranslation(
       source: "translation",
       targetLanguage,
       totalSections: translatedSections.length,
+      totalPromptTokens,
+      totalCompletionTokens,
     },
   };
 }
 
-// Natural processing with streaming
+// Natural processing with streaming - uses existing sections from processedText
 async function processNaturalWithStreaming(
   supabase: SupabaseClient,
   versionId: string,
   rawInputText: string,
   documentTitle: string,
   targetLanguage: string,
+  processedText?: ProcessedText,
 ): Promise<{ cleanedText: ProcessedText; metadata: Record<string, any> }> {
-  // First, identify sections
-  const sectionResponse = await fetch(
-    `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/api/identify-sections`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: rawInputText }),
-    },
-  );
-
-  if (!sectionResponse.ok) {
-    throw new Error("Failed to identify sections");
+  const apiKey = process.env.DEEPINFRA_API_KEY;
+  if (!apiKey) {
+    throw new Error("DeepInfra API key not configured");
   }
 
-  const sectionData = await sectionResponse.json();
-  const structuredDocument: { title: string; content: string }[] =
-    sectionData.structuredDocument || [];
+  // Use existing sections from processedText (no need for /api/identify-sections)
+  const sections = processedText?.processed_text?.sections || [];
 
-  if (structuredDocument.length === 0) {
-    throw new Error("No sections identified in document");
+  if (sections.length === 0) {
+    throw new Error("No sections found in document");
   }
 
+  const langName = getLanguageConfig(targetLanguage).name;
   const processedSections: ProcessedSection[] = [];
   let accumulatedText = "";
-  const totalSections = structuredDocument.length;
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+
+  const systemPrompt = `You are a text processing assistant that improves text for natural-sounding speech.
+Output in ${langName}.`;
 
   // Process sections with streaming updates
-  for (let i = 0; i < structuredDocument.length; i++) {
-    const { title, content } = structuredDocument[i];
-    const progress = Math.round(10 + (i / totalSections) * 80);
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const title = section.title || "";
+    const progress = Math.round(10 + (i / sections.length) * 80);
 
     // Update progress
     await supabase
       .from("document_versions")
       .update({
         processing_progress: progress,
-        streaming_text: accumulatedText + `\n\n[Processing: ${title}...]`,
+        streaming_text: accumulatedText + `\n\n[Processing: ${title || "Section " + (i + 1)}...]`,
       })
       .eq("id", versionId);
 
-    // Stream this section
-    const sectionText = await streamNaturalSection(
-      supabase,
-      versionId,
-      content,
-      title,
-      accumulatedText,
-      targetLanguage,
-    );
+    // Combine speech segments into raw text
+    const sectionContent = section.content.speech.map((s) => s.text).join("\n\n").trim();
 
-    const section = createSectionFromText(sectionText, title);
-    processedSections.push(section);
+    // Skip LLM call if section content is empty
+    if (!sectionContent) {
+      processedSections.push({
+        title,
+        content: { speech: section.content.speech },
+      });
+      continue;
+    }
 
-    // Update accumulated text
-    accumulatedText +=
-      (accumulatedText ? "\n\n" : "") +
-      (title ? `## ${title}\n\n` : "") +
-      sectionText;
-
-    // Update with completed section
-    await supabase
-      .from("document_versions")
-      .update({ streaming_text: accumulatedText })
-      .eq("id", versionId);
-  }
-
-  return {
-    cleanedText: { processed_text: { sections: processedSections } },
-    metadata: { processingLevel: 1, totalSections: processedSections.length },
-  };
-}
-
-// Stream a single natural section
-async function streamNaturalSection(
-  supabase: SupabaseClient,
-  versionId: string,
-  content: string,
-  title: string,
-  previousText: string,
-  targetLanguage: string,
-): Promise<string> {
-  const apiKey = process.env.DEEPINFRA_API_KEY;
-  if (!apiKey) {
-    throw new Error("DeepInfra API key not configured");
-  }
-
-  const systemPrompt = `You are a text processing assistant that improves text for natural-sounding speech.`;
-  const userPrompt = `Rewrite the following text to sound more natural when spoken aloud.
-
-${title ? `SECTION: "${title}"` : ""}
+    const userPrompt = `Rewrite the following text to sound more natural when spoken aloud.
 
 Guidelines:
 - Make sentences flow naturally for speech
@@ -652,116 +761,78 @@ Guidelines:
 - Fix awkward phrasing that doesn't work well in spoken form
 - Keep technical terms but explain them naturally where needed
 - Ensure proper punctuation for natural pauses
-- Output the text in ${getLanguageConfig(targetLanguage).name}
 
 CRITICAL - Output format:
 - Return ONLY the processed text, nothing else
-- Do NOT include any explanations, notes, or commentary
-- Do NOT use any markdown formatting (no **bold**, *italics*, headers, bullet points, numbered lists, etc.)
-- Do NOT wrap the text in quotes or any other delimiters
-- Do NOT add any prefixes like "Here is...", "Processed text:", etc.
-- Output ONLY the natural-sounding version of the text
+- Do NOT use any markdown formatting
+- Preserve paragraph breaks (double newlines)
 
 Text to process:
-${content}`;
+${sectionContent}`;
 
-  const response = await fetch(
-    "https://api.deepinfra.com/v1/openai/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "meta-llama/Llama-3.2-3B-Instruct",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        stream: true,
-        max_tokens: Math.max(2048, Math.round(content.length * 1.2)),
-        repetition_penalty: 1.3,
-      }),
-    },
+    // Stream this section using GPT-OSS-120B
+    const result = await streamSectionContent(
+      supabase,
+      versionId,
+      apiKey,
+      systemPrompt,
+      userPrompt,
+      accumulatedText,
+      progress,
+      80 / sections.length,
+      Math.max(2048, Math.round(sectionContent.length * 1.2)),
+    );
+
+    totalPromptTokens += result.promptTokens;
+    totalCompletionTokens += result.completionTokens;
+
+    // Split result back into paragraphs → speech segments
+    const processedParagraphs = result.text
+      .split(/\n\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
+    // Map back to speech segments, preserving reader_id where possible
+    const processedSpeech: { text: string; reader_id: string }[] = [];
+    for (let j = 0; j < processedParagraphs.length; j++) {
+      const readerId = section.content.speech[j]?.reader_id || "Narrator";
+      processedSpeech.push({
+        text: processedParagraphs[j],
+        reader_id: readerId,
+      });
+    }
+
+    processedSections.push({
+      title,
+      content: { speech: processedSpeech.length > 0 ? processedSpeech : [{ text: result.text, reader_id: "Narrator" }] },
+    });
+
+    // Update accumulated text
+    accumulatedText +=
+      (accumulatedText ? "\n\n" : "") +
+      (title ? `## ${title}\n\n` : "") +
+      result.text;
+
+    // Update with completed section
+    await supabase
+      .from("document_versions")
+      .update({ streaming_text: accumulatedText })
+      .eq("id", versionId);
+  }
+
+  console.log(
+    `[processNaturalWithStreaming] Version ${versionId} complete — ${processedSections.length} sections — Total tokens: ${totalPromptTokens} in / ${totalCompletionTokens} out`,
   );
 
-  if (!response.ok) {
-    throw new Error(`DeepInfra API error: ${response.status}`);
-  }
-
-  // Process SSE stream
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("No response body");
-  }
-
-  const decoder = new TextDecoder();
-  let result = "";
-  let updateCounter = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n");
-
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            result += content;
-            updateCounter++;
-
-            // Loop detection every 100 chunks
-            if (updateCounter % 100 === 0 && result.length > 500) {
-              const last500 = result.slice(-500);
-              const preceding = result.slice(0, -500);
-              if (preceding.includes(last500)) {
-                console.warn(
-                  "[processNaturalSection] Repetition loop detected, truncating output",
-                );
-                result = preceding;
-                reader.cancel();
-                break;
-              }
-            }
-
-            // Update streaming text every 10 chunks
-            if (updateCounter % 10 === 0) {
-              const displayText =
-                previousText +
-                (previousText ? "\n\n" : "") +
-                (title ? `## ${title}\n\n` : "") +
-                result;
-              await supabase
-                .from("document_versions")
-                .update({ streaming_text: displayText })
-                .eq("id", versionId);
-            }
-          }
-        } catch {
-          // Skip invalid JSON
-        }
-      }
-    }
-  }
-
-  // Clean up result
-  if (
-    (result.startsWith('"') && result.endsWith('"')) ||
-    (result.startsWith("'") && result.endsWith("'"))
-  ) {
-    result = result.slice(1, -1);
-  }
-
-  return decodeHtmlEntities(result.trim());
+  return {
+    cleanedText: { processed_text: { sections: processedSections } },
+    metadata: {
+      processingLevel: 1,
+      totalSections: processedSections.length,
+      totalPromptTokens,
+      totalCompletionTokens,
+    },
+  };
 }
 
 // Lecture processing with two-step approach: plan topics, then generate full lecture

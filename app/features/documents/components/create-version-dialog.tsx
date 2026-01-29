@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/select";
 import { SUPPORTED_LANGUAGES } from "@/app/features/audio/supported-languages";
 import { extractTextFromProcessedText } from "../utils";
+import { calculateCreditsForDisplay } from "@/app/features/credits/calculate";
 import { motion, AnimatePresence } from "motion/react";
 
 type Props = {
@@ -61,7 +62,6 @@ type Props = {
   onClose: () => void;
 };
 
-const CHARACTERS_PER_CREDIT = 10000;
 
 export function CreateVersionDialog({
   document,
@@ -128,21 +128,16 @@ export function CreateVersionDialog({
   // Calculate estimated credits based on document text length, processing type, and duration
   const estimatedCredits = useMemo(() => {
     if (!document.processed_text) return 0;
-    const isTranslating = targetLanguage !== (document.language || "en");
-    if (selectedProcessing === 0 && !isTranslating) return 0;
-    const textLength = extractTextFromProcessedText(
-      document.processed_text,
-    ).length;
-    const baseCredits = textLength / CHARACTERS_PER_CREDIT;
-    const multiplier =
-      selectedProcessing === 2
-        ? (LECTURE_DURATIONS.find((d) => d.value === lectureDuration)
-            ?.creditMultiplier ?? 1)
-        : selectedProcessing === 3
-          ? (CONVERSATIONAL_DURATIONS.find((d) => d.value === conversationalDuration)
-              ?.creditMultiplier ?? 1)
-          : 1;
-    return Math.ceil(baseCredits * multiplier * 10) / 10;
+    const textLength = extractTextFromProcessedText(document.processed_text).length;
+    const needsTranslation = targetLanguage !== (document.language || "en");
+
+    return calculateCreditsForDisplay({
+      textLength,
+      processingLevel: selectedProcessing,
+      needsTranslation,
+      lectureDuration,
+      conversationalDuration,
+    });
   }, [
     document.processed_text,
     document.language,

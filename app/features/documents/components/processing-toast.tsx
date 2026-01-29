@@ -52,8 +52,8 @@ function ProcessingItem({ version, onDismiss }: ProcessingItemProps) {
   const isProcessing =
     version.status === "processing" || version.status === "pending";
 
-  // Show progress bar for Natural, Lecture, and Conversational modes
-  const showProgressBar = (version.processingType === "Natural" || version.processingType === "Lecture" || version.processingType === "Conversational") && isProcessing;
+  // Show progress bar for all processing types (Original with translation also uses streaming now)
+  const showProgressBar = isProcessing;
 
   // Check if user is on the page of this version
   const isOnVersionPage =
@@ -166,7 +166,7 @@ function getStatusText(version: ProcessingVersion): string {
     case "Conversational":
       return `Generating conversation... ${version.progress}%`;
     case "Original":
-      return "Creating version...";
+      return version.progress > 5 ? `Translating... ${version.progress}%` : "Creating version...";
     default:
       return "Processing...";
   }
